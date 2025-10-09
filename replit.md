@@ -10,6 +10,27 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### October 9, 2025 - Realtime Voice Coach Implementation
+
+- Implemented complete voice coaching system with OpenAI Realtime API integration
+- **Server-Side Auth**: HS256 JWT token signing/verification with 60-second TTL using SESSION_SECRET
+- **Voice Proxy** (`realtime/voiceProxy.ts`): WebSocket upgrade handler at `/ws/realtime` with:
+  - Origin validation against APP_ORIGIN/ADMIN_ORIGIN allowlist
+  - Connection limits (max 3 concurrent per user)
+  - session.update sent as FIRST upstream frame before client frames
+  - Bidirectional frame forwarding with response.cancel passthrough for instant interrupt
+  - 25-second heartbeat intervals for connection health
+- **Coach Policy** (`coach/policy.ts`): Concise trading coach system prompt focused on real-time intraday coaching
+- **Token Endpoint**: POST `/api/voice/token` for fetching short-lived authentication tokens
+- **Client VAD** (`voice/VAD.ts`): WebAudio-based voice activity detection with RMS threshold and 250ms hold time
+- **Voice Client** (`voice/VoiceClient.ts`):
+  - Mic enable/disable controls with VAD pause/resume
+  - Instant playback cancellation via AudioBufferSource.stop()
+  - State management: listening → thinking → speaking → idle transitions
+  - Exponential backoff reconnection with jitter
+- **Coach UI** (`CoachBubble.tsx`): Floating bubble with power/mic toggles, state indicators, keyboard shortcuts (T for talk, Esc for stop)
+- **Critical Fixes**: Properly gated mic controls, instant audio interrupt on speech detection, complete state transition flow
+
 ### October 9, 2025 - Market Data Pipeline Complete
 
 - Implemented complete deterministic market data pipeline with lossless resume capability

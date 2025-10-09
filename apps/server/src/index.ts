@@ -1,10 +1,14 @@
 import express from 'express';
+import { createServer } from 'http';
 import { validateEnv } from '@shared/env';
 import { setupSecurity } from './config/security';
 import { initializeMarketPipeline } from './wiring';
+import { setupVoiceProxy } from './realtime/voiceProxy';
+import { setupVoiceTokenRoute } from './routes/voiceToken';
 
 const env = validateEnv(process.env);
 const app = express();
+const server = createServer(app);
 
 app.use(express.json());
 setupSecurity(app);
@@ -14,11 +18,14 @@ app.get('/health', (_req, res) => {
 });
 
 initializeMarketPipeline(app);
+setupVoiceTokenRoute(app);
+setupVoiceProxy(app, server);
 
 const PORT = 4000;
 
-app.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
   console.log(`   Environment: ${env.NODE_ENV}`);
   console.log(`   Log level: ${env.LOG_LEVEL}`);
+  console.log(`   WebSocket: ws://0.0.0.0:${PORT}/ws/realtime`);
 });

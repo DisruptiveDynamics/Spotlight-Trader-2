@@ -1,4 +1,5 @@
 import React from 'react';
+import { CoachBubble } from './features/coach/CoachBubble';
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
           </div>
         </div>
       </main>
+      <CoachBubble />
     </div>
   );
 }

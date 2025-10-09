@@ -17,7 +17,7 @@ export function ExplainPanel({ isOpen, onClose, context }: ExplainPanelProps) {
 
   const handleAsk = async () => {
     if (!question.trim() || !context) return;
-    
+
     const userQuestion = question;
     clearResponse(); // Clear previous response
     await explain(userQuestion, context);
@@ -47,9 +47,9 @@ export function ExplainPanel({ isOpen, onClose, context }: ExplainPanelProps) {
   // Quick questions
   const quickQuestions = [
     "What's happening with this price action?",
-    "Explain the current setup",
-    "What are the key support/resistance levels?",
-    "Is this a good entry point?",
+    'Explain the current setup',
+    'What are the key support/resistance levels?',
+    'Is this a good entry point?',
   ];
 
   const handleQuickQuestion = async (q: string) => {
@@ -69,10 +69,7 @@ export function ExplainPanel({ isOpen, onClose, context }: ExplainPanelProps) {
           <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
           <h3 className="text-sm font-semibold">AI Coach</h3>
         </div>
-        <button
-          onClick={onClose}
-          className="text-gray-400 hover:text-white transition-colors"
-        >
+        <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
           ✕
         </button>
       </div>
@@ -92,18 +89,16 @@ export function ExplainPanel({ isOpen, onClose, context }: ExplainPanelProps) {
             Analyzing chart...
           </div>
         )}
-        
+
         {error && (
           <div className="p-3 bg-red-500/10 border border-red-500/20 rounded text-sm text-red-400">
             {error}
           </div>
         )}
-        
+
         {response && !isLoading && (
           <div className="space-y-3">
-            <div className="text-sm text-gray-300 leading-relaxed">
-              {response.text}
-            </div>
+            <div className="text-sm text-gray-300 leading-relaxed">{response.text}</div>
             <div className="text-xs text-gray-500">
               {new Date(response.timestamp).toLocaleTimeString()}
             </div>
@@ -111,9 +106,7 @@ export function ExplainPanel({ isOpen, onClose, context }: ExplainPanelProps) {
         )}
 
         {!response && !isLoading && !error && (
-          <div className="text-sm text-gray-500">
-            Ask me anything about the chart...
-          </div>
+          <div className="text-sm text-gray-500">Ask me anything about the chart...</div>
         )}
       </div>
 

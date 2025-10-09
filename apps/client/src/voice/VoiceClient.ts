@@ -105,9 +105,12 @@ export class VoiceClient {
       const pcm16 = this.float32ToPCM16(inputData);
 
       if (this.ws?.readyState === WebSocket.OPEN) {
+        const buffer = new ArrayBuffer(pcm16.byteLength);
+        const view = new Int16Array(buffer);
+        view.set(pcm16);
         const audioEvent = {
           type: 'input_audio_buffer.append',
-          audio: this.arrayBufferToBase64(pcm16.buffer),
+          audio: this.arrayBufferToBase64(buffer),
         };
         this.ws.send(JSON.stringify(audioEvent));
       }

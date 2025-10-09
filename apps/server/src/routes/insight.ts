@@ -16,14 +16,14 @@ const MAX_REQUESTS = 2;
 function checkRateLimit(userId: string): boolean {
   const now = Date.now();
   const userRequests = rateLimitMap.get(userId) || [];
-  
+
   // Remove old requests outside the window
-  const recentRequests = userRequests.filter(ts => now - ts < RATE_LIMIT_WINDOW);
-  
+  const recentRequests = userRequests.filter((ts) => now - ts < RATE_LIMIT_WINDOW);
+
   if (recentRequests.length >= MAX_REQUESTS) {
     return false; // Rate limit exceeded
   }
-  
+
   recentRequests.push(now);
   rateLimitMap.set(userId, recentRequests);
   return true;
@@ -67,10 +67,13 @@ Always:
     // Build context summary
     const lastBars = context.bars.slice(-5); // Last 5 bars
     const currentBar = lastBars[lastBars.length - 1];
-    
-    const barsSummary = lastBars.map(b => 
-      `[${new Date(b.time * 1000).toLocaleTimeString()}] O:${b.o.toFixed(2)} H:${b.h.toFixed(2)} L:${b.l.toFixed(2)} C:${b.c.toFixed(2)} V:${b.v}`
-    ).join('\n');
+
+    const barsSummary = lastBars
+      .map(
+        (b) =>
+          `[${new Date(b.time * 1000).toLocaleTimeString()}] O:${b.o.toFixed(2)} H:${b.h.toFixed(2)} L:${b.l.toFixed(2)} C:${b.c.toFixed(2)} V:${b.v}`
+      )
+      .join('\n');
 
     const overlaysSummary = [];
     if (context.overlays.ema) {
@@ -88,9 +91,10 @@ Always:
       );
     }
 
-    const signalsSummary = context.activeSignals?.map(s =>
-      `${s.direction.toUpperCase()} signal: ${s.rule} (${s.confidence}% confidence)`
-    ).join('\n') || 'No active signals';
+    const signalsSummary =
+      context.activeSignals
+        ?.map((s) => `${s.direction.toUpperCase()} signal: ${s.rule} (${s.confidence}% confidence)`)
+        .join('\n') || 'No active signals';
 
     const userPrompt = `Chart Analysis Request:
 
@@ -122,8 +126,8 @@ Question: ${question}`;
         temperature: 0.7,
       });
 
-      const aiResponse = completion.choices[0]?.message?.content || 
-        'Unable to analyze at this time.';
+      const aiResponse =
+        completion.choices[0]?.message?.content || 'Unable to analyze at this time.';
 
       const response: InsightResponse = {
         text: aiResponse,
@@ -140,17 +144,19 @@ Question: ${question}`;
       res.json(response);
     } catch (aiError) {
       console.error('❌ OpenAI error:', aiError);
-      
+
       // Fallback response
       const response: InsightResponse = {
         text: `I'm analyzing ${context.symbol} on the ${context.timeframe} timeframe. Current price is ${currentBar?.c.toFixed(2)}. ${
-          context.overlays.ema 
-            ? `The EMAs show ${Object.entries(context.overlays.ema).map(([p, v]) => `${p}-period at ${v.toFixed(2)}`).join(', ')}.` 
+          context.overlays.ema
+            ? `The EMAs show ${Object.entries(context.overlays.ema)
+                .map(([p, v]) => `${p}-period at ${v.toFixed(2)}`)
+                .join(', ')}.`
             : ''
         }`,
         timestamp: Date.now(),
       };
-      
+
       res.json(response);
     }
   } catch (error) {

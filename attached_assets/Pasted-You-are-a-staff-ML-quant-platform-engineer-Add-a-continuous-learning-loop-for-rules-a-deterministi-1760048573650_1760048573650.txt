@@ -1,0 +1,114 @@
+You are a staff ML/quant platform engineer. Add a continuous-learning loop for rules, a deterministic backtest harness, golden tests to prevent regressions, and observability/SLOs. Keep TypeScript strict, small commits.
+
+GOALS
+- Turn journals + signals into feedback that improves the coach
+- Deterministic backtesting on historical bars with the SAME evaluator used live
+- “Golden” signal tests so behavior can’t silently drift
+- Runtime SLO metrics (tick→wick, voice interrupt, reconnect gap-fill)
+- Feature flags for safe rollouts
+
+───────────────────────────────────────────────────────────────────────────────
+1) Feature flags
+apps/server/src/flags.ts
+- export const flags = {
+    enableRiskGovernorV2: false,
+    enableExplainV2: false,
+    enableTapePeek: false
+  } as const;
+- Add GET /api/flags → flags
+- Use in code paths via simple helpers: ifFlag('enableRiskGovernorV2', () => ...)
+
+───────────────────────────────────────────────────────────────────────────────
+2) Feedback schema
+Update DB (drizzle) with tables:
+- feedback (
+    id uuid pk, user_id text, symbol text, seq bigint, rule_id text,
+    label 'good'|'bad'|'missed'|'late',
+    notes text, created_at timestamptz default now()
+  )
+- rule_metrics_daily (
+    user_id text, rule_id text, day date,
+    fired int, actionable int, good int, bad int, expectancy numeric,
+    primary key (user_id, rule_id, day)
+  )
+Write migrations + drizzle models.
+
+───────────────────────────────────────────────────────────────────────────────
+3) Learning loop service
+apps/server/src/learning/loop.ts
+- Listen to events:
+  - "signal:new" -> open feedback slot
+  - POST /api/feedback -> persist label + update aggregates
+- Maintain per-rule rolling metrics (7d, 30d) in memory with Redis backing
+- Export getRuleScore(ruleId): number in [-1, +1]
+- Expose GET /api/rules/metrics?ruleId=... returning aggregates + score
+- Adjust RiskGovernor thresholds using score (e.g., confidence gate higher when score < 0)
+
+───────────────────────────────────────────────────────────────────────────────
+4) Backtest harness (deterministic)
+apps/server/src/backtest/engine.ts
+- Input: { symbol, timeframe, start, end, rules[] }
+- Fetch bars via Polygon REST (or DB cache) in chunks
+- Run the SAME evaluator used live (no duplicated logic)
+- Output:
+  {
+    bars: N,
+    triggers: [{ruleId, seq, direction, confidence, ts}],
+    winrate?: number (if labels exist),
+    metrics: { avgHoldBars, triggersPerDay, regimeBreakdown }
+  }
+Add POST /api/backtest/run and GET /api/backtest/presets
+
+───────────────────────────────────────────────────────────────────────────────
+5) Golden tests corpus
+packages/shared/tests/golden/*
+- A small set of JSON fixtures (bars + expected results) for core rules:
+  - LTP breakout, EMA20/50 cross, VWAP reclaim
+- Write test runner apps/server/tests/golden.test.ts:
+  - Loads fixtures, runs evaluator, asserts equality on "seq" + "direction" + pass/fail
+- Add npm script "golden:test" and include in CI
+
+───────────────────────────────────────────────────────────────────────────────
+6) Client feedback & backtest UI
+apps/client/src/features/feedback/SignalFeedback.tsx
+- For each alert card: buttons 👍 Good / 👎 Bad / ⏱ Late / ❗ Missed
+- POST /api/feedback with {label, notes?}
+- Toast result; update in-place stats
+
+apps/client/src/features/backtest/BacktestPanel.tsx
+- Form: symbol, timeframe, date range, rule multi-select
+- Run -> shows metrics, triggers on a compact timeline
+- Button "Promote as Golden" -> lets user save a run as a golden fixture (local file first; later server)
+
+───────────────────────────────────────────────────────────────────────────────
+7) Observability & SLOs
+apps/server/src/metrics/metrics.ts
+- Export counters/histograms using tiny in-memory registry (prom-style)
+  - tick_to_wick_ms (histogram)
+  - voice_interrupt_ms (histogram)
+  - sse_reconnects_total (counter)
+  - history_gap_fill_ms (histogram)
+- Add GET /metrics (text) + GET /slo (json summaries: p50/p95 for key metrics)
+- Wire emit points:
+  - When sending microbar/bar -> set srv_ts; client echoes back RTT sample endpoint /api/metrics/rtt
+  - Voice proxy measures interrupt: speak-stop delta
+
+apps/client/src/features/hud/LatencyHUD.tsx
+- Poll GET /slo every 5s; display RTT, Tick→Wick P95, reconnects; color thresholds (green <120ms; amber <180; red otherwise)
+
+───────────────────────────────────────────────────────────────────────────────
+8) RiskGovernor tie-in
+apps/server/src/risk/governor.ts
+- Import getRuleScore and adjust gating:
+  - minConfidence = base - clamp(score, -0.3, +0.3) * 0.1
+  - cooldown increase when score < 0; decrease when score > 0.5
+- Expose /api/risk/preview?ruleId=... returns current gates for UI display
+
+───────────────────────────────────────────────────────────────────────────────
+9) Docs & tests
+- Add README sections: Feedback, Backtests, Golden tests, Metrics
+- Unit tests:
+  - learning/loop.test.ts for aggregate math
+  - backtest/engine.test.ts on a short sample
+  - governor.test.ts change gates as score varies
+- CI: run golden tests on PRs

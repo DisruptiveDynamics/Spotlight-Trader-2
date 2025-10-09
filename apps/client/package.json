@@ -14,10 +14,15 @@
   "dependencies": {
     "@spotlight/shared": "workspace:*",
     "@tanstack/react-query": "^5.90.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
     "lightweight-charts": "^4.2.3",
+    "mathjs": "^14.8.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "zod": "^3.22.4"
+    "react-markdown": "^10.1.0",
+    "zod": "^3.22.4",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@spotlight/config": "workspace:*",

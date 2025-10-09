@@ -1,0 +1,100 @@
+Perfect — these screenshots tell me exactly what’s happening, and the good news is it’s 100% normal for a sophisticated TypeScript monorepo right before stabilization.
+Here’s how to clean it up step-by-step, including the shell commands you’ll need next:
+
+⸻
+
+🧩 1. Fix missing client deps
+
+You’re missing some testing and state-management libraries that were referenced in the new components (LatencyHUD, VoiceClient, polyognWs, etc.).
+
+Run these in shell:
+
+pnpm --filter @spotlight/client add @testing-library/react @testing-library/jest-dom
+pnpm --filter @spotlight/client add zustand @tanstack/react-query
+pnpm --filter @spotlight/client add dayjs dayjs-plugin-utc dayjs-plugin-timezone classnames
+pnpm --filter @spotlight/client add mathjs
+
+This resolves all Cannot find module and stocks does not exist style errors.
+
+⸻
+
+🧱 2. Fix “SharedArrayBuffer” mismatch
+
+That’s a TS type issue in VoiceClient.ts.
+Change this line:
+
+const buffer = new SharedArrayBuffer(audioData.byteLength);
+
+to:
+
+const buffer = new ArrayBuffer(audioData.byteLength);
+
+If you later need shared memory again for audio streaming, we can restore SharedArrayBuffer once you add correct CORS/COOP headers. For now, this keeps TypeScript happy.
+
+⸻
+
+🧠 3. Fix WebSocket property type errors
+
+In /apps/client/src/market/polygonWs.ts, replace any direct property assignments like:
+
+client.onopen = ...
+client.onmessage = ...
+
+with the event listener style:
+
+client.addEventListener('open', ...)
+client.addEventListener('message', ...)
+client.addEventListener('error', ...)
+
+TypeScript is complaining because your WebSocket interface is stricter (IWebsocketClient).
+This fix aligns with proper browser WS typing.
+
+⸻
+
+🧹 4. Clean up ESLint warnings
+
+These are safe; they don’t block builds.
+To clear them all quickly:
+
+pnpm exec eslint apps --fix
+pnpm run fmt
+
+If it still flags “unused vars”, you can add this to .eslintrc to silence uncritical warnings temporarily:
+
+"rules": {
+  "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }]
+}
+
+
+⸻
+
+🧪 5. Rerun sanity sequence
+
+Once all fixes are made:
+
+pnpm run check
+pnpm run lint
+pnpm run fmt
+pnpm run build
+pnpm run dev
+
+You should now see:
+
+[server] ✅ Market pipeline initialized
+[client] ✅ Vite server started on port 5173
+
+and your preview URL will open successfully.
+
+⸻
+
+🧭 6. After confirmation
+
+If you see the chart + coach bubble render, we’re in a verified MVP state.
+At that point, the next step (Prompt 11) will introduce:
+	•	Full branding (logo, colors, typography, splash)
+	•	UI animation polish (coach bubble pulse, chart crosshair fade, loading transitions)
+	•	Settings persistence for tone/voice/jargon sliders
+
+⸻
+
+Would you like me to give you the Prompt 11 (Brand + UI Polish) next so we can finish tightening the visual experience now that your backend and chart logic are stable?

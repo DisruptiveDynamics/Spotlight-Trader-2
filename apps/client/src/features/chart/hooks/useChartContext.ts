@@ -21,7 +21,7 @@ export function useChartContext({ candles, indicators }: UseChartContextProps) {
     return (barCount: number = 100): InsightContext => {
       // Get last N bars
       const recentCandles = candles.slice(-barCount);
-      
+
       const bars: InsightBar[] = recentCandles.map((c) => ({
         time: Math.floor(c.t / 1000), // Convert to seconds
         o: c.ohlcv.o,
@@ -33,7 +33,7 @@ export function useChartContext({ candles, indicators }: UseChartContextProps) {
 
       // Build overlays from indicators
       const contextOverlays: InsightOverlays = {};
-      
+
       if (indicators?.emaLines && indicators.emaLines.length > 0) {
         contextOverlays.ema = {};
         indicators.emaLines.forEach(({ period, values }) => {

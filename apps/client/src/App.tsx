@@ -18,13 +18,13 @@ function App() {
 
   useEffect(() => {
     const unsubscribe = focusManager.subscribe(setFocusMode);
-    
+
     // Listen for chart context requests
     const handleExplainRequest = (e: CustomEvent) => {
       setExplainContext(e.detail.context);
       setExplainPanelOpen(true);
     };
-    
+
     window.addEventListener('chart:explain-request', handleExplainRequest as EventListener);
 
     const handleFocusTrade = () => focusManager.toggleTradeMode();
@@ -100,9 +100,9 @@ function App() {
       <CoachBubble />
       <CommandPalette />
       <TapePeek />
-      <ExplainPanel 
-        isOpen={explainPanelOpen} 
-        onClose={() => setExplainPanelOpen(false)} 
+      <ExplainPanel
+        isOpen={explainPanelOpen}
+        onClose={() => setExplainPanelOpen(false)}
         context={explainContext}
       />
     </div>

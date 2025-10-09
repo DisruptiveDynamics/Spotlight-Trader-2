@@ -42,7 +42,7 @@ export function Pane({ paneId, className = '' }: PaneProps) {
 
   const currentMinuteRef = useRef<number>(0);
   const currentBarTimeRef = useRef<number>(0);
-  
+
   const [showExplainButton, setShowExplainButton] = useState(false);
 
   // Convert candles for indicators
@@ -81,10 +81,10 @@ export function Pane({ paneId, className = '' }: PaneProps) {
 
     return { emaLines, bollinger, vwap, volumeSma };
   }, [candlesForIndicators, overlays, active.symbol, candles]);
-  
+
   // Use chart context hook
   const { getCurrentContext } = useChartContext({
-    candles: candlesForIndicators.map(c => ({ t: c.t, ohlcv: c.ohlcv })),
+    candles: candlesForIndicators.map((c) => ({ t: c.t, ohlcv: c.ohlcv })),
     indicators,
   });
 

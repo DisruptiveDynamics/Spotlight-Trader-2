@@ -20,35 +20,39 @@ export class PolygonWebSocket {
 
       this.ws = websocketClient(env.POLYGON_API_KEY, wsUrl).stocks();
 
-      this.ws.onopen = () => {
-        console.log('✅ Polygon WebSocket connected');
-        this.isConnected = true;
-        this.reconnectAttempts = 0;
-        this.startHeartbeat();
-        this.resubscribe();
-      };
+      if (this.ws) {
+        const ws = this.ws as any;
+        
+        ws.onopen = () => {
+          console.log('✅ Polygon WebSocket connected');
+          this.isConnected = true;
+          this.reconnectAttempts = 0;
+          this.startHeartbeat();
+          this.resubscribe();
+        };
 
-      this.ws.onmessage = (event: any) => {
-        try {
-          const response = event.data || event.response;
-          if (!response) return;
-          const messages = JSON.parse(response);
-          messages.forEach((msg: any) => this.handleMessage(msg));
-        } catch (err) {
-          console.error('Failed to parse Polygon message:', err);
-        }
-      };
+        ws.onmessage = (event: any) => {
+          try {
+            const response = event.data || event.response;
+            if (!response) return;
+            const messages = JSON.parse(response);
+            messages.forEach((msg: any) => this.handleMessage(msg));
+          } catch (err) {
+            console.error('Failed to parse Polygon message:', err);
+          }
+        };
 
-      this.ws.onerror = (error: any) => {
-        console.error('Polygon WebSocket error:', error);
-      };
+        ws.onerror = (error: any) => {
+          console.error('Polygon WebSocket error:', error);
+        };
 
-      this.ws.onclose = () => {
-        console.warn('Polygon WebSocket closed');
-        this.isConnected = false;
-        this.stopHeartbeat();
-        this.reconnect();
-      };
+        ws.onclose = () => {
+          console.warn('Polygon WebSocket closed');
+          this.isConnected = false;
+          this.stopHeartbeat();
+          this.reconnect();
+        };
+      }
     } catch (err) {
       console.error('Failed to connect to Polygon:', err);
       this.reconnect();
@@ -62,11 +66,10 @@ export class PolygonWebSocket {
     }
 
     if (msg.ev === 'T') {
-      const tick = {
+      const tick: any = {
         ts: msg.t,
         price: msg.p,
         size: msg.s,
-        side: undefined as 'buy' | 'sell' | undefined,
       };
       eventBus.emit(`tick:${msg.sym}` as const, tick);
     }
@@ -75,7 +78,7 @@ export class PolygonWebSocket {
   subscribe(symbol: string) {
     this.subscribedSymbols.add(symbol);
     if (this.isConnected && this.ws) {
-      this.ws.send(
+      (this.ws as any).send(
         JSON.stringify({
           action: 'subscribe',
           params: `T.${symbol}`,
@@ -87,7 +90,7 @@ export class PolygonWebSocket {
   unsubscribe(symbol: string) {
     this.subscribedSymbols.delete(symbol);
     if (this.isConnected && this.ws) {
-      this.ws.send(
+      (this.ws as any).send(
         JSON.stringify({
           action: 'unsubscribe',
           params: `T.${symbol}`,
@@ -101,7 +104,7 @@ export class PolygonWebSocket {
       const params = Array.from(this.subscribedSymbols)
         .map((sym) => `T.${sym}`)
         .join(',');
-      this.ws.send(
+      (this.ws as any).send(
         JSON.stringify({
           action: 'subscribe',
           params,
@@ -141,7 +144,7 @@ export class PolygonWebSocket {
   close() {
     this.stopHeartbeat();
     if (this.ws) {
-      this.ws.close();
+      (this.ws as any).close();
       this.ws = null;
     }
   }

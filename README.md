@@ -118,6 +118,58 @@ pnpm test
 pnpm build
 ```
 
+## Brand Integration
+
+### Assets
+
+All brand assets are located in `apps/client/public/brand/`:
+
+```
+apps/client/public/brand/
+├── logo.svg              # Full logo (bulb + wordmark)
+├── logo-mark.svg         # Lightbulb mark only
+├── favicon.svg           # Vector favicon
+├── icon-{512,192,180,32,16}.png  # Raster icons (PWA, touch)
+└── og-base.png          # Open Graph image (1200x630)
+```
+
+### Updating Icons
+
+To regenerate raster icons from SVG:
+
+```bash
+cd apps/client
+pnpm tsx scripts/generate-icons.ts
+```
+
+This script uses the logo-mark.svg to generate all PNG variants and the Open Graph image.
+
+### Theme Colors
+
+Brand colors are defined in `packages/config/theme.ts`:
+
+- **Primary**: `#F3AE3D` (bulb gold)
+- **Accent**: `#6C8BFF` (links/highlights)
+- **Dark BG**: `#0B0F14` (app background)
+
+CSS variables are available in all components:
+- `var(--brand-primary)`
+- `var(--brand-primary-glow)`
+- `var(--brand-accent)`
+
+### PWA & SEO
+
+- **Manifest**: `apps/client/public/manifest.webmanifest`
+- **Meta tags**: Configured in `apps/client/index.html`
+- **OG images**: Static base image at `/brand/og-base.png`
+  - TODO: Dynamic OG images per symbol/timeframe
+
+### Accessibility
+
+- Focus states use `--brand-accent` with 2px outline
+- Color contrast meets WCAG AA standards
+- Splash animation respects `prefers-reduced-motion`
+
 ## Features
 
 ### MVP

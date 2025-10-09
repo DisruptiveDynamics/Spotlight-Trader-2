@@ -1,13 +1,17 @@
 import { defineConfig } from 'drizzle-kit';
-import { validateEnv } from '@spotlight/shared/env';
 
-const env = validateEnv(process.env);
+// Use DATABASE_URL directly from environment
+const DATABASE_URL = process.env.DATABASE_URL;
+
+if (!DATABASE_URL) {
+  throw new Error('DATABASE_URL is required');
+}
 
 export default defineConfig({
   dialect: 'postgresql',
   schema: './src/db/schema.ts',
   out: './drizzle',
   dbCredentials: {
-    url: env.DATABASE_URL,
+    url: DATABASE_URL,
   },
 });

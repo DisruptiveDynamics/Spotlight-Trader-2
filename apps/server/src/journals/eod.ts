@@ -5,18 +5,21 @@ import { eq, and, gte, lt } from 'drizzle-orm';
 import { addJournalEntry, linkJournalToSignal } from './service.js';
 import { getRuleScore, getRuleMetrics } from '../learning/loop.js';
 
+export interface SignalSummary {
+  signalId: string;
+  ruleId: string;
+  symbol: string;
+  time: string;
+  confidence: number;
+  expectancy: number;
+  acted?: boolean;
+}
+
 export interface EodSummary {
   date: string;
   signalsFired: number;
-  topSignals: Array<{
-    signalId: string;
-    ruleId: string;
-    symbol: string;
-    time: string;
-    confidence: number;
-    expectancy: number;
-    acted?: boolean;
-  }>;
+  allSignals: SignalSummary[];
+  topSignals: SignalSummary[];
   drift: string[];
   keepStopTry: {
     keep: string[];
@@ -60,7 +63,12 @@ export async function generateEodSummary(userId: string, date: string): Promise<
     })
   );
 
-  const topSignals = signalsWithExpectancy.sort((a, b) => b.expectancy - a.expectancy).slice(0, 3);
+  // Keep original chronological order for the table
+  const allSignals = signalsWithExpectancy;
+  
+  // Sort by expectancy for top 3
+  const sortedByExpectancy = [...signalsWithExpectancy].sort((a, b) => b.expectancy - a.expectancy);
+  const topSignals = sortedByExpectancy.slice(0, 3);
 
   const drift: string[] = [];
   if (daySignals.length < 3) {
@@ -107,6 +115,7 @@ export async function generateEodSummary(userId: string, date: string): Promise<
   return {
     date,
     signalsFired: daySignals.length,
+    allSignals,
     topSignals,
     drift,
     keepStopTry,
@@ -126,14 +135,14 @@ export function formatEodSummary(summary: EodSummary): string {
   lines.push('| Time | Symbol | Rule | Confidence | Acted |');
   lines.push('|------|--------|------|-----------|-------|');
 
-  summary.topSignals.forEach((sig) => {
+  summary.allSignals.forEach((sig) => {
     const acted = sig.acted ? '✓' : '—';
     lines.push(
       `| ${sig.time} | ${sig.symbol} | ${sig.ruleId.substring(0, 8)}… | ${(sig.confidence * 100).toFixed(0)}% | ${acted} |`
     );
   });
 
-  if (summary.topSignals.length === 0) {
+  if (summary.allSignals.length === 0) {
     lines.push('| — | — | — | — | — |');
   }
 

@@ -15,7 +15,7 @@ describe('FocusManager', () => {
 
   it('should hide rules/journal/memory in trade mode', () => {
     manager.setMode('trade');
-    
+
     expect(manager.isPanelVisible('chart')).toBe(true);
     expect(manager.isPanelVisible('coach')).toBe(true);
     expect(manager.isPanelVisible('rules')).toBe(false);
@@ -25,7 +25,7 @@ describe('FocusManager', () => {
 
   it('should hide rules/coach in review mode', () => {
     manager.setMode('review');
-    
+
     expect(manager.isPanelVisible('journal')).toBe(true);
     expect(manager.isPanelVisible('rules')).toBe(false);
     expect(manager.isPanelVisible('coach')).toBe(false);
@@ -54,10 +54,10 @@ describe('FocusManager', () => {
 
   it('should toggle between modes', () => {
     expect(manager.getMode()).toBe('normal');
-    
+
     manager.toggleTradeMode();
     expect(manager.getMode()).toBe('trade');
-    
+
     manager.toggleTradeMode();
     expect(manager.getMode()).toBe('normal');
   });

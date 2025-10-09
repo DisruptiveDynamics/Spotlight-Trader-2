@@ -118,7 +118,7 @@ export class HotkeyManager {
 
   private startSequence(key: string) {
     this.sequenceBuffer = [key];
-    
+
     if (this.sequenceTimeout) {
       clearTimeout(this.sequenceTimeout);
     }
@@ -172,14 +172,14 @@ export class HotkeyManager {
 
   private getBindingKey(event: KeyboardEvent): string {
     const parts: string[] = [];
-    
+
     if (event.ctrlKey) parts.push('ctrl');
     if (event.metaKey) parts.push('meta');
     if (event.shiftKey) parts.push('shift');
     if (event.altKey) parts.push('alt');
-    
+
     parts.push(event.key.toLowerCase());
-    
+
     return parts.join('+');
   }
 
@@ -190,14 +190,14 @@ export class HotkeyManager {
 
   private getKeyString(binding: HotkeyBinding): string {
     const parts: string[] = [];
-    
+
     if (binding.ctrl) parts.push('ctrl');
     if (binding.meta) parts.push('meta');
     if (binding.shift) parts.push('shift');
     if (binding.alt) parts.push('alt');
-    
+
     parts.push(binding.key.toLowerCase());
-    
+
     return parts.join('+');
   }
 

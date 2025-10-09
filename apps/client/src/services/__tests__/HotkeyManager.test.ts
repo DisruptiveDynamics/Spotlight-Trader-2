@@ -12,7 +12,7 @@ describe('HotkeyManager', () => {
 
   it('should register default hotkeys', () => {
     const bindings = manager.getBindings();
-    
+
     expect(bindings.length).toBeGreaterThan(0);
     expect(bindings.some((b) => b.key === 't')).toBe(true);
     expect(bindings.some((b) => b.key === ' ')).toBe(true);

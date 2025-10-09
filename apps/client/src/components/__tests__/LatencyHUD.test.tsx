@@ -5,7 +5,7 @@ import { LatencyHUD } from '../LatencyHUD';
 describe('LatencyHUD', () => {
   it('should render all metrics', () => {
     render(<LatencyHUD />);
-    
+
     expect(screen.getByText(/RTT:/)).toBeDefined();
     expect(screen.getByText(/Tick→Wick:/)).toBeDefined();
     expect(screen.getByText(/SSE:/)).toBeDefined();
@@ -13,7 +13,7 @@ describe('LatencyHUD', () => {
 
   it('should show green color for low latency (< 120ms)', () => {
     const { container } = render(<LatencyHUD />);
-    
+
     window.dispatchEvent(
       new CustomEvent('metrics:update', {
         detail: { voiceRTT: 80 },
@@ -26,7 +26,7 @@ describe('LatencyHUD', () => {
 
   it('should show amber color for medium latency (120-180ms)', () => {
     const { container } = render(<LatencyHUD />);
-    
+
     window.dispatchEvent(
       new CustomEvent('metrics:update', {
         detail: { voiceRTT: 150 },
@@ -39,7 +39,7 @@ describe('LatencyHUD', () => {
 
   it('should show red color for high latency (> 180ms)', () => {
     const { container } = render(<LatencyHUD />);
-    
+
     window.dispatchEvent(
       new CustomEvent('metrics:update', {
         detail: { voiceRTT: 200 },
@@ -52,7 +52,7 @@ describe('LatencyHUD', () => {
 
   it('should display market status with correct color', () => {
     const { container } = render(<LatencyHUD />);
-    
+
     window.dispatchEvent(
       new CustomEvent('metrics:update', {
         detail: { marketStatus: 'LIVE' },
@@ -65,7 +65,7 @@ describe('LatencyHUD', () => {
 
   it('should show SSE reconnect count', () => {
     render(<LatencyHUD />);
-    
+
     window.dispatchEvent(
       new CustomEvent('metrics:update', {
         detail: { sseReconnects: 3 },

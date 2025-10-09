@@ -28,8 +28,10 @@ export class PolygonWebSocket {
         this.resubscribe();
       };
 
-      this.ws.onmessage = ({ response }) => {
+      this.ws.onmessage = (event: any) => {
         try {
+          const response = event.data || event.response;
+          if (!response) return;
           const messages = JSON.parse(response);
           messages.forEach((msg: any) => this.handleMessage(msg));
         } catch (err) {
@@ -73,20 +75,24 @@ export class PolygonWebSocket {
   subscribe(symbol: string) {
     this.subscribedSymbols.add(symbol);
     if (this.isConnected && this.ws) {
-      this.ws.send({
-        action: 'subscribe',
-        params: `T.${symbol}`,
-      });
+      this.ws.send(
+        JSON.stringify({
+          action: 'subscribe',
+          params: `T.${symbol}`,
+        })
+      );
     }
   }
 
   unsubscribe(symbol: string) {
     this.subscribedSymbols.delete(symbol);
     if (this.isConnected && this.ws) {
-      this.ws.send({
-        action: 'unsubscribe',
-        params: `T.${symbol}`,
-      });
+      this.ws.send(
+        JSON.stringify({
+          action: 'unsubscribe',
+          params: `T.${symbol}`,
+        })
+      );
     }
   }
 
@@ -95,10 +101,12 @@ export class PolygonWebSocket {
       const params = Array.from(this.subscribedSymbols)
         .map((sym) => `T.${sym}`)
         .join(',');
-      this.ws.send({
-        action: 'subscribe',
-        params,
-      });
+      this.ws.send(
+        JSON.stringify({
+          action: 'subscribe',
+          params,
+        })
+      );
     }
   }
 

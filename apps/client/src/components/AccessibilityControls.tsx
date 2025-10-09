@@ -54,7 +54,7 @@ export function AccessibilityControls() {
   useEffect(() => {
     localStorage.setItem('color-vision', colorVision);
     const palette = COLOR_PALETTES[colorVision];
-    
+
     document.documentElement.style.setProperty('--color-up', palette.up);
     document.documentElement.style.setProperty('--color-down', palette.down);
     document.documentElement.style.setProperty('--color-neutral', palette.neutral);
@@ -62,7 +62,7 @@ export function AccessibilityControls() {
 
   useEffect(() => {
     localStorage.setItem('high-contrast', String(highContrast));
-    
+
     if (highContrast) {
       document.documentElement.classList.add('high-contrast');
     } else {

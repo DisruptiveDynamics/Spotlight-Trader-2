@@ -87,9 +87,7 @@ export function VWAPControls() {
           <input
             type="datetime-local"
             value={config.customDate || ''}
-            onChange={(e) =>
-              setConfig((prev) => ({ ...prev, customDate: e.target.value }))
-            }
+            onChange={(e) => setConfig((prev) => ({ ...prev, customDate: e.target.value }))}
             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
           />
         </div>

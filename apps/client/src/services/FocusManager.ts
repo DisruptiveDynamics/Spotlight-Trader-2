@@ -51,9 +51,9 @@ export class FocusManager {
     this.currentMode = mode;
     this.saveMode();
     this.notifyListeners();
-    
+
     const config = FOCUS_CONFIGS[mode];
-    
+
     if (config.streamFrozen) {
       window.dispatchEvent(new CustomEvent('focus:freeze-stream'));
     } else {

@@ -1,10 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type {
-  IChartApi,
-  ISeriesApi,
-  CandlestickData,
-  UTCTimestamp,
-} from 'lightweight-charts';
+import type { IChartApi, ISeriesApi, CandlestickData, UTCTimestamp } from 'lightweight-charts';
 import { connectMarketSSE, fetchHistory, type Bar, type Micro } from '../../lib/marketStream';
 import { useLastSeq } from './useLastSeq';
 
@@ -13,11 +8,13 @@ export function ChartView() {
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isPaused, setIsPaused] = useState(false);
+  const isPausedRef = useRef(false);
+  const [, forceUpdate] = useState({});
   const [lastSeq, setLastSeq] = useLastSeq('SPY', '1m');
   const microbarQueueRef = useRef<Micro[]>([]);
   const rafIdRef = useRef<number | null>(null);
   const currentMinuteRef = useRef<number>(0);
+  const currentBarTimeRef = useRef<number>(0);
   const barCountRef = useRef(0);
 
   useEffect(() => {
@@ -76,7 +73,11 @@ export function ChartView() {
         seriesRef.current = series;
 
         if (history.length > 0) {
-          currentMinuteRef.current = Math.floor(history[history.length - 1].bar_end / 60000) * 60000;
+          const lastBar = history[history.length - 1];
+          if (lastBar) {
+            currentMinuteRef.current = Math.floor(lastBar.bar_end / 60000) * 60000;
+            currentBarTimeRef.current = Math.floor(lastBar.bar_end / 1000);
+          }
         }
 
         const handleResize = () => {
@@ -112,10 +113,11 @@ export function ChartView() {
           });
 
           currentMinuteRef.current = Math.floor(bar.bar_end / 60000) * 60000;
+          currentBarTimeRef.current = time;
         });
 
         sseConnection.onMicro((micro: Micro) => {
-          if (!mounted || isPaused) return;
+          if (!mounted || isPausedRef.current) return;
 
           microbarQueueRef.current.push(micro);
 
@@ -150,10 +152,9 @@ export function ChartView() {
 
       const microMinute = Math.floor(micro.ts / 60000) * 60000;
 
-      if (microMinute === currentMinuteRef.current) {
-        const time = Math.floor(currentMinuteRef.current / 1000 + 60) as UTCTimestamp;
+      if (microMinute === currentMinuteRef.current && currentBarTimeRef.current > 0) {
         seriesRef.current.update({
-          time,
+          time: currentBarTimeRef.current as UTCTimestamp,
           open: micro.ohlcv.o,
           high: micro.ohlcv.h,
           low: micro.ohlcv.l,
@@ -165,7 +166,8 @@ export function ChartView() {
     initChart();
 
     const handleTogglePause = () => {
-      setIsPaused((prev) => !prev);
+      isPausedRef.current = !isPausedRef.current;
+      forceUpdate({});
     };
 
     window.addEventListener('hotkey:toggle-stream', handleTogglePause);
@@ -183,7 +185,7 @@ export function ChartView() {
         cancelAnimationFrame(rafIdRef.current);
       }
     };
-  }, [lastSeq, setLastSeq, isPaused]);
+  }, []);
 
   return (
     <div className="relative w-full h-full">
@@ -196,12 +198,12 @@ export function ChartView() {
       <div className="absolute top-2 right-2">
         <div
           className={`px-2 py-1 text-xs font-mono rounded ${
-            isPaused
+            isPausedRef.current
               ? 'bg-amber-500/20 text-amber-400 border border-amber-500'
               : 'bg-green-500/20 text-green-400 border border-green-500'
           }`}
         >
-          {isPaused ? 'PAUSED' : 'LIVE'}
+          {isPausedRef.current ? 'PAUSED' : 'LIVE'}
         </div>
       </div>
     </div>

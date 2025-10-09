@@ -14,10 +14,10 @@ function App() {
 
   useEffect(() => {
     const unsubscribe = focusManager.subscribe(setFocusMode);
-    
+
     const handleFocusTrade = () => focusManager.toggleTradeMode();
     const handleFocusReview = () => focusManager.toggleReviewMode();
-    
+
     window.addEventListener('command:focus-trade', handleFocusTrade);
     window.addEventListener('command:focus-review', handleFocusReview);
 
@@ -32,7 +32,10 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col">
-      <header className="bg-gray-800 border-b border-gray-700 p-4 flex-shrink-0" style={{ opacity }}>
+      <header
+        className="bg-gray-800 border-b border-gray-700 p-4 flex-shrink-0"
+        style={{ opacity }}
+      >
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Spotlight Trader</h1>
           <div className="flex items-center gap-4">

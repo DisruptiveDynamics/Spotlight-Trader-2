@@ -57,7 +57,7 @@ export function SignalDensityControl() {
 
   useEffect(() => {
     localStorage.setItem('signal-audio', String(audioEnabled));
-    
+
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (prefersReducedMotion) {
       setAudioEnabled(false);
@@ -79,9 +79,7 @@ export function SignalDensityControl() {
         <h3 className="text-sm font-semibold text-white">Signal Density</h3>
         <button
           onClick={() => setAudioEnabled(!audioEnabled)}
-          className={`px-2 py-1 text-xs rounded ${
-            audioEnabled ? 'bg-blue-500' : 'bg-gray-700'
-          }`}
+          className={`px-2 py-1 text-xs rounded ${audioEnabled ? 'bg-blue-500' : 'bg-gray-700'}`}
           title={audioEnabled ? 'Audio alerts on' : 'Audio alerts off'}
         >
           {audioEnabled ? '🔔' : '🔕'}

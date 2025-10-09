@@ -78,7 +78,9 @@ export function LatencyHUD() {
         </span>
       </div>
 
-      <div className={`flex items-center gap-1 font-semibold ${getStatusColor(metrics.marketStatus)}`}>
+      <div
+        className={`flex items-center gap-1 font-semibold ${getStatusColor(metrics.marketStatus)}`}
+      >
         <span className="w-2 h-2 rounded-full bg-current"></span>
         <span>{metrics.marketStatus}</span>
       </div>

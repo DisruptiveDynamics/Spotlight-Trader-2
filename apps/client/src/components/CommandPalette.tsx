@@ -11,12 +11,12 @@ interface Command {
 function fuzzyMatch(query: string, target: string): number {
   const q = query.toLowerCase();
   const t = target.toLowerCase();
-  
+
   if (t.includes(q)) return 100;
-  
+
   let score = 0;
   let queryIndex = 0;
-  
+
   for (let i = 0; i < t.length && queryIndex < q.length; i++) {
     if (t[i] === q[queryIndex]) {
       score += 10;
@@ -24,11 +24,11 @@ function fuzzyMatch(query: string, target: string): number {
       queryIndex++;
     }
   }
-  
+
   if (queryIndex === q.length) {
     return score;
   }
-  
+
   return 0;
 }
 
@@ -94,7 +94,7 @@ export function CommandPalette() {
   useEffect(() => {
     const handleOpen = () => setIsOpen(true);
     window.addEventListener('hotkey:command-palette', handleOpen);
-    
+
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
         setIsOpen(false);
@@ -124,7 +124,7 @@ export function CommandPalette() {
           className="w-full px-4 py-3 bg-gray-900 border-b border-gray-700 text-white placeholder-gray-400 focus:outline-none"
           autoFocus
         />
-        
+
         <div className="max-h-96 overflow-y-auto">
           {filteredCommands.length > 0 ? (
             filteredCommands.map((cmd) => (
@@ -135,9 +135,7 @@ export function CommandPalette() {
               >
                 <div>
                   <div className="text-white">{cmd.label}</div>
-                  {cmd.category && (
-                    <div className="text-xs text-gray-400">{cmd.category}</div>
-                  )}
+                  {cmd.category && <div className="text-xs text-gray-400">{cmd.category}</div>}
                 </div>
               </button>
             ))
@@ -152,27 +150,39 @@ export function CommandPalette() {
             <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Push-to-talk</span>
-                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">T</kbd>
+                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">
+                  T
+                </kbd>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Pause stream</span>
-                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">Space</kbd>
+                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">
+                  Space
+                </kbd>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Set alert</span>
-                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">A</kbd>
+                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">
+                  A
+                </kbd>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Journal note</span>
-                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">J</kbd>
+                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">
+                  J
+                </kbd>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">VWAP anchor</span>
-                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">G+V</kbd>
+                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">
+                  G+V
+                </kbd>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Timeframes</span>
-                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">1/2/3</kbd>
+                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">
+                  1/2/3
+                </kbd>
               </div>
             </div>
           </div>

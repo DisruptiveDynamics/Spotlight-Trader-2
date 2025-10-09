@@ -1,0 +1,75 @@
+You are a staff UX engineer building for high-frequency day traders. Enhance the client with trader-grade ergonomics, minimal cognitive load, and instant control. Keep WCAG AA contrast, TypeScript strict, and small commits.
+
+GOALS
+- Zero-lag interactions and keyboard-first control
+- High-salience signals with minimal noise
+- Fast context switching (multi-timeframe sync, focus modes)
+- Risk & latency awareness at a glance
+
+FEATURES
+
+1) Pro Hotkeys & Command Routing
+- Add a central HotkeyManager with default bindings:
+  T: Push-to-talk (hold on mobile, toggle on desktop)
+  Space: Pause/resume live stream (freeze chart)
+  A: Set alert at cursor price
+  J: New journal note (modal)
+  G then V: Toggle VWAP anchors (full-session / pre-market / custom anchor)
+  1/2/3: Switch timeframes (1m/5m/15m)
+  Cmd/Ctrl+K: Command palette (already added) – extend with “Explain this bar”, “Jump to last signal”, “Toggle focus mode”
+- Display a tiny cheat-sheet in the command palette footer.
+
+2) Focus Modes (No-Distraction & Review)
+- “Focus: Trade” mode hides non-essential panels (Rules/Journal) and enlarges Chart+Coach; dim non-price UI with 30% opacity.
+- “Focus: Review” mode pins Journal + Signals timeline, freezes live stream, and enables bar-by-bar stepper.
+- Persist mode per user in local storage and coach_profiles.
+
+3) Multi-Timeframe Sync & Anchored VWAPs
+- Add a secondary mini-chart (sparkline) that mirrors symbol but different timeframe (default 5m when main is 1m).
+- Implement Anchored VWAP controls:
+  - Buttons: Session, Premarket, Custom (date/time picker)
+  - Visual chip on chart showing active anchor & offset from price
+- Ensure evaluator and signal cards can reference `vwap_session()` & anchored variants visually.
+
+4) Signal Salience & Noise Controls
+- Add a “signal density” slider (Quiet / Normal / Loud) that gates:
+  - Minimum confidence threshold
+  - Regime alignment requirement (trend/range)
+  - Tape confirms (volume_z, spread_bp) – use stricter values in Quiet
+- In Quiet mode, only show 1 “Top opportunity” card at a time (others stack silently in Alerts panel).
+- Add a subtle chime for actionable signals (respect prefers-reduced-motion/audio).
+
+5) Latency & Health HUD
+- Small HUD in the top bar:
+  - RTT (voice), Tick→Wick P95 (rolling), SSE reconnects count, Market status (LIVE / HALTED / PREMARKET).
+- Color code: green < 120 ms, amber 120–180, red > 180.
+- Tooltips explain how to improve when amber/red.
+
+6) Tape Peek (lightweight, optional)
+- Add an optional right-side collapsible “Tape” panel showing:
+  - Volume z-score mini-bar (last 2 min)
+  - Uptick–downtick delta sparkline
+  - Spread (bp) badge
+- Keep it render-cheap (no Level 2 DOM).
+
+7) Chart Micro-UX
+- Cursor readout: price, delta vs VWAP/anchor, RSI(14), EMA20/50.
+- Hover a SignalCard → emit “highlight:candle” and add a 1-candle glow.
+- Double-click chart → quick “Set alert @ <price>” modal prefilled.
+
+8) Color & Accessibility Options
+- Add Color Vision presets (Protanopia/Deuteranopia/Tritanopia safe palette).
+- Toggle “High Contrast” mode (increase text and border contrast by ~15–20%).
+- Respect prefers-reduced-motion to disable shimmer and wave forms.
+
+9) Performance Safeguards
+- Debounce UI updates in Alerts panel to at most 10Hz.
+- Coalesce microbar paints via requestAnimationFrame; lock max FPS to 60.
+- Lazy-load Tape and Journal editors only when opened.
+
+TESTS
+- HotkeyManager unit tests for keymaps and command dispatch.
+- Focus mode snapshot (panels hidden/visible as expected).
+- HUD numbers render and color thresholds flip correctly.
+
+Docs: Update README “Trader UX Pack”: hotkeys list, focus modes, latency HUD legend, and accessibility toggles.

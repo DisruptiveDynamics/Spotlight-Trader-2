@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { hotkeyManager } from '../services/HotkeyManager';
 
 interface Command {
   id: string;
@@ -108,8 +107,6 @@ export function CommandPalette() {
       document.removeEventListener('keydown', handleEscape);
     };
   }, [isOpen]);
-
-  const hotkeys = hotkeyManager.getBindings();
 
   if (!isOpen) return null;
 

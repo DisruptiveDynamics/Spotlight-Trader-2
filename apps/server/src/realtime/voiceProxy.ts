@@ -45,7 +45,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
 
       const payload = verifyVoiceToken(token);
       userId = payload.userId;
-    } catch (_error) {
+    } catch {
       clientWs.close(1008, 'Unauthorized');
       return;
     }

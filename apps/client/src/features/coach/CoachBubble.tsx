@@ -8,7 +8,6 @@ export function CoachBubble() {
   const [isMicActive, setIsMicActive] = useState(false);
   const [coachState, setCoachState] = useState<CoachState>('idle');
   const [connectionState, setConnectionState] = useState<string>('disconnected');
-  const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
   const voiceClient = useRef<VoiceClient | null>(null);
   const tokenRef = useRef<string | null>(null);
@@ -114,8 +113,6 @@ export function CoachBubble() {
               {coachState}
             </span>
           </div>
-
-          {latencyMs !== null && <div className="text-xs text-gray-500">RTT: {latencyMs}ms</div>}
 
           <div className="text-xs text-gray-500">{connectionState}</div>
         </div>

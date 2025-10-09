@@ -8,7 +8,7 @@ import {
   CrosshairMode,
 } from 'lightweight-charts';
 import { useChartState } from '../../state/chartState';
-import { fetchHistory, sessionStartMs, isPremarket, isAfterHours } from '../../lib/history';
+import { fetchHistory, sessionStartMs } from '../../lib/history';
 import {
   emaBatch,
   bollingerBatch,
@@ -17,8 +17,6 @@ import {
   volumeSmaBatch,
   type Candle,
 } from '@spotlight/shared';
-import { connectMarketSSE } from '../../lib/marketStream';
-import type { Bar, Micro } from '../../lib/marketStream';
 import { useChartContext } from './hooks/useChartContext';
 
 interface PaneProps {
@@ -26,7 +24,7 @@ interface PaneProps {
   className?: string;
 }
 
-export function Pane({ paneId, className = '' }: PaneProps) {
+export function Pane({ className = '' }: PaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick' | 'Line' | 'Bar'> | null>(null);
@@ -38,7 +36,6 @@ export function Pane({ paneId, className = '' }: PaneProps) {
   const [tooltip, setTooltip] = useState<{ x: number; y: number; data: any } | null>(null);
 
   const { active, chartStyle, overlays, setVwapAnchor } = useChartState();
-  const isPausedRef = useRef(false);
 
   const currentMinuteRef = useRef<number>(0);
   const currentBarTimeRef = useRef<number>(0);

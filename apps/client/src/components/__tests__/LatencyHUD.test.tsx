@@ -51,7 +51,7 @@ describe('LatencyHUD', () => {
   });
 
   it('should display market status with correct color', () => {
-    const { container } = render(<LatencyHUD />);
+    render(<LatencyHUD />);
 
     window.dispatchEvent(
       new CustomEvent('metrics:update', {

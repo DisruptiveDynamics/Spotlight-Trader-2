@@ -145,7 +145,6 @@ export class HotkeyManager {
       return;
     }
 
-    const key = event.key.toLowerCase();
     const bindingKey = this.getBindingKey(event);
     const binding = this.bindings.get(bindingKey);
 

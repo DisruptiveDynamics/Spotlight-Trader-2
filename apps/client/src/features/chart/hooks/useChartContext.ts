@@ -15,7 +15,7 @@ interface UseChartContextProps {
 }
 
 export function useChartContext({ candles, indicators }: UseChartContextProps) {
-  const { active, overlays } = useChartState();
+  const { active } = useChartState();
 
   const getCurrentContext = useMemo(() => {
     return (barCount: number = 100): InsightContext => {

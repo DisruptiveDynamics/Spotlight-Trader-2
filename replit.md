@@ -2,7 +2,7 @@
 
 ## Overview
 
-Spotlight Trader is a production-grade real-time trading coach application built as a TypeScript monorepo. It integrates market data streaming, AI-powered voice coaching, a rule-based trading alerts system, and journaling capabilities. The system processes live market data from Polygon.io, delivers real-time charts and alerts via Server-Sent Events, and provides an interactive voice coach powered by OpenAI's Realtime API through WebSocket connections. Its purpose is to provide real-time, intelligent trading assistance.
+Spotlight Trader is a production-grade real-time trading coach application built as a TypeScript monorepo. It integrates market data streaming, AI-powered voice coaching, a rule-based trading alerts system, journaling capabilities, and professional trader UX ergonomics. The system processes live market data from Polygon.io, delivers real-time charts and alerts via Server-Sent Events, and provides an interactive voice coach powered by OpenAI's Realtime API through WebSocket connections. With institutional-grade hotkeys, focus modes, latency monitoring, and accessibility features, it provides zero-lag, keyboard-first control for high-frequency day traders.
 
 ## User Preferences
 
@@ -158,3 +158,132 @@ The memory system enables the coach to learn and recall across sessions:
 - **Token Budget**: Session context limited to 1200 tokens to preserve coach responsiveness
 - **Strict Validation**: Zod schemas on all API endpoints prevent malformed data
 - **Cascade Deletes**: Deleting journal removes journal_links automatically for data integrity
+
+## Trader UX Pack
+
+Professional ergonomics for high-frequency day traders with zero-lag interactions and minimal cognitive load.
+
+### Hotkey System
+
+**HotkeyManager** (`services/HotkeyManager.ts`) provides keyboard-first control:
+
+**Core Hotkeys:**
+- `T` - Push-to-talk (hold on mobile, toggle on desktop)
+- `Space` - Pause/resume live stream (freeze chart)
+- `A` - Set alert at cursor price
+- `J` - New journal note (opens modal)
+- `G+V` - Toggle VWAP anchors (sequence)
+- `1/2/3` - Switch timeframes (1m/5m/15m)
+- `Cmd/Ctrl+K` - Command palette
+
+**Command Palette** (`components/CommandPalette.tsx`):
+- Fuzzy command search
+- Categories: Analysis, Navigation, View, Indicators
+- Commands: "Explain this bar", "Jump to last signal", "Toggle focus mode"
+- Hotkey cheat-sheet in footer
+
+### Focus Modes
+
+**FocusManager** (`services/FocusManager.ts`) reduces distraction:
+
+1. **Trade Mode**: 
+   - Hides Rules, Journal, Memory panels
+   - Enlarges Chart + Coach to full width
+   - Dims non-price UI to 30% opacity
+   - Persisted in localStorage
+
+2. **Review Mode**:
+   - Pins Journal + Signals timeline
+   - Freezes live stream
+   - Hides Coach panel
+   - Enables bar-by-bar stepper (planned)
+
+3. **Normal Mode**: Default, all panels visible
+
+Toggle via Command Palette or custom events (`command:focus-trade`, `command:focus-review`).
+
+### Signal Density Control
+
+**SignalDensityControl** (`components/SignalDensityControl.tsx`) gates alert noise:
+
+- **Quiet Mode**: Min confidence 75%, regime+tape required, max 1 signal ("Top opportunity only")
+- **Normal Mode**: Min confidence 60%, regime required, max 3 signals
+- **Loud Mode**: Min confidence 50%, no filters, max 5 signals
+
+Audio alerts respect `prefers-reduced-motion`. Settings persisted in localStorage.
+
+### Anchored VWAP
+
+**VWAPControls** (`components/VWAPControls.tsx`):
+
+- **Session VWAP**: Anchored to market open (9:30 ET)
+- **Premarket VWAP**: Anchored to 4:00 AM ET
+- **Custom VWAP**: User-defined datetime picker
+
+Visual chip on chart shows active anchor & price offset. Evaluator supports `vwap_session()` and anchored variants.
+
+### Latency & Health HUD
+
+**LatencyHUD** (`components/LatencyHUD.tsx`) displays real-time performance:
+
+**Metrics:**
+- **RTT** (voice): Round-trip time to OpenAI Realtime API
+- **Tick→Wick P95**: 95th percentile latency from market tick to chart paint
+- **SSE Reconnects**: Count of SSE stream reconnections
+- **Market Status**: LIVE / HALTED / PREMARKET / CLOSED
+
+**Color Thresholds:**
+- Green: < 120ms (optimal)
+- Amber: 120-180ms (degraded)
+- Red: > 180ms (poor)
+
+Tooltips provide optimization tips (e.g., "Close browser tabs" for high tick latency).
+
+### Tape Peek
+
+**TapePeek** (`components/TapePeek.tsx`) - collapsible right panel:
+
+- **Volume Z-Score** (2min): Mini-bar chart, color-coded (green >2σ, red <-2σ)
+- **Uptick–Downtick Delta**: Sparkline of buying pressure
+- **Spread (bp)**: Badge with Tight/Normal/Wide classification
+
+Lightweight, render-cheap (no Level 2 DOM). Lazy-loaded on first open.
+
+### Accessibility
+
+**AccessibilityControls** (`components/AccessibilityControls.tsx`):
+
+**Color Vision Presets:**
+- Normal (Green/Red)
+- Protanopia (Blue/Yellow)
+- Deuteranopia (Blue/Orange)
+- Tritanopia (Cyan/Pink)
+
+**High Contrast Mode**: 15-20% border/text contrast boost
+
+**Reduced Motion**: Auto-detects system preference, disables animations
+
+CSS variables (`--color-up`, `--color-down`, `--color-neutral`) enable palette swaps. `.high-contrast` class increases text shadows and border opacity.
+
+### Performance Safeguards
+
+- **UI Debouncing**: Alerts panel updates at max 10Hz
+- **Microbar Coalescing**: `requestAnimationFrame` batching, locked to 60 FPS
+- **Lazy Loading**: Tape Peek and Journal editors load on demand
+- **Event Throttling**: Hotkey sequences timeout after 1s
+
+### Testing
+
+- **HotkeyManager**: Keymaps, command dispatch, sequence handling (G+V), input exclusion
+- **FocusManager**: Panel visibility, opacity, stream freeze events, localStorage persistence
+- **LatencyHUD**: Color thresholds (green/amber/red), metric updates, tooltips
+
+Run: `pnpm test`
+
+### Design Decisions
+
+- **Keyboard-First**: All actions accessible via hotkeys for zero-latency control
+- **Event-Driven**: Custom events decouple components (e.g., `hotkey:toggle-vwap`)
+- **Persistent State**: Focus mode, density, VWAP anchors saved in localStorage
+- **WCAG AA Contrast**: High contrast mode + color vision presets ensure accessibility
+- **Institutional Ergonomics**: Tape metrics, latency HUD, multi-timeframe sync for pro traders

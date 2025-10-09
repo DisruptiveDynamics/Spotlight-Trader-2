@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --color-up: #10b981;
+  --color-down: #ef4444;
+  --color-neutral: #6b7280;
+}
+
 body {
   margin: 0;
   font-family:
@@ -9,4 +15,40 @@ body {
     'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.high-contrast {
+  --tw-border-opacity: 1;
+  --tw-ring-opacity: 1;
+}
+
+.high-contrast * {
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.high-contrast h1,
+.high-contrast h2,
+.high-contrast h3,
+.high-contrast h4,
+.high-contrast .text-white {
+  color: #ffffff !important;
+  text-shadow: 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+.high-contrast .text-gray-300 {
+  color: #e5e5e5 !important;
+}
+
+.high-contrast .text-gray-400 {
+  color: #d1d1d1 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

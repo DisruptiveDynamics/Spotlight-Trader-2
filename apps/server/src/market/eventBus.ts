@@ -42,24 +42,15 @@ class TypedEventBus extends EventEmitter {
     return super.emit(event as string, data);
   }
 
-  on<K extends keyof EventMap>(
-    event: K,
-    listener: (data: EventMap[K]) => void
-  ): this {
+  on<K extends keyof EventMap>(event: K, listener: (data: EventMap[K]) => void): this {
     return super.on(event as string, listener);
   }
 
-  once<K extends keyof EventMap>(
-    event: K,
-    listener: (data: EventMap[K]) => void
-  ): this {
+  once<K extends keyof EventMap>(event: K, listener: (data: EventMap[K]) => void): this {
     return super.once(event as string, listener);
   }
 
-  off<K extends keyof EventMap>(
-    event: K,
-    listener: (data: EventMap[K]) => void
-  ): this {
+  off<K extends keyof EventMap>(event: K, listener: (data: EventMap[K]) => void): this {
     return super.off(event as string, listener);
   }
 }

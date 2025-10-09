@@ -1,5 +1,14 @@
-import { pgTable, text, real, jsonb, timestamp, date, vector, index, unique } from 'drizzle-orm/pg-core';
-import { sql } from 'drizzle-orm';
+import {
+  pgTable,
+  text,
+  real,
+  jsonb,
+  timestamp,
+  date,
+  vector,
+  index,
+  unique,
+} from 'drizzle-orm/pg-core';
 
 export const rules = pgTable('rules', {
   id: text('id').primaryKey(),
@@ -7,15 +16,21 @@ export const rules = pgTable('rules', {
   ownerUserId: text('owner_user_id'),
 });
 
-export const ruleVersions = pgTable('rule_versions', {
-  id: text('id').primaryKey(),
-  ruleId: text('rule_id').notNull().references(() => rules.id),
-  version: text('version').notNull(),
-  doc: jsonb('doc').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-}, (table) => ({
-  uniq: unique().on(table.ruleId, table.version),
-}));
+export const ruleVersions = pgTable(
+  'rule_versions',
+  {
+    id: text('id').primaryKey(),
+    ruleId: text('rule_id')
+      .notNull()
+      .references(() => rules.id),
+    version: text('version').notNull(),
+    doc: jsonb('doc').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniq: unique().on(table.ruleId, table.version),
+  })
+);
 
 export const userRules = pgTable('user_rules', {
   id: text('id').primaryKey(),
@@ -25,7 +40,9 @@ export const userRules = pgTable('user_rules', {
 
 export const userRuleVersions = pgTable('user_rule_versions', {
   id: text('id').primaryKey(),
-  userRuleId: text('user_rule_id').notNull().references(() => userRules.id),
+  userRuleId: text('user_rule_id')
+    .notNull()
+    .references(() => userRules.id),
   version: text('version').notNull(),
   doc: jsonb('doc').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -45,7 +62,9 @@ export const signals = pgTable('signals', {
 
 export const signalExplanations = pgTable('signal_explanations', {
   id: text('id').primaryKey(),
-  signalId: text('signal_id').notNull().references(() => signals.id),
+  signalId: text('signal_id')
+    .notNull()
+    .references(() => signals.id),
   text: text('text').notNull(),
   tokens: text('tokens').notNull(),
   model: text('model').notNull(),
@@ -60,7 +79,9 @@ export const journals = pgTable('journals', {
 
 export const journalLinks = pgTable('journal_links', {
   id: text('id').primaryKey(),
-  journalId: text('journal_id').notNull().references(() => journals.id),
+  journalId: text('journal_id')
+    .notNull()
+    .references(() => journals.id),
   linkType: text('link_type').notNull(),
   linkId: text('link_id').notNull(),
 });
@@ -74,20 +95,24 @@ export const coachProfiles = pgTable('coach_profiles', {
   tone: text('tone').notNull(),
 });
 
-export const coachMemories = pgTable('coach_memories', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull(),
-  kind: text('kind').notNull(),
-  text: text('text').notNull(),
-  tags: text('tags').array().notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  embedding: vector('embedding', { dimensions: 1536 }),
-}, (table) => ({
-  embeddingIdx: index('embedding_hnsw_idx').using(
-    'hnsw',
-    table.embedding.op('vector_cosine_ops')
-  ),
-}));
+export const coachMemories = pgTable(
+  'coach_memories',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    kind: text('kind').notNull(),
+    text: text('text').notNull(),
+    tags: text('tags').array().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    embedding: vector('embedding', { dimensions: 1536 }),
+  },
+  (table) => ({
+    embeddingIdx: index('embedding_hnsw_idx').using(
+      'hnsw',
+      table.embedding.op('vector_cosine_ops')
+    ),
+  })
+);
 
 export const auditLedger = pgTable('audit_ledger', {
   id: text('id').primaryKey(),

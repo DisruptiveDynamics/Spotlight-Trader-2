@@ -1,0 +1,111 @@
+You are a staff-level realtime/voice engineer. Implement the Realtime Voice path with server-side bootstrap, strict auth, and instant interrupt. Do this in small commits.
+
+GOALS
+- WebSocket proxy at /ws/realtime that connects to OpenAI Realtime.
+- Send session.update as the FIRST upstream frame (server-side).
+- Support response.cancel when the user starts speaking (instant stop).
+- Short-lived HS256 auth token on WS upgrade; strict origin allowlist; limit 3 live voice connections/user.
+- Client VAD gate (WebAudio) that cancels TTS immediately on speech.
+- Minimal UI: power button + mic state + latency indicators.
+- Tests for first-frame ordering, cancel interrupt timing, and auth failures.
+
+ENV
+- Requires SESSION_SECRET in addition to APP_ORIGIN, ADMIN_ORIGIN, OPENAI_API_KEY.
+- Fail fast if missing.
+
+SERVER IMPLEMENTATION (apps/server/src)
+
+1) realtime/auth.ts
+   - export signVoiceToken(userId: string, ttlSeconds = 60) -> string (HS256 using SESSION_SECRET)
+   - export verifyVoiceToken(token: string) -> { userId, exp }
+   - Unit tests for valid, expired, and tampered tokens.
+
+2) realtime/voiceProxy.ts
+   - Express/WS upgrade handler at /ws/realtime
+   - Reject if:
+       * Origin not in {APP_ORIGIN, ADMIN_ORIGIN}
+       * Missing/invalid token (query ?t= or header X-User-Token)
+       * >3 concurrent voice connections for same userId (use a simple in-memory Map counter)
+   - Connect to OpenAI Realtime upstream using OPENAI_API_KEY.
+   - On upstream "open":
+       * Immediately send FIRST FRAME session.update with:
+         {
+           "type":"session.update",
+           "session":{
+             "modalities":["audio","text"],
+             "turn_detection":{"type":"server_vad","threshold":0.5,"prefix_ms":200,"silence_ms":350},
+             "input_audio_format":{"type":"pcm16"},
+             "output_audio_format":{"type":"pcm16"},
+             "temperature":0.3,
+             "instructions": VOICE_COACH_SYSTEM (import from coach/policy.ts),
+             "voice":"alloy"  // placeholder; can be overridden later
+           }
+         }
+       * Buffer any client frames until this bootstrap is sent; then flush.
+   - Forward frames bidirectionally thereafter.
+   - Implement {type:"response.cancel"} passthrough (client -> upstream).
+   - Heartbeats: send ping every 25s both directions; close stale sockets.
+   - Cleanly decrement user connection counter on close/error.
+   - Log structured events but never secrets.
+
+3) coach/policy.ts
+   - export const VOICE_COACH_SYSTEM = `
+     You are a world-class intraday trading coach. Your #1 job is to help the user trade THEIR plan on THEIR symbols in real time.
+     Rules:
+     - Be concise (<= 2 sentences unless asked).
+     - If no quality setup: say "No edge right now" and stop.
+     - Stop speaking immediately when the user starts talking.
+     - No tangents or lectures unless asked.
+     - Use the user’s rule names and parameters.
+     - When recommending entries, state the condition and risk anchor (e.g., "above VWAP + 0.05; risk prev. low").
+     - Obey risk guardrails, decisiveness, jargon, and tone from coach_profile.
+   `;
+
+4) routes/voiceToken.ts
+   - POST /api/voice/token -> { token } using signVoiceToken(userId from session/mock).
+   - For now, mock userId = "demo-user" unless auth is already present.
+
+CLIENT IMPLEMENTATION (apps/client/src)
+
+5) voice/VAD.ts
+   - WebAudio-based energy gate (RMS threshold with ~250ms hold).
+   - Events: "start" when speaking begins, "stop" on silence.
+
+6) voice/VoiceClient.ts
+   - Connect to /ws/realtime with token ?t=.
+   - Send audio input frames (20–40ms PCM16) to server.
+   - Maintain a playback queue for TTS audio from the model.
+   - On VAD "start": 
+       * stop playback immediately (clear queue and halt audio output)
+       * send {type:"response.cancel"} to server
+   - Exponential backoff reconnect with jitter; on reconnect, resume state.
+
+7) features/coach/CoachBubble.tsx
+   - Power button toggles connect/disconnect.
+   - Mic button toggles capture.
+   - Display tiny indicators: listening / thinking / speaking, and last RTT ms.
+   - Keyboard shortcuts: T (talk), Esc (stop).
+
+SECURITY & CONFIG
+
+8) Security wiring
+   - Ensure CORS/helmet already set from earlier prompt.
+   - Add ORIGIN allowlist check on WS upgrade using APP_ORIGIN and ADMIN_ORIGIN envs.
+   - Rate limit: max 3 concurrent voice WS per userId.
+
+TESTS (apps/server/tests)
+
+9) voiceProxy.test.ts
+   - Asserts FIRST FRAME to upstream is session.update before any client frame is forwarded.
+   - Asserts response.cancel is forwarded and playback is cancelled within 100ms (mock timer).
+   - Asserts invalid origin or invalid token rejects upgrade with 401/403.
+   - Asserts >3 concurrent connections for a user returns 429.
+
+DOCS
+
+10) README update
+   - Add "Voice Path" with diagram: client (mic/VAD) <-> /ws/realtime <-> OpenAI Realtime.
+   - Example curl to fetch a token: POST /api/voice/token.
+   - Notes on env requirements and recommended values.
+
+Ensure TypeScript strict mode passes across server and client. Keep commits small and descriptive.

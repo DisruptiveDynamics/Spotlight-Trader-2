@@ -2,6 +2,7 @@
   "name": "spotlight-trader",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "Real-time trading coach with voice AI, market data streaming, and rule-based alerts",
   "engines": {
     "node": ">=20.0.0",

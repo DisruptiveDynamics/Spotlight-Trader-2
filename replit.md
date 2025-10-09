@@ -11,6 +11,7 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### October 9, 2025 - Market Data Pipeline Complete
+
 - Implemented complete deterministic market data pipeline with lossless resume capability
 - **Event Bus**: TypeScript-safe EventEmitter wrapper with typed events (`tick:symbol`, `microbar:symbol`, `bar:new:symbol:1m`)
 - **Polygon WebSocket**: Reconnection with exponential backoff (1s→32s), heartbeat monitoring, subscription management, tick normalization
@@ -53,12 +54,14 @@ The market data flow follows a **deterministic, lossless architecture**:
 ### Communication Protocols
 
 **Server-Sent Events (SSE)** for market data (`/stream/market`):
+
 - Streams finalized 1-minute bars and microbars per subscribed symbol
 - Supports lossless resume via `sinceSeq` query parameter
 - Emits trading alerts from the rules engine when conditions trigger
 - Choice rationale: SSE provides automatic reconnection, event IDs for resume, and lower overhead than WebSocket for unidirectional streaming
 
 **WebSocket** for voice coach (`/ws/realtime`):
+
 - Proxies bidirectional audio between browser and OpenAI Realtime API
 - Implements instant interrupt capability via `response.cancel` commands
 - Uses server-side Voice Activity Detection (VAD) from OpenAI
@@ -67,16 +70,19 @@ The market data flow follows a **deterministic, lossless architecture**:
 ### Data Storage Strategy
 
 **Neon PostgreSQL** with **Drizzle ORM**:
+
 - Schema includes versioned trading rules, user customizations, signals with explanations, and journal entries
 - pgvector extension planned for semantic memory in coach's "brain"
 - Choice rationale: Neon provides serverless Postgres with connection pooling, automatic scaling, and branch-based workflows ideal for development
 
 **Redis (Upstash)** planned for:
+
 - Session management
 - Rate limiting
 - Distributed ring buffer persistence (optional)
 
 **In-Memory Structures**:
+
 - Ring buffer for hot market data (last 5,000 bars per symbol)
 - Bar builder state (current bar accumulation, microbars)
 - Choice rationale: Sub-millisecond latency for tick processing; persistence via periodic snapshots to Redis if needed
@@ -92,12 +98,14 @@ The market data flow follows a **deterministic, lossless architecture**:
 ### Frontend Architecture
 
 **React 18 with TypeScript**:
+
 - Component structure: Chart view, Coach bubble (talk/stop controls), Settings panel, Rules browser, Journal interface
 - **Lightweight Charts** library for financial charting with real-time updates
 - State management: React hooks (no Redux/Zustand initially; add if complexity grows)
 - SSE client reconnects automatically and requests backfill via `sinceSeq` on resume
 
 **Build System**:
+
 - Vite for fast HMR and optimized production builds
 - Tailwind CSS for utility-first styling
 - Path aliases (`@client/*`, `@shared/*`) for clean imports
@@ -116,12 +124,14 @@ The market data flow follows a **deterministic, lossless architecture**:
 ### Third-Party APIs
 
 **Polygon.io**:
+
 - WebSocket for real-time level-1 trades and quotes
 - REST API for historical bar backfill
 - Rate limits: WebSocket unlimited on paid plans; REST varies by tier
 - Failover: Delayed data available on `delayed.polygon.io` for development
 
 **OpenAI Realtime API**:
+
 - WebSocket-based voice interface with streaming audio
 - Server-side VAD for turn detection
 - Function calling for coach actions (future: placing orders, querying rules)
@@ -130,11 +140,13 @@ The market data flow follows a **deterministic, lossless architecture**:
 ### Infrastructure Services
 
 **Neon (PostgreSQL)**:
+
 - Serverless Postgres with automatic scaling
 - Connection pooling via `@neondatabase/serverless` driver
 - Branch-based databases for preview deployments
 
 **Upstash (Redis)** (optional):
+
 - Serverless Redis for sessions and caching
 - Global replication for low-latency access
 - Alternative: Render Redis or self-hosted instance
@@ -142,21 +154,25 @@ The market data flow follows a **deterministic, lossless architecture**:
 ### Key Libraries
 
 **Data Processing**:
+
 - `@polygon.io/client-js`: Official SDK for Polygon API
 - `drizzle-orm`: Type-safe ORM with zero runtime overhead
 - `zod`: Runtime schema validation for environment and API data
 
 **Communication**:
+
 - `ws`: WebSocket server implementation
 - `express`: HTTP server and routing
 - Native Fetch API for REST calls (Node 20+)
 
 **Frontend**:
+
 - `react` + `react-dom`: UI framework
 - `lightweight-charts`: Financial charting library
 - `tailwindcss`: Utility-first CSS framework
 
 **Development**:
+
 - `tsx`: Fast TypeScript execution for dev server
 - `vite`: Frontend build tool
 - `vitest`: Unit testing framework (Vite-native)

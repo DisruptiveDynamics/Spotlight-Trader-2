@@ -47,7 +47,7 @@ export function initializeMarketPipeline(app: Express) {
 
   app.get('/ready', (_req, res) => {
     const isReady = true;
-    
+
     if (isReady) {
       res.json({ status: 'ready', timestamp: Date.now() });
     } else {

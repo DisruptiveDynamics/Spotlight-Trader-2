@@ -2,6 +2,8 @@ dist
 node_modules
 .next
 .turbo
+.cache
+.local
 coverage
 *.log
 .DS_Store

@@ -21,7 +21,7 @@ export class RingBuffer {
     }
 
     const buffer = this.buffers.get(symbol)!;
-    
+
     const cachedBars: CachedBar[] = bars.map((bar) => ({
       seq: bar.seq,
       bar_start: bar.bar_start,

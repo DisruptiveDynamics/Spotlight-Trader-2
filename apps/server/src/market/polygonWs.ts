@@ -15,9 +15,8 @@ export class PolygonWebSocket {
 
   async connect() {
     try {
-      const wsUrl = env.NODE_ENV === 'production' 
-        ? 'wss://socket.polygon.io' 
-        : 'wss://delayed.polygon.io';
+      const wsUrl =
+        env.NODE_ENV === 'production' ? 'wss://socket.polygon.io' : 'wss://delayed.polygon.io';
 
       this.ws = websocketClient(env.POLYGON_API_KEY, wsUrl).stocks();
 
@@ -109,10 +108,7 @@ export class PolygonWebSocket {
       return;
     }
 
-    const backoff = Math.min(
-      this.baseBackoffMs * Math.pow(2, this.reconnectAttempts),
-      30000
-    );
+    const backoff = Math.min(this.baseBackoffMs * Math.pow(2, this.reconnectAttempts), 30000);
     this.reconnectAttempts++;
 
     console.log(`Reconnecting in ${backoff}ms (attempt ${this.reconnectAttempts})`);

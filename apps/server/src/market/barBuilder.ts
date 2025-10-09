@@ -56,10 +56,10 @@ export class BarBuilder {
     state.lastTickTs = tick.ts;
 
     const tickMinute = Math.floor(tick.ts / 60000) * 60000;
-    
+
     if (tick.ts >= state.bar_end) {
       this.finalizeBar(symbol, state);
-      
+
       state.bar_start = tickMinute;
       state.bar_end = tickMinute + 60000;
       state.currentBar = null;

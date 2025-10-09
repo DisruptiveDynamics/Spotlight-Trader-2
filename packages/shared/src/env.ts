@@ -16,12 +16,12 @@ export type Env = z.infer<typeof envSchema>;
 
 export function validateEnv(env: Record<string, string | undefined>): Env {
   const result = envSchema.safeParse(env);
-  
+
   if (!result.success) {
     console.error('❌ Environment validation failed:');
     console.error(result.error.format());
     throw new Error('Invalid environment variables');
   }
-  
+
   return result.data;
 }

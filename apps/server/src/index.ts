@@ -1,5 +1,6 @@
 import express from 'express';
 import { createServer } from 'http';
+import cookieParser from 'cookie-parser';
 import { validateEnv } from '@shared/env';
 import { setupSecurity } from './config/security';
 import { initializeMarketPipeline } from './wiring';
@@ -13,6 +14,11 @@ import { flagsRouter } from './routes/flags';
 import { feedbackRouter } from './routes/feedback';
 import { backtestRouter } from './routes/backtest';
 import { signalsRouter } from './routes/signals';
+import authRouter from './routes/auth';
+import exportRouter from './routes/export';
+import importRouter from './routes/import';
+import { requireUser } from './middleware/requireUser';
+import { rateLimit } from './middleware/rateLimit';
 import { startEodScheduler } from './journals/eod';
 import { initializeLearningLoop } from './learning/loop';
 
@@ -21,24 +27,31 @@ const app = express();
 const server = createServer(app);
 
 app.use(express.json());
+app.use(cookieParser());
 setupSecurity(app);
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
 
+app.use('/api/auth', authRouter);
+app.use('/auth', authRouter);
+
+app.use('/api/flags', flagsRouter);
+
 initializeMarketPipeline(app);
 setupVoiceTokenRoute(app);
 setupVoiceProxy(app, server);
 
-app.use('/api', rulesRouter);
-app.use('/api/journals', journalsRouter);
-app.use('/api/memory', memoryRouter);
-app.use('/api/insight', insightRouter);
-app.use('/api/flags', flagsRouter);
-app.use('/api/feedback', feedbackRouter);
-app.use('/api/backtest', backtestRouter);
-app.use('/api/signals', signalsRouter);
+app.use('/api', requireUser, rulesRouter);
+app.use('/api/journals', requireUser, journalsRouter);
+app.use('/api/memory', requireUser, rateLimit(), memoryRouter);
+app.use('/api/insight', requireUser, rateLimit(), insightRouter);
+app.use('/api/feedback', requireUser, feedbackRouter);
+app.use('/api/backtest', requireUser, rateLimit(), backtestRouter);
+app.use('/api/signals', requireUser, signalsRouter);
+app.use('/api/export', requireUser, exportRouter);
+app.use('/api/import', requireUser, importRouter);
 
 initializeLearningLoop();
 startEodScheduler();

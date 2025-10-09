@@ -10,6 +10,10 @@ export const envSchema = z.object({
   REDIS_URL: z.string().url().optional(),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   SESSION_SECRET: z.string().min(32),
+  AUTH_JWT_SECRET: z.string().min(32),
+  SESSION_TTL: z.string().default('604800'), // 7 days in seconds
+  MAGIC_TTL: z.string().default('900'), // 15 minutes in seconds
+  RESEND_API_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

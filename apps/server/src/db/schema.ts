@@ -83,7 +83,10 @@ export const coachMemories = pgTable('coach_memories', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   embedding: vector('embedding', { dimensions: 1536 }),
 }, (table) => ({
-  embeddingIdx: index('embedding_idx').using('hnsw', table.embedding.op('vector_cosine_ops')),
+  embeddingIdx: index('embedding_hnsw_idx').using(
+    'hnsw',
+    table.embedding.op('vector_cosine_ops')
+  ),
 }));
 
 export const auditLedger = pgTable('audit_ledger', {

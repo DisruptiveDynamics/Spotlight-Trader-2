@@ -1,0 +1,30 @@
+{
+  "name": "spotlight-trader",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Real-time trading coach with voice AI, market data streaming, and rule-based alerts",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently -n client,server \"pnpm --filter @spotlight/client dev\" \"pnpm --filter @spotlight/server dev\"",
+    "build": "pnpm --filter @spotlight/shared build && pnpm --filter @spotlight/config build && pnpm --filter @spotlight/client build && pnpm --filter @spotlight/server build",
+    "check": "pnpm -r check",
+    "lint": "pnpm -r lint",
+    "lint:fix": "pnpm -r lint:fix",
+    "fmt": "prettier --write .",
+    "fmt:check": "prettier --check .",
+    "test": "vitest",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "concurrently": "^8.2.2",
+    "husky": "^9.0.10",
+    "lint-staged": "^15.2.0",
+    "prettier": "^3.2.4",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
+  }
+}

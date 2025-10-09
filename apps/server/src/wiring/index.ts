@@ -5,11 +5,18 @@ import { sseMarketStream } from '@server/stream/sse';
 import { getHistory } from '@server/history/service';
 import { eventBus } from '@server/market/eventBus';
 import { ringBuffer } from '@server/cache/ring';
+import { rulesEngineService } from '@server/rules/service';
+import { signalsService } from '@server/signals/service';
+import { coachAdvisor } from '@server/coach/advisor';
 
 const DEFAULT_FAVORITES = ['SPY', 'QQQ'];
 
 export function initializeMarketPipeline(app: Express) {
   polygonWs.connect();
+
+  rulesEngineService.start();
+  signalsService.start();
+  coachAdvisor.start();
 
   for (const symbol of DEFAULT_FAVORITES) {
     polygonWs.subscribe(symbol);
@@ -28,13 +35,21 @@ export function initializeMarketPipeline(app: Express) {
         return res.status(400).json({ error: 'symbol is required' });
       }
 
-      const bars = await getHistory({
+      const query: { symbol: string; timeframe: '1m'; limit: number; before?: number; sinceSeq?: number } = {
         symbol: symbol.toUpperCase(),
         timeframe: timeframe as '1m',
         limit: limit ? parseInt(limit as string, 10) : 1000,
-        before: before ? parseInt(before as string, 10) : undefined,
-        sinceSeq: sinceSeq ? parseInt(sinceSeq as string, 10) : undefined,
-      });
+      };
+
+      if (before) {
+        query.before = parseInt(before as string, 10);
+      }
+
+      if (sinceSeq) {
+        query.sinceSeq = parseInt(sinceSeq as string, 10);
+      }
+
+      const bars = await getHistory(query);
 
       res.json(bars);
     } catch (err) {
@@ -57,4 +72,7 @@ export function initializeMarketPipeline(app: Express) {
 
   console.log('✅ Market pipeline initialized');
   console.log(`   Subscribed symbols: ${DEFAULT_FAVORITES.join(', ')}`);
+  console.log('✅ Rules engine started');
+  console.log('✅ Signals service started');
+  console.log('✅ Coach advisor started');
 }

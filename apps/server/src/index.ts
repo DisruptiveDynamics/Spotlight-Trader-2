@@ -5,6 +5,7 @@ import { setupSecurity } from './config/security';
 import { initializeMarketPipeline } from './wiring';
 import { setupVoiceProxy } from './realtime/voiceProxy';
 import { setupVoiceTokenRoute } from './routes/voiceToken';
+import { rulesRouter } from './routes/rules';
 
 const env = validateEnv(process.env);
 const app = express();
@@ -20,6 +21,8 @@ app.get('/health', (_req, res) => {
 initializeMarketPipeline(app);
 setupVoiceTokenRoute(app);
 setupVoiceProxy(app, server);
+
+app.use('/api', rulesRouter);
 
 const PORT = 4000;
 

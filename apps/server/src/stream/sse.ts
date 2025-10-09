@@ -41,6 +41,22 @@ export async function sseMarketStream(req: Request, res: Response) {
 
   const listeners: Array<{ event: string; handler: (data: any) => void }> = [];
 
+  const alertHandler = (signal: any) => {
+    res.write(`event: alert\n`);
+    res.write(
+      `data: ${JSON.stringify({
+        id: signal.id,
+        symbol: signal.symbol,
+        direction: signal.direction,
+        confidence: signal.confidence,
+        timestamp: signal.ts,
+      })}\n\n`
+    );
+  };
+
+  eventBus.on('signal:new', alertHandler);
+  listeners.push({ event: 'signal:new', handler: alertHandler });
+
   for (const symbol of symbols) {
     const microbarHandler = (data: any) => {
       res.write(`event: microbar\n`);

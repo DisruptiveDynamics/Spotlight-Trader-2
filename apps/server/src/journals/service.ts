@@ -86,7 +86,7 @@ export async function updateJournal(
   const markdown =
     typeof textOrJson === 'string' ? textOrJson : JSON.stringify(textOrJson, null, 2);
 
-  const result = await db
+  await db
     .update(journals)
     .set({ markdown })
     .where(and(eq(journals.id, journalId), eq(journals.userId, userId)));

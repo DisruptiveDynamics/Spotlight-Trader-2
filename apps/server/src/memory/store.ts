@@ -106,7 +106,7 @@ export async function retrieveTopK(
   query: string,
   k = 4,
   decayHalfLifeDays = 10,
-  diversityPenalty = 0.1
+  _diversityPenalty = 0.1
 ): Promise<MemoryWithScore[]> {
   const queryEmbedding = await embedText(query);
   const embeddingLiteral = `'[${queryEmbedding.join(',')}]'::vector`;

@@ -3,7 +3,6 @@ import { ruleRegistry } from '../rules/registry';
 import { ruleEvaluator } from '../rules/evaluator';
 import type { Rule, RuleContext } from '@shared/types/rules';
 import { ringBuffer } from '../cache/ring';
-import type { Bar } from '../market/eventBus';
 
 export const rulesRouter: Router = Router();
 

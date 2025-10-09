@@ -22,7 +22,7 @@ export class PolygonWebSocket {
 
       if (this.ws) {
         const ws = this.ws as any;
-        
+
         ws.onopen = () => {
           console.log('✅ Polygon WebSocket connected');
           this.isConnected = true;

@@ -21,15 +21,10 @@ export class RuleRegistry {
         doc: userRuleVersions.doc,
       })
       .from(userRules)
-      .leftJoin(
-        userRuleVersions,
-        eq(userRules.id, userRuleVersions.userRuleId)
-      )
+      .leftJoin(userRuleVersions, eq(userRules.id, userRuleVersions.userRuleId))
       .where(eq(userRules.userId, userId));
 
-    const activeRules: Rule[] = userRulesList
-      .filter((r) => r.doc)
-      .map((r) => r.doc as Rule);
+    const activeRules: Rule[] = userRulesList.filter((r) => r.doc).map((r) => r.doc as Rule);
 
     this.activeRulesCache.set(userId, activeRules);
     return activeRules;
@@ -124,10 +119,7 @@ export class RuleRegistry {
         doc: updatedRule as unknown as Record<string, unknown>,
       });
 
-      await tx
-        .update(rules)
-        .set({ latestVersion: newVersionId })
-        .where(eq(rules.id, ruleId));
+      await tx.update(rules).set({ latestVersion: newVersionId }).where(eq(rules.id, ruleId));
 
       await tx.insert(userRuleVersions).values({
         id: userVersionId,

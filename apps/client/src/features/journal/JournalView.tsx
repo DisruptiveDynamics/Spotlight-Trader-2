@@ -53,7 +53,7 @@ export function JournalView() {
   const handleSaveNote = async () => {
     try {
       const content = isTradeMode ? tradeData : noteText;
-      
+
       await fetch('/api/journals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -196,7 +196,7 @@ export function JournalView() {
             <h3 className="text-lg font-semibold mb-4 text-white">
               {isTradeMode ? 'Add Trade' : 'Add Note'}
             </h3>
-            
+
             <div className="mb-4">
               <button
                 onClick={() => setIsTradeMode(!isTradeMode)}
@@ -210,9 +210,7 @@ export function JournalView() {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">
-                      Symbol
-                    </label>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Symbol</label>
                     <input
                       type="text"
                       value={tradeData.symbol || ''}

@@ -96,10 +96,7 @@ export class CoachAdvisor {
     return `A trading rule triggered a ${signal.direction.toUpperCase()} signal on ${signal.symbol} with ${(signal.confidence * 100).toFixed(0)}% confidence. Context: ${JSON.stringify(signal.ctx)}. Explain this setup to a trader.`;
   }
 
-  private async saveExplanation(
-    signalId: string,
-    explanation: SignalExplanation
-  ): Promise<void> {
+  private async saveExplanation(signalId: string, explanation: SignalExplanation): Promise<void> {
     await db.insert(signalExplanations).values({
       id: explanation.id,
       signalId,

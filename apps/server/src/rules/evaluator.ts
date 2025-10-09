@@ -1,18 +1,26 @@
 import { create, all, type ConfigOptions, type EvalFunction } from 'mathjs';
 import type { Rule, EvaluatedRule, RuleContext } from '@shared/types/rules';
 
-const ALLOWED_FUNCTIONS = new Set([
-  'abs',
-  'max',
-  'min',
-  'mean',
-  'sqrt',
-  'pow',
-  'log',
-  'exp',
-]);
+const ALLOWED_FUNCTIONS = new Set(['abs', 'max', 'min', 'mean', 'sqrt', 'pow', 'log', 'exp']);
 
-const ALLOWED_OPERATORS = new Set(['+', '-', '*', '/', '>', '<', '>=', '<=', '==', '!=', '&&', '||', '!', '(', ')', ',']);
+const ALLOWED_OPERATORS = new Set([
+  '+',
+  '-',
+  '*',
+  '/',
+  '>',
+  '<',
+  '>=',
+  '<=',
+  '==',
+  '!=',
+  '&&',
+  '||',
+  '!',
+  '(',
+  ')',
+  ',',
+]);
 
 const ALLOWED_SCOPE_VARS = new Set([
   'open',
@@ -44,18 +52,18 @@ const math = create(all ?? {}, mathConfig);
 function validateExpression(expr: string, allowedParams: Set<string> = new Set()): void {
   const tokenRegex = /[a-zA-Z_]\w*|\d+\.?\d*|>=|<=|==|!=|&&|\|\||[+\-*/><!(),]/g;
   const tokens = expr.match(tokenRegex) || [];
-  
+
   for (const token of tokens) {
     if (/^\d+\.?\d*$/.test(token)) continue;
     if (ALLOWED_OPERATORS.has(token)) continue;
     if (ALLOWED_FUNCTIONS.has(token)) continue;
     if (ALLOWED_SCOPE_VARS.has(token)) continue;
     if (allowedParams.has(token)) continue;
-    
+
     if (/^[a-zA-Z_]\w*$/.test(token)) {
       throw new Error(`Disallowed identifier in expression: ${token}`);
     }
-    
+
     throw new Error(`Invalid token in expression: ${token}`);
   }
 }
@@ -157,10 +165,7 @@ export class RuleEvaluator {
     return 0.5;
   }
 
-  private evaluateSimpleExpression(
-    expr: string,
-    context: RuleContext
-  ): number | null {
+  private evaluateSimpleExpression(expr: string, context: RuleContext): number | null {
     if (context[expr] !== undefined) {
       return context[expr] ?? null;
     }
@@ -173,10 +178,7 @@ export class RuleEvaluator {
     return null;
   }
 
-  private determineSignal(
-    rule: Rule,
-    context: RuleContext
-  ): 'long' | 'short' | 'flat' | undefined {
+  private determineSignal(rule: Rule, context: RuleContext): 'long' | 'short' | 'flat' | undefined {
     const expr = rule.expression.toLowerCase();
 
     if (expr.includes('long') || (expr.includes('>') && context.close)) {

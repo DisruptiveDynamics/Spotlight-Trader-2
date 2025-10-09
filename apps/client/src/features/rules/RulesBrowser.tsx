@@ -24,9 +24,7 @@ export function RulesBrowser() {
   const runDryRun = async (rule: Rule) => {
     setIsLoading(true);
     try {
-      const response = await fetch(
-        `/api/rules/dryrun?id=${rule.id}&symbol=SPY&userId=demo-user`
-      );
+      const response = await fetch(`/api/rules/dryrun?id=${rule.id}&symbol=SPY&userId=demo-user`);
       const data = await response.json();
       setDryRunResults(data.evaluations || []);
       setSelectedRule(rule);
@@ -114,9 +112,7 @@ export function RulesBrowser() {
                     >
                       <div className="flex justify-between">
                         <span className="font-mono">Seq {result.barSeq}</span>
-                        <span
-                          className={result.passed ? 'text-green-600' : 'text-gray-400'}
-                        >
+                        <span className={result.passed ? 'text-green-600' : 'text-gray-400'}>
                           {result.passed ? '✓ PASS' : '✗ FAIL'}
                         </span>
                       </div>

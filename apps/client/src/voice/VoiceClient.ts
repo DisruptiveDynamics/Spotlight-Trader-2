@@ -175,7 +175,11 @@ export class VoiceClient {
     const pcm16 = this.base64ToArrayBuffer(deltaBase64);
     const float32 = this.pcm16ToFloat32(new Int16Array(pcm16));
 
-    const audioBuffer = this.audioContext.createBuffer(1, float32.length, this.audioContext.sampleRate);
+    const audioBuffer = this.audioContext.createBuffer(
+      1,
+      float32.length,
+      this.audioContext.sampleRate
+    );
     audioBuffer.getChannelData(0).set(float32);
 
     this.playbackQueue.push(audioBuffer);

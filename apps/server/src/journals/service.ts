@@ -10,9 +10,8 @@ export async function addJournalEntry(
   textOrJson: string | object
 ): Promise<string> {
   const id = nanoid();
-  const markdown = typeof textOrJson === 'string' 
-    ? textOrJson 
-    : JSON.stringify(textOrJson, null, 2);
+  const markdown =
+    typeof textOrJson === 'string' ? textOrJson : JSON.stringify(textOrJson, null, 2);
 
   await db.insert(journals).values({
     id,
@@ -24,10 +23,7 @@ export async function addJournalEntry(
   return id;
 }
 
-export async function linkJournalToSignal(
-  journalId: string,
-  signalId: string
-): Promise<string> {
+export async function linkJournalToSignal(journalId: string, signalId: string): Promise<string> {
   const id = nanoid();
 
   await db.insert(journalLinks).values({
@@ -45,18 +41,14 @@ export async function listJournals(
   options?: { date?: string }
 ): Promise<JournalEntry[]> {
   const conditions = [eq(journals.userId, userId)];
-  
+
   if (options?.date) {
     conditions.push(eq(journals.date, options.date));
   }
 
   const whereClause = conditions.length === 1 ? conditions[0] : and(...conditions);
 
-  const results = await db
-    .select()
-    .from(journals)
-    .where(whereClause)
-    .orderBy(journals.date);
+  const results = await db.select().from(journals).where(whereClause).orderBy(journals.date);
 
   return results.map((row) => ({
     id: row.id,
@@ -66,10 +58,7 @@ export async function listJournals(
   }));
 }
 
-export async function getJournal(
-  userId: string,
-  journalId: string
-): Promise<JournalEntry | null> {
+export async function getJournal(userId: string, journalId: string): Promise<JournalEntry | null> {
   const results = await db
     .select()
     .from(journals)
@@ -94,9 +83,8 @@ export async function updateJournal(
   journalId: string,
   textOrJson: string | object
 ): Promise<boolean> {
-  const markdown = typeof textOrJson === 'string' 
-    ? textOrJson 
-    : JSON.stringify(textOrJson, null, 2);
+  const markdown =
+    typeof textOrJson === 'string' ? textOrJson : JSON.stringify(textOrJson, null, 2);
 
   const result = await db
     .update(journals)
@@ -106,24 +94,16 @@ export async function updateJournal(
   return true;
 }
 
-export async function deleteJournal(
-  userId: string,
-  journalId: string
-): Promise<boolean> {
+export async function deleteJournal(userId: string, journalId: string): Promise<boolean> {
   await db.delete(journalLinks).where(eq(journalLinks.journalId, journalId));
-  
-  await db
-    .delete(journals)
-    .where(and(eq(journals.id, journalId), eq(journals.userId, userId)));
+
+  await db.delete(journals).where(and(eq(journals.id, journalId), eq(journals.userId, userId)));
 
   return true;
 }
 
 export async function getJournalLinks(journalId: string): Promise<JournalLink[]> {
-  const results = await db
-    .select()
-    .from(journalLinks)
-    .where(eq(journalLinks.journalId, journalId));
+  const results = await db.select().from(journalLinks).where(eq(journalLinks.journalId, journalId));
 
   return results.map((row) => ({
     id: row.id,

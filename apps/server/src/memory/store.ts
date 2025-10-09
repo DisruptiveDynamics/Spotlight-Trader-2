@@ -85,10 +85,7 @@ export async function listMemories(
   }));
 }
 
-export async function deleteMemory(
-  userId: string,
-  memoryId: string
-): Promise<boolean> {
+export async function deleteMemory(userId: string, memoryId: string): Promise<boolean> {
   await db
     .delete(coachMemories)
     .where(and(eq(coachMemories.id, memoryId), eq(coachMemories.userId, userId)));

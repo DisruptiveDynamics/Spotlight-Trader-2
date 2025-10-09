@@ -63,12 +63,15 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
 
     userConnections.add(clientWs);
 
-    const upstreamWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
-      headers: {
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-        'OpenAI-Beta': 'realtime=v1',
-      },
-    });
+    const upstreamWs = new WebSocket(
+      'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01',
+      {
+        headers: {
+          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+          'OpenAI-Beta': 'realtime=v1',
+        },
+      }
+    );
 
     const clientBuffer: string[] = [];
     let upstreamReady = false;

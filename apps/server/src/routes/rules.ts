@@ -38,7 +38,7 @@ rulesRouter.post('/rules', async (req: Request, res: Response) => {
 rulesRouter.put('/rules/:ruleId', async (req: Request, res: Response) => {
   try {
     const { ruleId } = req.params;
-    
+
     if (!ruleId) {
       return res.status(400).json({ error: 'Rule ID required' });
     }

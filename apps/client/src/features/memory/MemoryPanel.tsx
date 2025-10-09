@@ -41,7 +41,7 @@ export function MemoryPanel() {
       const params = new URLSearchParams();
       if (selectedKind !== 'all') params.append('kind', selectedKind);
       if (selectedTag) params.append('tag', selectedTag);
-      
+
       const queryString = params.toString();
       const response = await fetch(`/api/memory${queryString ? `?${queryString}` : ''}`);
       const data = await response.json();
@@ -190,9 +190,7 @@ export function MemoryPanel() {
           displayMemories.map((memory) => (
             <div key={memory.id} className="p-4 border border-gray-600 rounded-lg bg-gray-800">
               <div className="flex items-start justify-between mb-2">
-                <span
-                  className={`px-2 py-1 text-xs rounded ${getKindBadgeColor(memory.kind)}`}
-                >
+                <span className={`px-2 py-1 text-xs rounded ${getKindBadgeColor(memory.kind)}`}>
                   {memory.kind}
                 </span>
                 {'score' in memory && (
@@ -206,7 +204,10 @@ export function MemoryPanel() {
                 {memory.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1">
                     {memory.tags.map((tag, idx) => (
-                      <span key={idx} className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded">
+                      <span
+                        key={idx}
+                        className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded"
+                      >
                         {tag}
                       </span>
                     ))}

@@ -115,15 +115,9 @@ export function CoachBubble() {
             </span>
           </div>
 
-          {latencyMs !== null && (
-            <div className="text-xs text-gray-500">
-              RTT: {latencyMs}ms
-            </div>
-          )}
+          {latencyMs !== null && <div className="text-xs text-gray-500">RTT: {latencyMs}ms</div>}
 
-          <div className="text-xs text-gray-500">
-            {connectionState}
-          </div>
+          <div className="text-xs text-gray-500">{connectionState}</div>
         </div>
 
         <div className="flex gap-2 ml-4">
@@ -137,12 +131,7 @@ export function CoachBubble() {
             } disabled:opacity-50 disabled:cursor-not-allowed`}
             title="Toggle mic (T)"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -161,12 +150,7 @@ export function CoachBubble() {
             }`}
             title="Power (Esc to disconnect)"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"

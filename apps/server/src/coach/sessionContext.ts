@@ -52,13 +52,7 @@ export async function buildSessionContext(userId: string): Promise<string> {
         }
       : defaultProfile;
 
-  const memories = await retrieveTopK(
-    userId,
-    'what should I keep in mind today?',
-    4,
-    10,
-    0.1
-  );
+  const memories = await retrieveTopK(userId, 'what should I keep in mind today?', 4, 10, 0.1);
 
   const lines: string[] = [];
   lines.push('**Your Profile:**');

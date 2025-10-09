@@ -35,7 +35,13 @@ export function initializeMarketPipeline(app: Express) {
         return res.status(400).json({ error: 'symbol is required' });
       }
 
-      const query: { symbol: string; timeframe: '1m'; limit: number; before?: number; sinceSeq?: number } = {
+      const query: {
+        symbol: string;
+        timeframe: '1m';
+        limit: number;
+        before?: number;
+        sinceSeq?: number;
+      } = {
         symbol: symbol.toUpperCase(),
         timeframe: timeframe as '1m',
         limit: limit ? parseInt(limit as string, 10) : 1000,

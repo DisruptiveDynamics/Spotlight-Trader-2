@@ -35,13 +35,44 @@ Security features include **Helmet.js**, strict **CORS** allowlisting, short-liv
 
 ### Frontend Architecture
 
-Built with **React 18 and TypeScript**, using **Lightweight Charts** for financial charting and **Tailwind CSS** for styling. **Vite** handles bundling with API proxy configuration for `/api`, `/stream`, and `/ws` routes. The chart component features:
+Built with **React 18 and TypeScript**, using **Lightweight Charts** for financial charting, **Zustand** for state management, and **Tailwind CSS** for styling. **Vite** handles bundling with API proxy configuration for `/api`, `/stream`, and `/ws` routes.
 
-- **ChartView Component**: Lazy-loaded lightweight-charts with dark theme, displaying real-time 1m SPY candles
-- **Market Stream Client**: SSE connection (`marketStream.ts`) for lossless market data streaming with `sinceSeq` resume capability
-- **Microbar RAF Coalescing**: Smooth wick updates via `requestAnimationFrame` for sub-frame precision without overwhelming the UI
-- **useLastSeq Hook**: localStorage-backed sequence tracking using refs to prevent effect teardown loops
-- **Mock Data Fallback**: History service generates realistic candlestick data when Polygon API is unavailable
+#### Professional Charting System (Thinkorswim-level)
+
+**State Management** (`chartState.ts`):
+- Zustand store with localStorage persistence for favorites, active symbol/timeframe, layout, chart style, and overlays
+- Supports 1x1, 2x1, 2x2 grid layouts with independent panes
+- Overlay configuration: EMA periods, Bollinger Bands, VWAP (session/anchored), Volume SMA, shared crosshair
+
+**Shared Indicators Library** (`packages/shared/src/indicators.ts`):
+- Pure calculation functions: `emaBatch`, `bollingerBatch`, `vwapSessionBatch`, `vwapAnchoredBatch`, `volumeSmaBatch`
+- No future leakage, documented warmup periods
+- Session-aware VWAP with timezone handling via dayjs
+
+**Toolbar Component** (TOS-style):
+- Symbol input with typeahead, timeframe buttons (1m/5m/15m/1h/D)
+- Studies dropdown: EMA multi-period chips, Bollinger settings, VWAP mode selector, shared crosshair toggle
+- Layout controls (1x1/2x1/2x2), chart style (candles/bars/line)
+- Status pill: LIVE/PAUSED/RECONNECTING
+
+**Pane Component**:
+- Lightweight-charts integration with candlestick/line/bar series
+- Volume subpane: histogram with color-coded bars + SMA overlay
+- Overlays: EMA lines, Bollinger Bands (mid/upper/lower), VWAP (solid/dashed), volume average
+- OHLC tooltip on crosshair hover
+- Right-click context menu for anchored VWAP
+- Session shading utilities for premarket/after-hours (planned)
+
+**MultiChart Grid**:
+- CSS grid layout with responsive panes
+- Focus ring for active pane (keyboard navigation ready)
+- Independent symbol/timeframe per pane (extensible)
+
+**Data Pipeline**:
+- `fetchHistory` utility with session boundary calculations (dayjs-timezone)
+- SSE market streaming with `sinceSeq` resume capability
+- Microbar RAF coalescing for smooth updates
+- Mock data fallback when Polygon API unavailable
 
 ### Rules Engine Architecture
 

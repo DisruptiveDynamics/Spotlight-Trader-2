@@ -58,6 +58,7 @@ export async function listMemories(
     conditions.push(sql`${options.tag} = ANY(${coachMemories.tags})`);
   }
 
+  const whereClause = conditions.length === 1 ? conditions[0] : and(...conditions);
   const limit = options?.limit ?? 50;
 
   const results = await db
@@ -70,7 +71,7 @@ export async function listMemories(
       createdAt: coachMemories.createdAt,
     })
     .from(coachMemories)
-    .where(and(...conditions))
+    .where(whereClause)
     .orderBy(sql`${coachMemories.createdAt} DESC`)
     .limit(limit);
 
@@ -82,6 +83,17 @@ export async function listMemories(
     tags: row.tags ?? [],
     createdAt: row.createdAt ?? new Date(),
   }));
+}
+
+export async function deleteMemory(
+  userId: string,
+  memoryId: string
+): Promise<boolean> {
+  await db
+    .delete(coachMemories)
+    .where(and(eq(coachMemories.id, memoryId), eq(coachMemories.userId, userId)));
+
+  return true;
 }
 
 function jaccardSimilarity(tags1: string[], tags2: string[]): number {

@@ -73,3 +73,86 @@ Enables strategy automation with AI explanations:
 -   **Communication**: `ws` (WebSocket server), `express` (HTTP server), native Fetch API.
 -   **Frontend**: `react`, `react-dom`, `lightweight-charts`, `tailwindcss`.
 -   **Development**: `tsx`, `vite`, `vitest`, `concurrently`.
+-   **Journaling & Memory**: `nanoid` (ID generation), `node-cron` (EOD scheduler), pgvector extension for semantic similarity.
+
+## Journaling & Memory System
+
+### Journaling Architecture
+
+The journaling system provides structured trade tracking and end-of-day summaries:
+
+1.  **Journal Entries** (`journals/model.ts`, `journals/service.ts`):
+    -   Stores daily markdown entries with optional structured Trade objects
+    -   Trade structure includes: symbol, side (long/short), entry/exit prices, scales, P&L, regime (trend/range/news/illiquid), and tape metrics (volume Z-score, spread bp, uptick delta)
+    -   Full CRUD operations: create, read, update, delete
+    -   Links journals to signals for context
+
+2.  **End-of-Day Scheduler** (`journals/eod.ts`):
+    -   Runs automatically at 15:59:30 America/New_York via node-cron
+    -   Aggregates signals fired during the day
+    -   Generates markdown summary with:
+        *   Total signals fired count
+        *   Top 3 signals by expectancy (confidence × win rate)
+        *   Drift notes (e.g., low signal volume warnings)
+        *   Keep/Stop/Try bullets for strategy refinement
+    -   Creates journal_links for each signal
+
+3.  **API Endpoints** (`routes/journals.ts`):
+    -   `POST /api/journals` - Create journal entry (text or tradeJson)
+    -   `GET /api/journals` - List journals (with optional date filter)
+    -   `GET /api/journals/:id` - Get specific journal
+    -   `PUT /api/journals/:id` - Update journal
+    -   `DELETE /api/journals/:id` - Delete journal and links
+    -   `POST /api/journals/eod/preview` - Preview EOD summary without persisting
+
+### Coach Memory System (Pgvector)
+
+The memory system enables the coach to learn and recall across sessions:
+
+1.  **Memory Storage** (`memory/store.ts`, `memory/embed.ts`):
+    -   Three memory kinds: `playbook` (strategies), `glossary` (terminology), `postmortem` (lesson learned)
+    -   Each memory includes: text, tags, createdAt, and 1536-dimensional embedding
+    -   OpenAI embeddings API (`text-embedding-3-small`) with 2k character truncation
+    -   Stored in `coach_memories` table with pgvector HNSW index for fast similarity search
+
+2.  **Decay-Aware Retrieval**:
+    -   `retrieveTopK(userId, query, k=4, decayHalfLifeDays=10, diversityPenalty=0.1)`
+    -   Computes cosine similarity between query embedding and stored memories
+    -   Applies time decay: `score = cosineSimilarity × exp(-age/halfLife)`
+    -   Diversity filtering: Skips memories with Jaccard tag overlap >0.8 to avoid redundancy
+    -   Returns top-K memories with relevance scores
+
+3.  **Session Context Integration** (`coach/sessionContext.ts`):
+    -   `buildSessionContext(userId)` loads coach profile (tone, decisiveness, jargon) from `coach_profiles`
+    -   Retrieves top 4 relevant memories using query "what should I keep in mind today?"
+    -   Constructs compact context block (<1200 tokens) with profile + memory previews
+    -   `getInitialSessionUpdate(userId)` merges context into OpenAI Realtime API `session.update`
+    -   Wired into `voiceProxy.ts` so coach has personalized memory on every connection
+
+4.  **API Endpoints** (`routes/memory.ts`):
+    -   `POST /api/memory` - Save memory with kind, text, tags (auto-generates embedding)
+    -   `GET /api/memory` - List memories (filter by kind, tag, limit)
+    -   `GET /api/memory/search?q=<query>&k=<num>` - Semantic search with decay/diversity
+
+### Client Components
+
+1.  **JournalView** (`features/journal/JournalView.tsx`):
+    -   Daily list sidebar grouped by date
+    -   Markdown/JSON preview pane
+    -   "Journal it" modal for quick note or structured Trade entry
+    -   "Preview EOD" button to view EOD summary before it runs
+
+2.  **MemoryPanel** (`features/memory/MemoryPanel.tsx`):
+    -   Add memory item: kind selector + textarea + tags input
+    -   List recent memories with kind badges (playbook/glossary/postmortem)
+    -   Semantic search with relevance scores
+    -   Filter by kind (all/playbook/glossary/postmortem)
+
+### Design Decisions
+
+-   **Deterministic EOD Schedule**: Fixed 15:59:30 NY time ensures consistent end-of-day processing
+-   **Vector Similarity with Decay**: Recent memories weighted higher, preventing stale advice
+-   **Diversity Penalty**: Jaccard filtering (>0.8 overlap) avoids redundant similar memories
+-   **Token Budget**: Session context limited to 1200 tokens to preserve coach responsiveness
+-   **Strict Validation**: Zod schemas on all API endpoints prevent malformed data
+-   **Cascade Deletes**: Deleting journal removes journal_links automatically for data integrity

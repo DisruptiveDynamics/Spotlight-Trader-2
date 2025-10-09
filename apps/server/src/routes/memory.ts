@@ -1,6 +1,12 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { saveMemory, listMemories, retrieveTopK, type MemoryKind } from '../memory/store.js';
+import {
+  saveMemory,
+  listMemories,
+  retrieveTopK,
+  deleteMemory,
+  type MemoryKind,
+} from '../memory/store.js';
 
 const router: Router = Router();
 
@@ -74,6 +80,20 @@ router.get('/search', async (req, res) => {
       return res.status(400).json({ error: error.errors });
     }
     console.error('Failed to search memories:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  try {
+    const userId = 'demo-user';
+    const { id } = req.params;
+
+    await deleteMemory(userId, id);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to delete memory:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

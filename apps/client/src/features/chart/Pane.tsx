@@ -288,7 +288,13 @@ export function Pane({ paneId, className = '' }: PaneProps) {
 
     // Clear old overlay series
     overlaySeriesRef.current.forEach((series) => {
-      chartRef.current?.removeSeries(series);
+      if (series && chartRef.current) {
+        try {
+          chartRef.current.removeSeries(series);
+        } catch (e) {
+          console.warn('Failed to remove series:', e);
+        }
+      }
     });
     overlaySeriesRef.current.clear();
 

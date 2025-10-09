@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useExplainSignal } from './useExplainSignal';
+import { useInsightJournal } from './useInsightJournal';
 import type { InsightContext } from '@spotlight/shared';
 
 interface ExplainPanelProps {
@@ -11,13 +12,37 @@ interface ExplainPanelProps {
 export function ExplainPanel({ isOpen, onClose, context }: ExplainPanelProps) {
   const [question, setQuestion] = useState('');
   const { explain, response, isLoading, error } = useExplainSignal();
+  const { saveInsight } = useInsightJournal();
 
   const handleAsk = async () => {
     if (!question.trim() || !context) return;
     
     await explain(question, context);
+    
+    // Save to journal if response received
+    if (context) {
+      await saveInsight({
+        symbol: context.symbol,
+        timeframe: context.timeframe,
+        question,
+        response: '', // Will be filled by response
+      });
+    }
+    
     setQuestion('');
   };
+
+  // Save insights to journal when response is received
+  useEffect(() => {
+    if (response && context) {
+      saveInsight({
+        symbol: context.symbol,
+        timeframe: context.timeframe,
+        question: context.lastPrompt || 'Chart analysis',
+        response: response.text,
+      });
+    }
+  }, [response, context, saveInsight]);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

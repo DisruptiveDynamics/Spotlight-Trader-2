@@ -16,8 +16,7 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.9.0",
-    "@polygon.io/client-js": "^15.1.0",
-    "@polygon.io/client-websocket": "^2.0.0",
+    "@polygon.io/client-js": "^8.2.0",
     "@spotlight/shared": "workspace:*",
     "cors": "^2.8.5",
     "drizzle-orm": "^0.29.3",

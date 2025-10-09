@@ -64,8 +64,11 @@ export function Pane({ paneId, className = '' }: PaneProps) {
     let vwap: number[] | null = null;
     if (overlays.vwap) {
       if (overlays.vwap.mode === 'session' && candles.length > 0) {
-        const sessionStart = sessionStartMs(active.symbol, candles[candles.length - 1].t);
-        vwap = vwapSessionBatch(candlesForIndicators, sessionStart);
+        const lastCandle = candles[candles.length - 1];
+        if (lastCandle) {
+          const sessionStart = sessionStartMs(active.symbol, lastCandle.t);
+          vwap = vwapSessionBatch(candlesForIndicators, sessionStart);
+        }
       } else if (overlays.vwap.mode === 'anchored' && overlays.vwap.anchorMs) {
         vwap = vwapAnchoredBatch(candlesForIndicators, overlays.vwap.anchorMs);
       }

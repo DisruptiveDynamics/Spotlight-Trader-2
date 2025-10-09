@@ -50,44 +50,37 @@ function App() {
       </header>
       <main className="flex-1 flex flex-col min-h-0">
         <Toolbar status="live" />
-        <div className="grid grid-cols-12 gap-4 flex-1 min-h-0 p-4">
-          <div className="col-span-12 lg:col-span-9 space-y-4 flex flex-col min-h-0">
-            <div
-              className={`flex-1 min-h-0 ${
-                focusMode === 'trade' ? 'row-span-2' : ''
-              }`}
-            >
-              <MultiChart />
-            </div>
-            {focusManager.isPanelVisible('coach') && (
-              <div
-                className={`bg-gray-800 p-6 rounded-lg ${
-                  focusMode === 'trade' ? 'min-h-[400px]' : ''
-                }`}
-              >
-                <h2 className="text-xl font-semibold mb-4">Coach</h2>
-                <p className="text-gray-400">AI trading coach</p>
-              </div>
-            )}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {focusManager.isPanelVisible('rules') && (
-                <div className="bg-gray-800 p-6 rounded-lg" style={{ opacity }}>
-                  <h2 className="text-xl font-semibold mb-4">Rules</h2>
-                  <p className="text-gray-400">Trading rules engine</p>
-                </div>
-              )}
-              {focusManager.isPanelVisible('journal') && (
-                <div className="bg-gray-800 p-6 rounded-lg" style={{ opacity }}>
-                  <h2 className="text-xl font-semibold mb-4">Journal</h2>
-                  <p className="text-gray-400">Trading journal and notes</p>
-                </div>
-              )}
-            </div>
+        <div className="flex-1 flex gap-2 min-h-0 p-2">
+          {/* Main Chart Area - Takes 85% of width */}
+          <div className="flex-1 min-w-0">
+            <MultiChart />
           </div>
 
-          <div className="col-span-12 lg:col-span-3 space-y-4">
+          {/* Right Sidebar - Takes 15% of width */}
+          <div className="w-64 flex-shrink-0 space-y-2 overflow-y-auto">
             <SignalDensityControl />
             <AccessibilityControls />
+            
+            {focusManager.isPanelVisible('coach') && (
+              <div className="bg-gray-800 p-4 rounded-lg">
+                <h3 className="text-sm font-semibold mb-2">Coach</h3>
+                <p className="text-xs text-gray-400">AI trading coach</p>
+              </div>
+            )}
+            
+            {focusManager.isPanelVisible('rules') && (
+              <div className="bg-gray-800 p-4 rounded-lg" style={{ opacity }}>
+                <h3 className="text-sm font-semibold mb-2">Rules</h3>
+                <p className="text-xs text-gray-400">Trading rules engine</p>
+              </div>
+            )}
+            
+            {focusManager.isPanelVisible('journal') && (
+              <div className="bg-gray-800 p-4 rounded-lg" style={{ opacity }}>
+                <h3 className="text-sm font-semibold mb-2">Journal</h3>
+                <p className="text-xs text-gray-400">Trading journal and notes</p>
+              </div>
+            )}
           </div>
         </div>
       </main>

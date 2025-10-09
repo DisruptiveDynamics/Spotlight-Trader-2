@@ -5,7 +5,6 @@ interface BacktestParams {
   timeframe: '1m';
   start: string;
   end: string;
-  ruleIds: string[];
 }
 
 interface BacktestResult {
@@ -31,7 +30,6 @@ export function BacktestPanel({ ruleIds }: { ruleIds: string[] }) {
     timeframe: '1m',
     start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!,
     end: new Date().toISOString().split('T')[0]!,
-    ruleIds: ruleIds,
   });
 
   const [result, setResult] = useState<BacktestResult | null>(null);
@@ -47,7 +45,10 @@ export function BacktestPanel({ ruleIds }: { ruleIds: string[] }) {
       const response = await fetch('/api/backtest/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params),
+        body: JSON.stringify({
+          ...params,
+          ruleIds, // Use current ruleIds from props
+        }),
       });
 
       if (!response.ok) {

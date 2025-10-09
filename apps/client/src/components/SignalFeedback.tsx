@@ -34,7 +34,11 @@ export function SignalFeedback({ signal, onSubmit }: SignalFeedbackProps) {
     });
 
     setSubmitted(true);
-    setTimeout(() => setSubmitted(false), 2000);
+    setTimeout(() => {
+      setSubmitted(false);
+      setLabel(null);
+      setNotes('');
+    }, 2000);
   };
 
   if (submitted) {

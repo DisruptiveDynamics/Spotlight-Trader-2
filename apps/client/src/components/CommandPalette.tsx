@@ -8,6 +8,30 @@ interface Command {
   category?: string;
 }
 
+function fuzzyMatch(query: string, target: string): number {
+  const q = query.toLowerCase();
+  const t = target.toLowerCase();
+  
+  if (t.includes(q)) return 100;
+  
+  let score = 0;
+  let queryIndex = 0;
+  
+  for (let i = 0; i < t.length && queryIndex < q.length; i++) {
+    if (t[i] === q[queryIndex]) {
+      score += 10;
+      if (i === queryIndex) score += 5;
+      queryIndex++;
+    }
+  }
+  
+  if (queryIndex === q.length) {
+    return score;
+  }
+  
+  return 0;
+}
+
 export function CommandPalette() {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -59,9 +83,13 @@ export function CommandPalette() {
     },
   ]);
 
-  const filteredCommands = commands.filter((cmd) =>
-    cmd.label.toLowerCase().includes(query.toLowerCase())
-  );
+  const filteredCommands = query
+    ? commands
+        .map((cmd) => ({ cmd, score: fuzzyMatch(query, cmd.label) }))
+        .filter((item) => item.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .map((item) => item.cmd)
+    : commands;
 
   useEffect(() => {
     const handleOpen = () => setIsOpen(true);
@@ -118,18 +146,34 @@ export function CommandPalette() {
           )}
         </div>
 
-        <div className="border-t border-gray-700 px-4 py-2 bg-gray-900">
-          <div className="text-xs text-gray-400 space-y-1">
-            <div className="font-semibold text-gray-300 mb-2">Keyboard Shortcuts</div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-              {hotkeys.slice(0, 8).map((hotkey) => (
-                <div key={hotkey.key} className="flex justify-between">
-                  <span>{hotkey.description}</span>
-                  <kbd className="px-2 py-0.5 bg-gray-800 rounded text-gray-300 font-mono">
-                    {hotkey.key.replace('meta+', '⌘').replace('ctrl+', 'Ctrl+')}
-                  </kbd>
-                </div>
-              ))}
+        <div className="border-t border-gray-700 px-4 py-3 bg-gray-900">
+          <div className="text-xs text-gray-400">
+            <div className="font-semibold text-gray-300 mb-2">Quick Reference</div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">Push-to-talk</span>
+                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">T</kbd>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">Pause stream</span>
+                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">Space</kbd>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">Set alert</span>
+                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">A</kbd>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">Journal note</span>
+                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">J</kbd>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">VWAP anchor</span>
+                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">G+V</kbd>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">Timeframes</span>
+                <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300 font-mono text-xs">1/2/3</kbd>
+              </div>
             </div>
           </div>
         </div>

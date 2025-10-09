@@ -1,0 +1,15 @@
+{
+  "extends": "@spotlight/config/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["./src/*"]
+    }
+  },
+  "include": ["src"]
+}

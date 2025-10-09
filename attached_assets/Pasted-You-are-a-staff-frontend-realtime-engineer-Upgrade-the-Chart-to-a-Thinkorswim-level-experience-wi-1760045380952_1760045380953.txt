@@ -1,0 +1,144 @@
+You are a staff frontend + realtime engineer. Upgrade the Chart to a Thinkorswim-level experience with strict TypeScript, high performance, and WCAG AA.
+
+GOALS
+- Indicators: EMA(n), Bollinger(period,stdDev), VWAP (session + anchored)
+- OHLC tooltip + crosshair; shared cursor across panes (optional toggle)
+- Volume pane with histogram + 20-bar volume average overlay
+- Gridlines, price/time axes, session shading (premarket/after-hours)
+- Symbol + timeframe switching; toolbar buttons like TOS
+- Multi-chart grid: 1×1, 2×1, 2×2 layouts with independent panes
+- Anchored VWAP via right-click on a bar: “Anchor VWAP here”
+- Only real Polygon data when SIMULATED_DATA=false
+
+DEPENDENCIES (client workspace @spotlight/client)
+- lightweight-charts (already) ; zustand ; @tanstack/react-query
+- dayjs + dayjs-timezone for session boundaries
+- (optional) class-variance-authority for tidy UI variants
+
+───────────────────────────────────────────────────────────────────────────────
+1) Shared indicators (match server numerics)
+Create/extend packages/shared/src/indicators.ts:
+- Types: Ohlcv, Candle { t:number; ohlcv:Ohlcv }
+- Pure functions:
+  emaBatch(candles: Candle[], n: number): number[]
+  bollingerBatch(candles: Candle[], period: number, stdDev: number):
+    { mid:number; upper:number; lower:number }[]
+  vwapSessionBatch(candles: Candle[], sessionStartMs: number): number[]
+  vwapAnchoredBatch(candles: Candle[], anchorMs: number): number[]
+Ensure no future leakage; document warmups. Export types.
+
+───────────────────────────────────────────────────────────────────────────────
+2) Symbol/TF state & settings
+Create apps/client/src/state/chartState.ts (zustand):
+- favorites: string[] (default ["SPY","QQQ","NVDA"])
+- active: { symbol: string; timeframe: '1m'|'5m'|'15m'|'1h'|'D' }
+- layout: '1x1'|'2x1'|'2x2'
+- overlays: {
+    ema: number[];                // default [20,50]
+    boll?: { period:number; stdDev:number } | null; // default {20,2}
+    vwap: { mode:'session'|'anchored', anchorMs?: number } | null; // default session
+    volumeSma: number;            // default 20
+    sharedCrosshair: boolean;     // default true
+  }
+- actions: setSymbol, setTimeframe, setLayout, setOverlays, setVwapAnchor, addFavorite/removeFavorite
+Persist to localStorage.
+
+───────────────────────────────────────────────────────────────────────────────
+3) Data utils
+Create apps/client/src/lib/history.ts:
+- fetchHistory(symbol, timeframe, limit=500) → GET /api/history; map to array:
+  { time:number(sec), open, high, low, close, volume, msEnd:number }
+- sessionStartMs(symbol, msEnd, tz='America/New_York'):
+  returns 09:30 ET boundary for that date; handle DST via dayjs.tz
+
+───────────────────────────────────────────────────────────────────────────────
+4) Toolbar (TOS-style)
+Create apps/client/src/features/chart/Toolbar.tsx:
+- Left: Symbol input with typeahead + live quote area (placeholder shows last close if quote unknown)
+- Center: timeframe buttons [1m,5m,15m,1h,D] (segment)
+- Right: dropdown “Studies” with toggles/inputs:
+  - EMA (multi) – chips [20],[50] editable
+  - Bollinger period/stdDev
+  - VWAP: Session | Anchored (shows current anchor if set; “Clear anchor”)
+- Buttons: Layout [1×1, 2×1, 2×2]; Style [Candles | Bars | Line]
+- Status pill: LIVE (green) / PAUSED (amber) / RECONNECTING (red)
+- All controls write to zustand actions.
+
+───────────────────────────────────────────────────────────────────────────────
+5) Chart panes & crosshair
+Create apps/client/src/features/chart/Panes.tsx:
+- Pane component renders a single price chart with optional volume subpane.
+- Use lightweight-charts:
+  - Main candlestick series (+ optional line/bars style)
+  - EMA line series per length; Bollinger mid/upper/lower as thin lines
+  - VWAP session line; VWAP anchored line (dashed)
+  - Price line at last close (subtle)
+  - Grid colors from CSS vars; ensure AA contrast
+- Volume subpane:
+  - histogram series; color bars to match candle direction
+  - overlay volume SMA(period=20) as a line
+- Crosshair:
+  - Shared crosshair when sharedCrosshair=true: broadcast cursor move (time/price) via tiny event bus; other panes set crosshair position.
+  - Tooltip near cursor:
+    “O 669.94   H 669.94   L 669.38   C 669.58  |  Δ +0.05%   Vol 560,732”
+- Session shading:
+  - Render rectangles for premarket (before 09:30 ET) and after-hours (after 16:00 ET) in a muted gray overlay.
+
+Add right-click (contextmenu) handler on bar → show small menu:
+- “Anchor VWAP here” → setOverlays({ vwap:{mode:'anchored', anchorMs: bar.msEnd} })
+- “Clear anchor”
+
+───────────────────────────────────────────────────────────────────────────────
+6) Multi-chart grid
+Create apps/client/src/features/chart/MultiChart.tsx:
+- Layout modes '1x1' | '2x1' | '2x2' using CSS grid; each pane has local controls:
+  symbol selector (small), timeframe chips, study toggle (compact)
+- Keyboard:
+  - 1/2/3 change timeframe on focused pane
+  - Cmd/Ctrl+Arrow moves focus to adjacent pane
+- Focus ring high-contrast; store focusedPane index in zustand.
+
+───────────────────────────────────────────────────────────────────────────────
+7) Enhanced ChartView
+Update/replace apps/client/src/features/chart/ChartView.tsx:
+- Props: { paneId:number }
+- On mount:
+  a) read active symbol/timeframe from state
+  b) fetchHistory(symbol, timeframe, 500) → set candlesticks
+  c) compute overlays via shared indicators (emaBatch, bollingerBatch, vwapSessionBatch/AnchoredBatch)
+  d) connect SSE for [symbol] with sinceSeq from localStorage key `lastSeq:${symbol}:${timeframe}`
+- On "bar" events:
+  - update candle + overlays incrementally
+  - persist lastSeq
+- On "microbar" events:
+  - update last candle’s wick/close only if within current bar’s minute
+- PAUSE toggle (Space): freeze microbar updates; still accept finalized bars
+- Dispose chart/SSE on unmount or symbol/timeframe change
+- Throttle series updates via requestAnimationFrame; never more than 1 update/frame
+
+───────────────────────────────────────────────────────────────────────────────
+8) Wiring into AppShell
+- Replace previous single chart with <MultiChart />
+- Mount <Toolbar /> at top; keep glass-dark styling
+- Ensure panes stretch with min-height:0; charts are responsive
+
+───────────────────────────────────────────────────────────────────────────────
+9) Real Polygon enforcement (no simulator)
+In apps/server/src/market/bootstrap.ts:
+- If process.env.SIMULATED_DATA === 'true': log WARN "Simulator active"
+- Otherwise require POLYGON_API_KEY; if missing, fail fast on /ready
+No changes needed to SSE contract.
+
+───────────────────────────────────────────────────────────────────────────────
+10) Accessibility & performance
+- Text min 14px; line-height >= 1.4; tooltip text high-contrast
+- Respect prefers-reduced-motion: disable shimmer and cursor glow
+- Coalesce overlay updates to rAF; allocate arrays once and reuse
+
+───────────────────────────────────────────────────────────────────────────────
+11) Tests (light)
+- indicators.test.ts: EMA20/50, Bollinger 20/2, session VWAP vs known series
+- ui/Panes.test.tsx: right-click sets anchored VWAP; toolbar toggles change overlays
+- e2e smoke (playwright optional): symbol switch → history refetch and renders within 1s
+
+Docs: Update README “Pro Chart” with controls, hotkeys, anchored VWAP usage, layouts, and session shading.

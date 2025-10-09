@@ -3,10 +3,10 @@ import { CoachBubble } from './features/coach/CoachBubble';
 import { CommandPalette } from './components/CommandPalette';
 import { LatencyHUD } from './components/LatencyHUD';
 import { SignalDensityControl } from './components/SignalDensityControl';
-import { VWAPControls } from './components/VWAPControls';
 import { TapePeek } from './components/TapePeek';
 import { AccessibilityControls } from './components/AccessibilityControls';
-import { ChartView } from './features/chart/ChartView';
+import { MultiChart } from './features/chart/MultiChart';
+import { Toolbar } from './features/chart/Toolbar';
 import { focusManager } from './services/FocusManager';
 
 function App() {
@@ -48,15 +48,16 @@ function App() {
           </div>
         </div>
       </header>
-      <main className="container mx-auto p-4 flex-1 flex flex-col min-h-0">
-        <div className="grid grid-cols-12 gap-4 flex-1 min-h-0">
+      <main className="flex-1 flex flex-col min-h-0">
+        <Toolbar status="live" />
+        <div className="grid grid-cols-12 gap-4 flex-1 min-h-0 p-4">
           <div className="col-span-12 lg:col-span-9 space-y-4 flex flex-col min-h-0">
             <div
-              className={`bg-gray-800 rounded-lg flex-1 min-h-0 ${
+              className={`flex-1 min-h-0 ${
                 focusMode === 'trade' ? 'row-span-2' : ''
               }`}
             >
-              <ChartView />
+              <MultiChart />
             </div>
             {focusManager.isPanelVisible('coach') && (
               <div
@@ -86,7 +87,6 @@ function App() {
 
           <div className="col-span-12 lg:col-span-3 space-y-4">
             <SignalDensityControl />
-            <VWAPControls />
             <AccessibilityControls />
           </div>
         </div>

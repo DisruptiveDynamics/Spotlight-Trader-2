@@ -31,10 +31,15 @@ export interface Bar {
   volume: number;
 }
 
+import type { EvaluatedRule, Signal } from '@shared/types/rules';
+
 type EventMap = {
   [key: `tick:${string}`]: Tick;
   [key: `microbar:${string}`]: Microbar;
   [key: `bar:new:${string}:1m`]: Bar;
+  'rule:evaluated': EvaluatedRule;
+  'signal:new': Signal;
+  'signal:approved': Signal;
 };
 
 class TypedEventBus extends EventEmitter {

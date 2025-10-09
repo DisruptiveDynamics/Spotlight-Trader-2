@@ -1,0 +1,96 @@
+You are a quantitative software engineer and rules-based trading systems architect.  
+Extend Spotlight Trader to add a production-grade Rules Engine with evaluation, AI explanation, and RiskGovernor integration.
+
+GOAL
+Implement the system that lets the AI coach apply user-defined rules (like LTP, VWAP, EMA-cross, etc.) on live bar streams and explain trade setups responsibly.
+
+---
+
+1️⃣ packages/shared/types/rules.ts
+   - Define base interfaces:
+     export interface Rule {
+       id: string;
+       name: string;
+       description: string;
+       version: number;
+       expression: string;   // e.g. "close > ema20 && volume > avgVol50"
+       parameters?: Record<string, number | string>;
+       risk?: { rMultiple: number; maxLossPct: number };
+       createdAt: number;
+     }
+     export interface EvaluatedRule {
+       id: string;
+       name: string;
+       passed: boolean;
+       confidence: number;
+       signal?: string; // “long”, “short”, or “flat”
+       explanation?: string;
+       barSeq: number;
+     }
+
+2️⃣ apps/server/src/rules/evaluator.ts
+   - Evaluate rule.expressions dynamically but safely (never use eval).  
+     Use a mini parser (math.js or a custom tokenizer) that only permits numeric comparisons and known identifiers.
+   - Bind variables: open, high, low, close, volume, vwap, ema20, ema50, etc.
+   - Each bar:new event (from barBuilder) triggers evaluation of all active rules for that user.
+   - Emit eventBus.emit("rule:evaluated", EvaluatedRule)
+   - Calculate confidence = sigmoid(normalized distance from trigger threshold).
+
+3️⃣ apps/server/src/rules/registry.ts
+   - Cache compiled rule functions in memory for speed.
+   - Hot-reload when user edits rule or uploads new version.
+   - Persist all versions in rules / rule_versions tables (already defined in schema).
+   - Provide getActiveRules(userId) and updateRule(ruleId, fields).
+
+4️⃣ apps/server/src/risk/governor.ts
+   - Class RiskGovernor
+       - tracks active signals, recent trades, and realized risk
+       - throttle: ignore duplicate rule passes within same barSeq
+       - enforce: no more than N open signals or risk budget exceeded
+   - Methods:
+       shouldTrigger(ruleEval: EvaluatedRule): boolean
+       registerSignal(ruleEval: EvaluatedRule)
+       releaseSignal(ruleId: string)
+   - Emits “signal:approved” when a new trade setup passes governance.
+
+5️⃣ apps/server/src/signals/service.ts
+   - Listen for eventBus.on("rule:evaluated")
+       → if passed && RiskGovernor.shouldTrigger() true → insert into signals table
+       → emit eventBus.emit("signal:new", signal)
+   - Each signal includes {symbol, ruleId, seq, direction, confidence, createdAt}
+
+6️⃣ apps/server/src/coach/advisor.ts
+   - Subscribe to "signal:new"
+   - Build natural-language summary (using OpenAI completions):
+       "Based on your LTP rule, SPY is setting up for a long entry above 505.20; risk 503.80."
+   - Store summary in signal_explanations table and publish via SSE event: {event:"alert", data: explanation}
+
+7️⃣ apps/client/src/features/rules/RulesBrowser.tsx
+   - List all user rules with edit and test buttons.
+   - “Dry-run” executes evaluator on recent 20 bars (GET /api/rules/dryrun?symbol=SPY&id=<ruleId>)
+   - Show pass/fail and confidence chart overlay.
+
+8️⃣ apps/client/src/features/alerts/AlertsPanel.tsx
+   - Subscribes to SSE event “alert”.
+   - Displays latest coach callouts with timestamps and rule source.
+
+9️⃣ tests
+   - evaluator.test.ts → ensures expressions evaluate correctly and deterministically.
+   - governor.test.ts → enforces risk limits and throttling.
+   - integration.test.ts → verifies rule→signal→alert chain.
+
+---
+
+10️⃣ Wiring
+   - In server bootstrap (index.ts), import evaluator, registry, governor, and signal service.
+   - Attach listeners to barBuilder events.
+   - Expose REST:
+       GET /api/rules  → list user rules
+       POST /api/rules → create/update rule
+       GET /api/rules/dryrun → evaluate on historical bars
+
+---
+
+Keep TypeScript strict; all events typed.  
+Follow clean-code principles, no implicit any, no circular imports.  
+Ensure the evaluator runs < 5 ms per bar per rule.

@@ -16,3 +16,8 @@ export default defineConfig({
     },
   },
 });
+server: {
+  allowedHosts: ['.replit.dev'],  // allows any Replit preview domain
+  host: true,
+  port: 5000,
+},

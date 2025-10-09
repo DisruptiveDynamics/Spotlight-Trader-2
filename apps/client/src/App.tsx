@@ -6,6 +6,8 @@ import { LatencyHUD } from './components/LatencyHUD';
 import { SignalDensityControl } from './components/SignalDensityControl';
 import { TapePeek } from './components/TapePeek';
 import { AccessibilityControls } from './components/AccessibilityControls';
+import { Brand } from './components/Brand';
+import { Splash } from './components/Splash';
 import { MultiChart } from './features/chart/MultiChart';
 import { Toolbar } from './features/chart/Toolbar';
 import { focusManager } from './services/FocusManager';
@@ -15,6 +17,7 @@ function App() {
   const [focusMode, setFocusMode] = useState(focusManager.getMode());
   const [explainPanelOpen, setExplainPanelOpen] = useState(false);
   const [explainContext, setExplainContext] = useState<InsightContext | null>(null);
+  const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
     const unsubscribe = focusManager.subscribe(setFocusMode);
@@ -41,16 +44,44 @@ function App() {
     };
   }, []);
 
+  // Bootstrap splash: hide after SSE connection or 1.5s timeout
+  useEffect(() => {
+    let sseConnected = false;
+    let timeoutId: NodeJS.Timeout;
+
+    const handleSseConnect = () => {
+      sseConnected = true;
+      setShowSplash(false);
+    };
+
+    // Listen for SSE connection event (from market stream)
+    window.addEventListener('sse:connected', handleSseConnect);
+
+    // Fallback timeout: hide splash after 1.5s regardless
+    timeoutId = setTimeout(() => {
+      if (!sseConnected) {
+        setShowSplash(false);
+      }
+    }, 1500);
+
+    return () => {
+      window.removeEventListener('sse:connected', handleSseConnect);
+      clearTimeout(timeoutId);
+    };
+  }, []);
+
   const opacity = focusManager.getNonPriceOpacity();
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex flex-col">
+    <>
+      <Splash isVisible={showSplash} />
+      <div className="min-h-screen bg-gray-900 text-white flex flex-col">
       <header
         className="bg-gray-800 border-b border-gray-700 p-4 flex-shrink-0"
         style={{ opacity }}
       >
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Spotlight Trader</h1>
+          <Brand />
           <div className="flex items-center gap-4">
             <LatencyHUD />
             {focusMode !== 'normal' && (
@@ -105,7 +136,8 @@ function App() {
         onClose={() => setExplainPanelOpen(false)}
         context={explainContext}
       />
-    </div>
+      </div>
+    </>
   );
 }
 

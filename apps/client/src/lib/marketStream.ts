@@ -32,6 +32,11 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
     microbar: [] as ((m: Micro) => void)[],
   };
 
+  es.addEventListener('open', () => {
+    // Emit custom event for splash screen
+    window.dispatchEvent(new CustomEvent('sse:connected'));
+  });
+
   es.addEventListener('bar', (e) => {
     const b = JSON.parse((e as MessageEvent).data) as Bar;
     listeners.bar.forEach((fn) => fn(b));

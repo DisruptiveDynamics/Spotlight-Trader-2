@@ -16,6 +16,7 @@ export function Toolbar({ status = 'live' }: ToolbarProps) {
     layout,
     chartStyle,
     overlays,
+    favorites,
     setSymbol,
     setTimeframe,
     setLayout,
@@ -24,17 +25,47 @@ export function Toolbar({ status = 'live' }: ToolbarProps) {
     clearVwapAnchor,
     addEma,
     removeEma,
+    addFavorite,
+    removeFavorite,
   } = useChartState();
 
   const [symbolInput, setSymbolInput] = useState(active.symbol);
+  const [showSymbolDropdown, setShowSymbolDropdown] = useState(false);
   const [showStudies, setShowStudies] = useState(false);
   const [emaInput, setEmaInput] = useState('');
+
+  // Popular symbols for quick access
+  const popularSymbols = [
+    'SPY',
+    'QQQ',
+    'NVDA',
+    'TSLA',
+    'AAPL',
+    'MSFT',
+    'GOOGL',
+    'AMZN',
+    'META',
+    'AMD',
+  ];
+
+  // Filter symbols based on input
+  const filteredSymbols = [
+    ...favorites,
+    ...popularSymbols.filter((s) => !favorites.includes(s)),
+  ].filter((s) => s.toLowerCase().includes(symbolInput.toLowerCase()));
 
   const handleSymbolSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (symbolInput.trim()) {
       setSymbol(symbolInput.trim());
+      setShowSymbolDropdown(false);
     }
+  };
+
+  const handleSymbolSelect = (symbol: string) => {
+    setSymbol(symbol);
+    setSymbolInput(symbol);
+    setShowSymbolDropdown(false);
   };
 
   const handleAddEma = () => {
@@ -53,20 +84,63 @@ export function Toolbar({ status = 'live' }: ToolbarProps) {
 
   return (
     <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-800">
-      {/* Left: Symbol Input */}
+      {/* Left: Symbol Input with Dropdown */}
       <div className="flex items-center gap-3">
-        <form onSubmit={handleSymbolSubmit} className="flex items-center gap-2">
-          <input
-            type="text"
-            value={symbolInput}
-            onChange={(e) => setSymbolInput(e.target.value.toUpperCase())}
-            className="w-24 px-2 py-1 text-sm font-mono bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-blue-500"
-            placeholder="Symbol"
-          />
-        </form>
-        <div className="text-xs text-gray-500">
-          Last: {active.symbol}
+        <div className="relative">
+          <form onSubmit={handleSymbolSubmit} className="flex items-center gap-2">
+            <input
+              type="text"
+              value={symbolInput}
+              onChange={(e) => {
+                setSymbolInput(e.target.value.toUpperCase());
+                setShowSymbolDropdown(true);
+              }}
+              onFocus={() => setShowSymbolDropdown(true)}
+              onBlur={() => setTimeout(() => setShowSymbolDropdown(false), 200)}
+              className="w-28 px-2 py-1 text-sm font-mono bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-blue-500"
+              placeholder="Symbol"
+            />
+          </form>
+
+          {showSymbolDropdown && filteredSymbols.length > 0 && (
+            <div className="absolute top-full left-0 z-50 w-48 mt-1 bg-gray-900 border border-gray-700 rounded shadow-lg max-h-64 overflow-y-auto">
+              <div className="px-3 py-2 text-xs text-gray-400 border-b border-gray-700">
+                Favorites & Popular
+              </div>
+              {filteredSymbols.slice(0, 10).map((symbol) => (
+                <div
+                  key={symbol}
+                  className="flex items-center justify-between hover:bg-gray-800 transition-colors"
+                >
+                  <button
+                    onClick={() => handleSymbolSelect(symbol)}
+                    className="flex-1 px-3 py-2 text-left text-sm font-mono"
+                  >
+                    {symbol}
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (favorites.includes(symbol)) {
+                        removeFavorite(symbol);
+                      } else {
+                        addFavorite(symbol);
+                      }
+                    }}
+                    className="px-2 text-sm hover:scale-110 transition-transform"
+                  >
+                    <span
+                      className={favorites.includes(symbol) ? 'text-yellow-500' : 'text-gray-600'}
+                    >
+                      ★
+                    </span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+        <div className="text-xs text-gray-500">Last: {active.symbol}</div>
       </div>
 
       {/* Center: Timeframe Buttons */}
@@ -229,9 +303,7 @@ export function Toolbar({ status = 'live' }: ToolbarProps) {
                     <input
                       type="checkbox"
                       checked={overlays.sharedCrosshair}
-                      onChange={(e) =>
-                        setOverlays({ sharedCrosshair: e.target.checked })
-                      }
+                      onChange={(e) => setOverlays({ sharedCrosshair: e.target.checked })}
                       className="w-4 h-4 text-blue-600 bg-gray-800 border-gray-700 rounded focus:ring-blue-500"
                     />
                     Shared Crosshair
@@ -277,9 +349,7 @@ export function Toolbar({ status = 'live' }: ToolbarProps) {
         </div>
 
         {/* Status Pill */}
-        <div
-          className={`px-2 py-1 text-xs font-mono rounded border ${statusColors[status]}`}
-        >
+        <div className={`px-2 py-1 text-xs font-mono rounded border ${statusColors[status]}`}>
           {status.toUpperCase()}
         </div>
       </div>

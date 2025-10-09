@@ -38,9 +38,7 @@ export function MultiChart() {
         <div
           key={index}
           className={`relative rounded border ${
-            focusedPane === index
-              ? 'border-blue-500 ring-2 ring-blue-500/50'
-              : 'border-gray-800'
+            focusedPane === index ? 'border-blue-500 ring-2 ring-blue-500/50' : 'border-gray-800'
           }`}
         >
           <Pane paneId={index} className="w-full h-full" />

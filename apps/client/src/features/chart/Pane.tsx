@@ -425,7 +425,7 @@ export function Pane({ paneId, className = '' }: PaneProps) {
           <div className="text-sm text-gray-400">Loading {active.symbol}...</div>
         </div>
       )}
-      
+
       <div ref={containerRef} className="w-full h-full" />
 
       {tooltip && chartStyle === 'candles' && (

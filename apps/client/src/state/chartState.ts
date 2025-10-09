@@ -35,7 +35,7 @@ export interface ChartState {
   chartStyle: ChartStyle;
   overlays: ChartOverlays;
   focusedPane: number;
-  
+
   // Actions
   setSymbol: (symbol: string) => void;
   setTimeframe: (timeframe: Timeframe) => void;
@@ -83,11 +83,9 @@ export const useChartState = create<ChartState>()(
           active: { ...state.active, timeframe },
         })),
 
-      setLayout: (layout: Layout) =>
-        set({ layout }),
+      setLayout: (layout: Layout) => set({ layout }),
 
-      setChartStyle: (style: ChartStyle) =>
-        set({ chartStyle: style }),
+      setChartStyle: (style: ChartStyle) => set({ chartStyle: style }),
 
       setOverlays: (newOverlays: Partial<ChartOverlays>) =>
         set((state) => ({
@@ -122,8 +120,7 @@ export const useChartState = create<ChartState>()(
           favorites: state.favorites.filter((s) => s !== symbol.toUpperCase()),
         })),
 
-      setFocusedPane: (paneId: number) =>
-        set({ focusedPane: paneId }),
+      setFocusedPane: (paneId: number) => set({ focusedPane: paneId }),
 
       addEma: (period: number) =>
         set((state) => {

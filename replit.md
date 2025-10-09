@@ -40,22 +40,26 @@ Built with **React 18 and TypeScript**, using **Lightweight Charts** for financi
 #### Professional Charting System (Thinkorswim-level)
 
 **State Management** (`chartState.ts`):
+
 - Zustand store with localStorage persistence for favorites, active symbol/timeframe, layout, chart style, and overlays
 - Supports 1x1, 2x1, 2x2 grid layouts with independent panes
 - Overlay configuration: EMA periods, Bollinger Bands, VWAP (session/anchored), Volume SMA, shared crosshair
 
 **Shared Indicators Library** (`packages/shared/src/indicators.ts`):
+
 - Pure calculation functions: `emaBatch`, `bollingerBatch`, `vwapSessionBatch`, `vwapAnchoredBatch`, `volumeSmaBatch`
 - No future leakage, documented warmup periods
 - Session-aware VWAP with timezone handling via dayjs
 
 **Toolbar Component** (TOS-style):
+
 - Symbol input with typeahead, timeframe buttons (1m/5m/15m/1h/D)
 - Studies dropdown: EMA multi-period chips, Bollinger settings, VWAP mode selector, shared crosshair toggle
 - Layout controls (1x1/2x1/2x2), chart style (candles/bars/line)
 - Status pill: LIVE/PAUSED/RECONNECTING
 
 **Pane Component**:
+
 - Lightweight-charts integration with candlestick/line/bar series
 - Volume subpane: histogram with color-coded bars + SMA overlay
 - Overlays: EMA lines, Bollinger Bands (mid/upper/lower), VWAP (solid/dashed), volume average
@@ -64,11 +68,13 @@ Built with **React 18 and TypeScript**, using **Lightweight Charts** for financi
 - Session shading utilities for premarket/after-hours (planned)
 
 **MultiChart Grid**:
+
 - CSS grid layout with responsive panes
 - Focus ring for active pane (keyboard navigation ready)
 - Independent symbol/timeframe per pane (extensible)
 
 **Data Pipeline**:
+
 - `fetchHistory` utility with session boundary calculations (dayjs-timezone)
 - SSE market streaming with `sinceSeq` resume capability
 - Microbar RAF coalescing for smooth updates

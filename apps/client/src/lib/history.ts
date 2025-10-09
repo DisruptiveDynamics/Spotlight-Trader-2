@@ -59,13 +59,9 @@ export function sessionStartMs(
   tz: string = 'America/New_York'
 ): number {
   const date = dayjs(msEnd).tz(tz);
-  
+
   // Set to 9:30 AM ET on the same day
-  const sessionStart = date
-    .hour(9)
-    .minute(30)
-    .second(0)
-    .millisecond(0);
+  const sessionStart = date.hour(9).minute(30).second(0).millisecond(0);
 
   return sessionStart.valueOf();
 }
@@ -73,10 +69,7 @@ export function sessionStartMs(
 /**
  * Check if a timestamp is within market hours (9:30 AM - 4:00 PM ET)
  */
-export function isMarketHours(
-  msTimestamp: number,
-  tz: string = 'America/New_York'
-): boolean {
+export function isMarketHours(msTimestamp: number, tz: string = 'America/New_York'): boolean {
   const time = dayjs(msTimestamp).tz(tz);
   const hour = time.hour();
   const minute = time.minute();
@@ -97,10 +90,7 @@ export function isMarketHours(
 /**
  * Check if timestamp is in premarket (before 9:30 AM ET)
  */
-export function isPremarket(
-  msTimestamp: number,
-  tz: string = 'America/New_York'
-): boolean {
+export function isPremarket(msTimestamp: number, tz: string = 'America/New_York'): boolean {
   const time = dayjs(msTimestamp).tz(tz);
   const hour = time.hour();
   const minute = time.minute();
@@ -111,10 +101,7 @@ export function isPremarket(
 /**
  * Check if timestamp is after hours (after 4:00 PM ET)
  */
-export function isAfterHours(
-  msTimestamp: number,
-  tz: string = 'America/New_York'
-): boolean {
+export function isAfterHours(msTimestamp: number, tz: string = 'America/New_York'): boolean {
   const time = dayjs(msTimestamp).tz(tz);
   return time.hour() >= 16;
 }

@@ -60,21 +60,21 @@ function App() {
           <div className="w-64 flex-shrink-0 space-y-2 overflow-y-auto">
             <SignalDensityControl />
             <AccessibilityControls />
-            
+
             {focusManager.isPanelVisible('coach') && (
               <div className="bg-gray-800 p-4 rounded-lg">
                 <h3 className="text-sm font-semibold mb-2">Coach</h3>
                 <p className="text-xs text-gray-400">AI trading coach</p>
               </div>
             )}
-            
+
             {focusManager.isPanelVisible('rules') && (
               <div className="bg-gray-800 p-4 rounded-lg" style={{ opacity }}>
                 <h3 className="text-sm font-semibold mb-2">Rules</h3>
                 <p className="text-xs text-gray-400">Trading rules engine</p>
               </div>
             )}
-            
+
             {focusManager.isPanelVisible('journal') && (
               <div className="bg-gray-800 p-4 rounded-lg" style={{ opacity }}>
                 <h3 className="text-sm font-semibold mb-2">Journal</h3>

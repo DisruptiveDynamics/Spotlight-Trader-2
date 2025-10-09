@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CoachBubble } from './features/coach/CoachBubble';
+import { ExplainPanel } from './features/coach/ExplainPanel';
 import { CommandPalette } from './components/CommandPalette';
 import { LatencyHUD } from './components/LatencyHUD';
 import { SignalDensityControl } from './components/SignalDensityControl';
@@ -8,12 +9,23 @@ import { AccessibilityControls } from './components/AccessibilityControls';
 import { MultiChart } from './features/chart/MultiChart';
 import { Toolbar } from './features/chart/Toolbar';
 import { focusManager } from './services/FocusManager';
+import type { InsightContext } from '@spotlight/shared';
 
 function App() {
   const [focusMode, setFocusMode] = useState(focusManager.getMode());
+  const [explainPanelOpen, setExplainPanelOpen] = useState(false);
+  const [explainContext, setExplainContext] = useState<InsightContext | null>(null);
 
   useEffect(() => {
     const unsubscribe = focusManager.subscribe(setFocusMode);
+    
+    // Listen for chart context requests
+    const handleExplainRequest = (e: CustomEvent) => {
+      setExplainContext(e.detail.context);
+      setExplainPanelOpen(true);
+    };
+    
+    window.addEventListener('chart:explain-request', handleExplainRequest as EventListener);
 
     const handleFocusTrade = () => focusManager.toggleTradeMode();
     const handleFocusReview = () => focusManager.toggleReviewMode();
@@ -25,6 +37,7 @@ function App() {
       unsubscribe();
       window.removeEventListener('command:focus-trade', handleFocusTrade);
       window.removeEventListener('command:focus-review', handleFocusReview);
+      window.removeEventListener('chart:explain-request', handleExplainRequest as EventListener);
     };
   }, []);
 
@@ -87,6 +100,11 @@ function App() {
       <CoachBubble />
       <CommandPalette />
       <TapePeek />
+      <ExplainPanel 
+        isOpen={explainPanelOpen} 
+        onClose={() => setExplainPanelOpen(false)} 
+        context={explainContext}
+      />
     </div>
   );
 }

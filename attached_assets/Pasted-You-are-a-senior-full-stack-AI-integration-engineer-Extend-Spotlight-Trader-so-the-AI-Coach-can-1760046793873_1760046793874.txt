@@ -1,0 +1,95 @@
+You are a senior full-stack + AI integration engineer.  
+Extend Spotlight Trader so the AI Coach can “see” the chart, read live data, and verbally explain setups, risk zones, and rule triggers.
+
+GOALS
+- Voice assistant understands current chart (symbol, timeframe, indicators, last bars)
+- Responds to: “What’s this bar doing?”, “Why did I get that signal?”, “Show me my last EMA cross”, etc.
+- Combines rule logic + recent data + memory (“coach brain”) for reasoning
+- Streams explanations to both text & speech
+- Lets user query any visible chart region by voice or click
+
+───────────────────────────
+1) Shared data contract
+packages/shared/src/types/insight.ts
+export type InsightContext = {
+  symbol: string;
+  timeframe: string;
+  bars: { time:number; o:number; h:number; l:number; c:number; v:number }[];
+  overlays: {
+    ema?: Record<number, number>;
+    vwap?: number;
+    boll?: { mid:number; upper:number; lower:number };
+  };
+  activeSignals?: {
+    rule:string;
+    direction:'long'|'short';
+    confidence:number;
+    ts:number;
+  }[];
+  lastPrompt?: string;
+};
+
+───────────────────────────
+2) Server insight endpoint
+apps/server/src/routes/insight.ts
+POST /api/insight/explain
+Body: { context: InsightContext, question:string }
+→ Backend composes a structured system + user prompt to OpenAI Responses API:
+  - system: “You are a world-class day-trading coach who reasons from raw OHLC and indicators.”
+  - user: summarize chart + question
+→ Model: gpt-4-turbo / Responses API with reasoning
+Return { text:string; voiceUrl?:string }
+
+Add rate-limit (2 req / 10 s per user).
+
+───────────────────────────
+3) Front-end integration
+apps/client/src/features/coach/useExplainSignal.ts
+- Hook takes (question:string, context:InsightContext)
+- Calls /api/insight/explain
+- Streams partial text back; updates speech output (via Realtime Voice Proxy)
+- Emits to chat panel & voice channel
+
+───────────────────────────
+4) UI — Explain Panel & voice triggers
+apps/client/src/features/coach/ExplainPanel.tsx
+- Slide-in panel shows last Q&A
+- Voice waveform (reuse CoachBubble)
+- Markdown render of AI answer (support inline charts later)
+- Button: “Ask about this bar” (uses currently hovered candle → context.time = bar.time)
+- Voice activation phrases:
+   “Hey Coach, what do you see on SPY?”
+   “Explain that EMA cross”
+   “Summarize last three signals”
+
+───────────────────────────
+5) Chart hooks
+apps/client/src/features/chart/hooks/useChartContext.ts
+- On hover / click, build InsightContext subset (visible bars ~ 100)
+- Provide current overlays (EMA, VWAP, Boll)
+- Expose getCurrentContext() to Coach
+
+───────────────────────────
+6) Coach bubble upgrade
+- If user speaks while chart active → auto-inject current context
+- Assistant stops speaking when user interrupts
+- If AI is thinking > 2 s → show “Analyzing chart…” animation
+- Stream both text & voice simultaneously
+
+───────────────────────────
+7) Journaling integration
+After each explain session:
+POST /api/journals entry:
+  { type:"insight", symbol, timeframe, question, response, timestamp }
+so insights are stored in daily journal view.
+
+───────────────────────────
+8) Testing
+- /api/insight/explain returns 200 + coherent text for a mock context
+- Voice coach stops on interrupt
+- ExplainPanel opens on “Explain this bar” click
+
+───────────────────────────
+9) Future hooks (comment only)
+- Multi-symbol correlation insights
+- Auto-learning of user rules from dialogue (Brain fine-tuning later)

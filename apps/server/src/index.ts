@@ -8,6 +8,7 @@ import { setupVoiceTokenRoute } from './routes/voiceToken';
 import { rulesRouter } from './routes/rules';
 import journalsRouter from './routes/journals';
 import memoryRouter from './routes/memory';
+import insightRouter from './routes/insight';
 import { startEodScheduler } from './journals/eod';
 
 const env = validateEnv(process.env);
@@ -28,6 +29,7 @@ setupVoiceProxy(app, server);
 app.use('/api', rulesRouter);
 app.use('/api/journals', journalsRouter);
 app.use('/api/memory', memoryRouter);
+app.use('/api/insight', insightRouter);
 
 startEodScheduler();
 

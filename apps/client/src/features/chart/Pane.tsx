@@ -19,6 +19,7 @@ import {
 } from '@spotlight/shared';
 import { connectMarketSSE } from '../../lib/marketStream';
 import type { Bar, Micro } from '../../lib/marketStream';
+import { useChartContext } from './hooks/useChartContext';
 
 interface PaneProps {
   paneId: number;
@@ -41,6 +42,8 @@ export function Pane({ paneId, className = '' }: PaneProps) {
 
   const currentMinuteRef = useRef<number>(0);
   const currentBarTimeRef = useRef<number>(0);
+  
+  const [showExplainButton, setShowExplainButton] = useState(false);
 
   // Convert candles for indicators
   const candlesForIndicators = useMemo(() => {
@@ -78,6 +81,12 @@ export function Pane({ paneId, className = '' }: PaneProps) {
 
     return { emaLines, bollinger, vwap, volumeSma };
   }, [candlesForIndicators, overlays, active.symbol, candles]);
+  
+  // Use chart context hook
+  const { getCurrentContext } = useChartContext({
+    candles: candlesForIndicators.map(c => ({ t: c.t, ohlcv: c.ohlcv })),
+    indicators,
+  });
 
   // Initialize chart
   useEffect(() => {
@@ -176,6 +185,7 @@ export function Pane({ paneId, className = '' }: PaneProps) {
     chart.subscribeCrosshairMove((param) => {
       if (!param.time || !param.point) {
         setTooltip(null);
+        setShowExplainButton(false);
         return;
       }
 
@@ -186,6 +196,7 @@ export function Pane({ paneId, className = '' }: PaneProps) {
           y: param.point.y,
           data,
         });
+        setShowExplainButton(true);
       }
     });
 
@@ -418,6 +429,15 @@ export function Pane({ paneId, className = '' }: PaneProps) {
     };
   }, [setVwapAnchor]);
 
+  const handleExplainChart = () => {
+    const context = getCurrentContext(100);
+    window.dispatchEvent(
+      new CustomEvent('chart:explain-request', {
+        detail: { context },
+      })
+    );
+  };
+
   return (
     <div className={`relative ${className}`}>
       {isLoading && (
@@ -443,6 +463,15 @@ export function Pane({ paneId, className = '' }: PaneProps) {
             <span>C {tooltip.data.close?.toFixed(2)}</span>
           </div>
         </div>
+      )}
+
+      {showExplainButton && (
+        <button
+          onClick={handleExplainChart}
+          className="absolute bottom-4 right-4 z-20 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded shadow-lg transition-colors"
+        >
+          💬 Ask AI Coach
+        </button>
       )}
     </div>
   );

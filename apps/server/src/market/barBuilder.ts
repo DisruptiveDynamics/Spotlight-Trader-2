@@ -10,7 +10,6 @@ interface BarState {
 
 interface SymbolState {
   currentBar: BarState | null;
-  seq: number;
   bar_start: number;
   bar_end: number;
   microbars: Microbar[];
@@ -31,7 +30,6 @@ export class BarBuilder {
 
     this.states.set(symbol, {
       currentBar: null,
-      seq: 0,
       bar_start,
       bar_end,
       microbars: [],
@@ -64,7 +62,6 @@ export class BarBuilder {
       
       state.bar_start = tickMinute;
       state.bar_end = tickMinute + 60000;
-      state.seq++;
       state.currentBar = null;
     }
 
@@ -87,10 +84,12 @@ export class BarBuilder {
   private finalizeBar(symbol: string, state: SymbolState) {
     if (!state.currentBar) return;
 
+    const seq = Math.floor(state.bar_start / 60000);
+
     const finalizedBar: Bar = {
       symbol,
       timeframe: '1m',
-      seq: state.seq,
+      seq,
       bar_start: state.bar_start,
       bar_end: state.bar_end,
       open: state.currentBar.open,

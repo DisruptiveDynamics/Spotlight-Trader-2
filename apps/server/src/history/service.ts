@@ -32,8 +32,8 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
       symbol,
       1,
       'minute',
-      fromMs,
-      toMs,
+      new Date(fromMs).toISOString().split('T')[0]!,
+      new Date(toMs).toISOString().split('T')[0]!,
       { limit }
     );
 
@@ -41,7 +41,7 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
       return [];
     }
 
-    const bars: Bar[] = response.results.map((agg: any, index: number) => {
+    const bars: Bar[] = response.results.map((agg: any) => {
       const bar_start = agg.t;
       const bar_end = bar_start + 60000;
 

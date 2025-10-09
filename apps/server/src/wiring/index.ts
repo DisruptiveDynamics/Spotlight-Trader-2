@@ -3,6 +3,8 @@ import { polygonWs } from '@server/market/polygonWs';
 import { barBuilder } from '@server/market/barBuilder';
 import { sseMarketStream } from '@server/stream/sse';
 import { getHistory } from '@server/history/service';
+import { eventBus } from '@server/market/eventBus';
+import { ringBuffer } from '@server/cache/ring';
 
 const DEFAULT_FAVORITES = ['SPY', 'QQQ'];
 
@@ -12,6 +14,10 @@ export function initializeMarketPipeline(app: Express) {
   for (const symbol of DEFAULT_FAVORITES) {
     polygonWs.subscribe(symbol);
     barBuilder.subscribe(symbol);
+
+    eventBus.on(`bar:new:${symbol}:1m` as const, (bar) => {
+      ringBuffer.putBars(symbol, [bar]);
+    });
   }
 
   app.get('/api/history', async (req, res) => {

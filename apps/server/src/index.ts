@@ -9,7 +9,11 @@ import { rulesRouter } from './routes/rules';
 import journalsRouter from './routes/journals';
 import memoryRouter from './routes/memory';
 import insightRouter from './routes/insight';
+import { flagsRouter } from './routes/flags';
+import { feedbackRouter } from './routes/feedback';
+import { backtestRouter } from './routes/backtest';
 import { startEodScheduler } from './journals/eod';
+import { initializeLearningLoop } from './learning/loop';
 
 const env = validateEnv(process.env);
 const app = express();
@@ -30,7 +34,11 @@ app.use('/api', rulesRouter);
 app.use('/api/journals', journalsRouter);
 app.use('/api/memory', memoryRouter);
 app.use('/api/insight', insightRouter);
+app.use('/api/flags', flagsRouter);
+app.use('/api/feedback', feedbackRouter);
+app.use('/api/backtest', backtestRouter);
 
+initializeLearningLoop();
 startEodScheduler();
 
 const PORT = 8000;

@@ -8,6 +8,11 @@ import {
   vector,
   index,
   unique,
+  uuid,
+  bigint,
+  integer,
+  numeric,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 
 export const rules = pgTable('rules', {
@@ -121,3 +126,31 @@ export const auditLedger = pgTable('audit_ledger', {
   payload: jsonb('payload').notNull(),
   ts: timestamp('ts', { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const feedback = pgTable('feedback', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  symbol: text('symbol').notNull(),
+  seq: bigint('seq', { mode: 'number' }).notNull(),
+  ruleId: text('rule_id').notNull(),
+  label: text('label').notNull(), // 'good' | 'bad' | 'missed' | 'late'
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const ruleMetricsDaily = pgTable(
+  'rule_metrics_daily',
+  {
+    userId: text('user_id').notNull(),
+    ruleId: text('rule_id').notNull(),
+    day: date('day').notNull(),
+    fired: integer('fired').notNull().default(0),
+    actionable: integer('actionable').notNull().default(0),
+    good: integer('good').notNull().default(0),
+    bad: integer('bad').notNull().default(0),
+    expectancy: numeric('expectancy', { precision: 10, scale: 4 }),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.ruleId, table.day] }),
+  })
+);

@@ -1,18 +1,29 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { runBacktest, getBacktestPresets } from '../backtest/engine';
+import { runBacktest, getBacktestPresets, BacktestValidationError } from '../backtest/engine';
 import { ruleRegistry } from '../rules/registry';
 import { isEnabled } from '../flags';
 
 export const backtestRouter: Router = Router();
 
-const BacktestSchema = z.object({
-  symbol: z.string(),
-  timeframe: z.enum(['1m', '5m', '15m', '1h', 'D']),
-  start: z.string(),
-  end: z.string(),
-  ruleIds: z.array(z.string()),
-});
+const BacktestSchema = z
+  .object({
+    symbol: z.string().min(1, 'Symbol is required'),
+    timeframe: z.enum(['1m']), // Only 1m supported for now
+    start: z.string(),
+    end: z.string(),
+    ruleIds: z.array(z.string()).min(1, 'At least one rule ID is required'),
+  })
+  .refine(
+    (data) => {
+      const startMs = new Date(data.start).getTime();
+      const endMs = new Date(data.end).getTime();
+      return !isNaN(startMs) && !isNaN(endMs) && startMs < endMs;
+    },
+    {
+      message: 'Invalid date range: start must be before end and both must be valid ISO dates',
+    }
+  );
 
 /**
  * POST /api/backtest/run
@@ -24,6 +35,7 @@ backtestRouter.post('/run', async (req, res) => {
   }
 
   try {
+    // Validate input schema
     const parsed = BacktestSchema.parse(req.body);
     const userId = 'demo-user'; // TODO: Get from auth
 
@@ -35,7 +47,7 @@ backtestRouter.post('/run', async (req, res) => {
     const validRules = rules.filter((r) => r !== null);
 
     if (validRules.length === 0) {
-      return res.status(400).json({ error: 'No valid rules found' });
+      return res.status(400).json({ error: 'No valid rules found for the provided IDs' });
     }
 
     const result = await runBacktest({
@@ -48,8 +60,24 @@ backtestRouter.post('/run', async (req, res) => {
 
     res.json(result);
   } catch (error) {
+    // Distinguish validation errors from runtime errors
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ 
+        error: 'Invalid request parameters', 
+        details: error.errors 
+      });
+    }
+
+    if (error instanceof BacktestValidationError) {
+      return res.status(400).json({ 
+        error: error.message 
+      });
+    }
+
     console.error('Backtest error:', error);
-    res.status(500).json({ error: 'Backtest failed' });
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Backtest failed' 
+    });
   }
 });
 

@@ -4,13 +4,23 @@
  */
 
 import { ruleEvaluator } from '../rules/evaluator';
-import type { Rule } from '@shared/types/rules';
+import type { Rule, RuleContext } from '@shared/types/rules';
 import type { Bar } from '../market/eventBus';
 import { getHistory } from '../history/service';
 
+/**
+ * Custom error for backtest validation failures
+ */
+export class BacktestValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BacktestValidationError';
+  }
+}
+
 export interface BacktestInput {
   symbol: string;
-  timeframe: '1m' | '5m' | '15m' | '1h' | 'D';
+  timeframe: '1m'; // Only 1m supported for now
   start: string; // ISO date
   end: string; // ISO date
   rules: Rule[];
@@ -37,15 +47,36 @@ export interface BacktestResult {
 }
 
 /**
+ * Convert Bar to RuleContext (same as live engine)
+ */
+function barToContext(bar: Bar): RuleContext {
+  return {
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    volume: bar.volume,
+  };
+}
+
+/**
  * Run deterministic backtest
+ * Uses the SAME evaluation logic as live trading
  */
 export async function runBacktest(input: BacktestInput): Promise<BacktestResult> {
   const { symbol, timeframe, start, end, rules } = input;
 
-  // Fetch historical bars (simplified to 1m for now)
   const startMs = new Date(start).getTime();
   const endMs = new Date(end).getTime();
+
+  // Fetch historical bars (only 1m supported, enforced by type)
   const limit = Math.min(Math.floor((endMs - startMs) / 60000), 50000);
+
+  if (limit < 1) {
+    throw new BacktestValidationError(
+      'Time range too short. Minimum range is 1 minute for 1m timeframe.'
+    );
+  }
 
   const bars = await getHistory({
     symbol,
@@ -55,36 +86,51 @@ export async function runBacktest(input: BacktestInput): Promise<BacktestResult>
   });
 
   if (bars.length === 0) {
-    throw new Error('No bars found for the specified time range');
+    throw new BacktestValidationError(
+      `No historical data available for ${symbol}. Try a different symbol or time range.`
+    );
+  }
+
+  // Filter to exact time range and sort chronologically (deterministic)
+  const filteredBars = bars
+    .filter((b) => b.bar_start >= startMs && b.bar_start <= endMs)
+    .sort((a, b) => a.bar_start - b.bar_start);
+
+  if (filteredBars.length === 0) {
+    throw new BacktestValidationError(
+      `No bars found in the specified time range (${start} to ${end}). Try expanding the time window.`
+    );
   }
 
   const triggers: BacktestTrigger[] = [];
 
-  // Evaluate each bar with each rule
-  for (let i = 0; i < bars.length; i++) {
-    const bar = bars[i]!;
+  // Evaluate each bar with each rule (deterministic replay)
+  for (let i = 0; i < filteredBars.length; i++) {
+    const bar = filteredBars[i]!;
+    const context = barToContext(bar);
 
     for (const rule of rules) {
-      const result = ruleEvaluator.evaluate(rule, bar, bars.slice(0, i + 1));
+      const result = ruleEvaluator.evaluate(rule, context, bar.seq);
 
-      if (result.passed) {
+      // Only trigger if rule passed and has a valid signal
+      if (result.passed && result.signal && result.signal !== 'flat') {
         triggers.push({
           ruleId: rule.id,
-          seq: i,
-          direction: (result.signal as 'long' | 'short') || 'long',
-          confidence: result.confidence || 1.0,
+          seq: bar.seq,
+          direction: result.signal as 'long' | 'short',
+          confidence: result.confidence,
           ts: bar.bar_start,
-          price: bar.ohlcv.c,
+          price: bar.close,
         });
       }
     }
   }
 
   // Calculate metrics
-  const metrics = calculateMetrics(bars, triggers);
+  const metrics = calculateMetrics(filteredBars, triggers);
 
   return {
-    bars: bars.length,
+    bars: filteredBars.length,
     triggers,
     metrics,
   };
@@ -137,6 +183,7 @@ function calculateMetrics(
 
 /**
  * Get backtest presets for common strategies
+ * Note: Only 1m timeframe is currently supported
  */
 export function getBacktestPresets() {
   return [
@@ -149,20 +196,21 @@ export function getBacktestPresets() {
       rules: ['ltp-breakout'], // Rule IDs
     },
     {
-      id: 'ema-cross',
-      name: 'EMA 20/50 Cross',
-      description: 'Golden/Death cross on 5-minute bars',
-      symbol: 'QQQ',
-      timeframe: '5m' as const,
-      rules: ['ema-20-50-cross'],
-    },
-    {
       id: 'vwap-reclaim',
       name: 'VWAP Reclaim',
-      description: 'Price reclaims VWAP on 15-minute bars',
+      description: 'Price reclaims VWAP on 1-minute bars',
       symbol: 'SPY',
-      timeframe: '15m' as const,
+      timeframe: '1m' as const,
       rules: ['vwap-reclaim'],
     },
+    // TODO: Add 5m and 15m presets when aggregation is implemented
+    // {
+    //   id: 'ema-cross',
+    //   name: 'EMA 20/50 Cross',
+    //   description: 'Golden/Death cross on 5-minute bars',
+    //   symbol: 'QQQ',
+    //   timeframe: '5m' as const,
+    //   rules: ['ema-20-50-cross'],
+    // },
   ];
 }

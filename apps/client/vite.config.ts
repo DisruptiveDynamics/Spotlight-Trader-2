@@ -11,15 +11,15 @@ export default defineConfig({
     allowedHosts: ['.replit.dev'],
     proxy: {
       '/api': {
-        target: 'http://localhost:4000',
+        target: 'http://localhost:8000',
         changeOrigin: true,
       },
       '/stream': {
-        target: 'http://localhost:4000',
+        target: 'http://localhost:8000',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:4000',
+        target: 'ws://localhost:8000',
         ws: true,
       },
     },

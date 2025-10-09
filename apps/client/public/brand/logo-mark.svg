@@ -1,0 +1,14 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Lightbulb Mark Only -->
+  <g id="bulb-mark">
+    <!-- Bulb outline -->
+    <path d="M24 8C19.5817 8 16 11.5817 16 16C16 18.2091 16.8954 20.2091 18.3431 21.6569L18.5 21.8137V28C18.5 28.8284 19.1716 29.5 20 29.5H28C28.8284 29.5 29.5 28.8284 29.5 28V21.8137L29.6569 21.6569C31.1046 20.2091 32 18.2091 32 16C32 11.5817 28.4183 8 24 8Z" stroke="#F3AE3D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Filament -->
+    <path d="M22 18L24 20L26 18" stroke="#F3AE3D" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Base threads -->
+    <line x1="20" y1="32" x2="28" y2="32" stroke="#F3AE3D" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="20" y1="35" x2="28" y2="35" stroke="#F3AE3D" stroke-width="1.5" stroke-linecap="round"/>
+    <!-- Glow rays -->
+    <path d="M24 4V6M24 42V44M12 16H10M38 16H36M14.34 8.34L15.76 9.76M32.24 9.76L33.66 8.34M14.34 23.66L15.76 22.24M32.24 22.24L33.66 23.66" stroke="#F3AE3D" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+  </g>
+</svg>

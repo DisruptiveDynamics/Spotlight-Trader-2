@@ -1,0 +1,7 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Simplified lightbulb for favicon -->
+  <path d="M16 5C12.6863 5 10 7.68629 10 11C10 12.4728 10.5969 13.8061 11.5621 14.7713L11.6667 14.8758V19C11.6667 19.5523 12.1144 20 12.6667 20H19.3333C19.8856 20 20.3333 19.5523 20.3333 19V14.8758L20.4379 14.7713C21.4031 13.8061 22 12.4728 22 11C22 7.68629 19.3137 5 16 5Z" fill="#F3AE3D"/>
+  <path d="M14.6667 13L16 14.3333L17.3333 13" stroke="#101318" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="12.6667" y1="22" x2="19.3333" y2="22" stroke="#F3AE3D" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="12.6667" y1="24" x2="19.3333" y2="24" stroke="#F3AE3D" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

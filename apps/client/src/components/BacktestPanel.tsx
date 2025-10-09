@@ -152,10 +152,7 @@ export function BacktestPanel({ ruleIds }: { ruleIds: string[] }) {
             <div className="text-xs text-gray-500 mb-2">Regime Breakdown</div>
             <div className="flex flex-wrap gap-2">
               {Object.entries(result.metrics.regimeBreakdown).map(([hour, count]) => (
-                <div
-                  key={hour}
-                  className="px-2 py-1 bg-gray-700 rounded text-xs text-gray-300"
-                >
+                <div key={hour} className="px-2 py-1 bg-gray-700 rounded text-xs text-gray-300">
                   {hour}: {count}
                 </div>
               ))}
@@ -172,9 +169,7 @@ export function BacktestPanel({ ruleIds }: { ruleIds: string[] }) {
                 >
                   <span className="text-gray-400">#{trigger.seq}</span>
                   <span
-                    className={
-                      trigger.direction === 'long' ? 'text-green-400' : 'text-red-400'
-                    }
+                    className={trigger.direction === 'long' ? 'text-green-400' : 'text-red-400'}
                   >
                     {trigger.direction.toUpperCase()}
                   </span>

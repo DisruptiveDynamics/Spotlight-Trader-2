@@ -139,10 +139,7 @@ export async function runBacktest(input: BacktestInput): Promise<BacktestResult>
 /**
  * Calculate backtest metrics
  */
-function calculateMetrics(
-  bars: Bar[],
-  triggers: BacktestTrigger[]
-): BacktestResult['metrics'] {
+function calculateMetrics(bars: Bar[], triggers: BacktestTrigger[]): BacktestResult['metrics'] {
   if (triggers.length === 0) {
     return {
       avgHoldBars: 0,
@@ -157,8 +154,7 @@ function calculateMetrics(
     const holdBars = triggers[i + 1]!.seq - triggers[i]!.seq;
     totalHoldBars += holdBars;
   }
-  const avgHoldBars =
-    triggers.length > 1 ? totalHoldBars / (triggers.length - 1) : 0;
+  const avgHoldBars = triggers.length > 1 ? totalHoldBars / (triggers.length - 1) : 0;
 
   // Calculate triggers per day
   const firstTs = bars[0]!.bar_start;

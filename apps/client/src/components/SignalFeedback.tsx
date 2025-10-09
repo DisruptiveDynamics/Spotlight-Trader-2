@@ -53,7 +53,7 @@ export function SignalFeedback({ signal, onSubmit }: SignalFeedbackProps) {
   return (
     <div className="flex flex-col gap-2 p-3 bg-gray-800/50 border border-gray-700 rounded">
       <div className="text-xs text-gray-400">Rate this signal</div>
-      
+
       <div className="flex gap-2">
         <button
           onClick={() => setLabel('good')}

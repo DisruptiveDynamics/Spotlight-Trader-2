@@ -1,0 +1,110 @@
+You are a Staff Frontend/UX engineer. Integrate the Spot Light Trader brand across the client app with high-legibility dark mode, accessible contrast, and performant assets. Keep TypeScript strict and commits small.
+
+GOALS
+- Use the provided logo sitewide (navbar, favicon, app icon, splash loader)
+- Branded color tokens + typography (consistent with our glass-dark theme)
+- SEO/Open Graph + PWA icons & manifest
+- Smooth, lightweight splash animation (no heavy libs)
+- Keep Lighthouse scores ≥ 95 Perf, ≥ 95 A11y
+
+ASSETS
+1) Create folder: apps/client/public/brand/
+   - Save logo variants:
+     - logo.svg (primary mark, lightbulb + wordmark “SPOT LIGHT / TRADER”)
+     - logo-mark.svg (just the bulb mark)
+   - Generate raster icons from SVG:
+     - icon-512.png, icon-192.png, icon-180.png (Apple touch), icon-32.png, icon-16.png
+   - Favicon: favicon.svg and favicon.ico (fallback)
+   - Open Graph base image: og-base.png (1200x630, dark background with bulb mark + app name)
+
+If the source logo is in /public/uploads or provided externally, recreate clean vector paths into logo.svg to avoid bitmap scaling.
+
+THEME TOKENS
+2) Update packages/config/theme.ts to export brand color tokens:
+   export const brand = {
+     primary: "#F3AE3D",     // bulb gold
+     primaryGlow: "rgba(243,174,61,0.35)",
+     textOnPrimary: "#101318",
+     accent: "#6C8BFF",      // existing accent for links/highlights
+   } as const;
+
+   Ensure CSS vars in apps/client/src/styles/globals.css:
+   :root {
+     --brand-primary: #F3AE3D;
+     --brand-primary-glow: rgba(243,174,61,0.35);
+     --brand-text-on-primary: #101318;
+   }
+
+FAVICON + META + PWA
+3) In apps/client/index.html:
+   - Add favicons:
+     <link rel="icon" type="image/svg+xml" href="/brand/favicon.svg" />
+     <link rel="alternate icon" href="/brand/icon-32.png" sizes="32x32" />
+     <link rel="apple-touch-icon" href="/brand/icon-180.png" />
+   - SEO/Open Graph/Twitter:
+     <meta name="theme-color" content="#0B0F14" />
+     <meta property="og:title" content="Spot Light Trader" />
+     <meta property="og:description" content="Real-time AI trading coach with live market charts, rule-based alerts, and voice." />
+     <meta property="og:image" content="/brand/og-base.png" />
+     <meta property="og:type" content="website" />
+     <meta name="twitter:card" content="summary_large_image" />
+   - Link manifest: <link rel="manifest" href="/manifest.webmanifest" />
+
+4) Create apps/client/public/manifest.webmanifest:
+   {
+     "name": "Spot Light Trader",
+     "short_name": "SpotLight",
+     "start_url": "/",
+     "display": "standalone",
+     "background_color": "#0B0F14",
+     "theme_color": "#0B0F14",
+     "icons": [
+       { "src": "/brand/icon-192.png", "sizes": "192x192", "type": "image/png" },
+       { "src": "/brand/icon-512.png", "sizes": "512x512", "type": "image/png" }
+     ]
+   }
+
+TOP BAR BRANDING
+5) Create apps/client/src/components/Brand.tsx:
+   - Renders logo-mark.svg (24–28px) and wordmark “SPOT LIGHT” with small “TRADER” subtitle.
+   - Uses aria-label="Spot Light Trader". Provide <a href="/" className="brand">.
+   - Add subtle glow on hover using --brand-primary-glow.
+
+6) Update apps/client/src/layout/AppShell.tsx:
+   - Replace current left-side title with <Brand />.
+   - Right side: keep latency HUD and coach power; insert small divider.
+
+SPLASH / LOADER
+7) Add apps/client/src/components/Splash.tsx (no heavy libs; use CSS only):
+   - Full-viewport overlay with dark bg.
+   - Center the bulb mark stroked in brand primary.
+   - Simple animation: stroke-dashoffset draw + faint glow pulse (keyframes)
+   - Hide once client bootstraps: fade out over 250ms.
+   - Respect prefers-reduced-motion: no animation, static mark.
+
+   Hook Splash into App root (App.tsx):
+   - Show until React Query hydration + first SSE connection OR 1.5s timeout, whichever first.
+
+SHARE IMAGES (OG) RENDERER
+8) Create a small endpoint or build script to generate dynamic OG images (optional):
+   - apps/client/scripts/og-generate.ts using node-canvas or @vercel/og if available.
+   - For now, keep static og-base.png; include TODO for dynamic symbol/timeframe snapshots.
+
+DARK/LIGHT INTEROP (keep dark-first)
+9) Ensure tokens fallback for light mode later:
+   - Keep body[data-theme="dark"] vars as current.
+   - Create placeholder for body[data-theme="light"] with inverted palette (no need to implement visuals now).
+
+ACCESSIBILITY
+10) Verify color contrast:
+   - Ensure brand primary on dark bg meets AA for non-body text (use text-shadow or outline if needed).
+   - Focus-visible outlines use brand accent or white with 2px width.
+
+TESTS
+11) Add a quick test: apps/client/src/components/__tests__/Brand.test.tsx
+   - Renders logo, links to "/", has aria-label.
+   - Snapshot test for Splash mounting/unmounting.
+
+DOCS
+12) Update README:
+   - “Brand Integration” section: asset locations, how to update icons, OG image notes, PWA manifest.

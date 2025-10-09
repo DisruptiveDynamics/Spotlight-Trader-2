@@ -13,7 +13,9 @@ describe('Backtest Golden Tests', () => {
     for (const testCase of goldenTestCases) {
       it(testCase.name, async () => {
         // Mock getHistory using vi.spyOn
-        const getHistorySpy = vi.spyOn(historyService, 'getHistory').mockResolvedValue(testCase.bars);
+        const getHistorySpy = vi
+          .spyOn(historyService, 'getHistory')
+          .mockResolvedValue(testCase.bars);
 
         try {
           const result = await runBacktest({
@@ -48,10 +50,10 @@ describe('Backtest Golden Tests', () => {
           for (const rule of testCase.rules) {
             const ruleTriggers = result.triggers.filter((t) => t.ruleId === rule.id);
             const expected = expectedTriggers[rule.id as keyof typeof expectedTriggers];
-            
+
             if (expected) {
               expect(ruleTriggers.length).toBe(expected.length);
-              
+
               // Verify each trigger matches expected seq and price
               ruleTriggers.forEach((trigger, idx) => {
                 expect(trigger.seq).toBe(expected[idx]!.seq);
@@ -74,7 +76,7 @@ describe('Backtest Golden Tests', () => {
   describe('Reproducibility', () => {
     it('should produce identical results on repeated runs', async () => {
       const { sampleBars, sampleRules } = await import('./fixtures');
-      
+
       const getHistorySpy = vi.spyOn(historyService, 'getHistory').mockResolvedValue(sampleBars);
 
       try {
@@ -93,7 +95,7 @@ describe('Backtest Golden Tests', () => {
         expect(result1).toEqual(result2);
         expect(result1.triggers).toEqual(result2.triggers);
         expect(result1.metrics).toEqual(result2.metrics);
-        
+
         // Verify metrics are deterministic
         expect(result1.metrics.avgHoldBars).toBe(result2.metrics.avgHoldBars);
         expect(result1.metrics.triggersPerDay).toBe(result2.metrics.triggersPerDay);
@@ -107,7 +109,7 @@ describe('Backtest Golden Tests', () => {
   describe('Edge Cases', () => {
     it('should handle empty bar list gracefully', async () => {
       const { sampleRules } = await import('./fixtures');
-      
+
       const getHistorySpy = vi.spyOn(historyService, 'getHistory').mockResolvedValue([]);
 
       try {
@@ -127,7 +129,7 @@ describe('Backtest Golden Tests', () => {
 
     it('should handle rules with no triggers', async () => {
       const { sampleBars } = await import('./fixtures');
-      
+
       const getHistorySpy = vi.spyOn(historyService, 'getHistory').mockResolvedValue(sampleBars);
 
       try {

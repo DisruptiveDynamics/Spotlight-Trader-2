@@ -40,9 +40,7 @@ backtestRouter.post('/run', async (req, res) => {
     const userId = 'demo-user'; // TODO: Get from auth
 
     // Fetch rules
-    const rules = await Promise.all(
-      parsed.ruleIds.map((id) => ruleRegistry.getRule(userId, id))
-    );
+    const rules = await Promise.all(parsed.ruleIds.map((id) => ruleRegistry.getRule(userId, id)));
 
     const validRules = rules.filter((r) => r !== null);
 
@@ -62,21 +60,21 @@ backtestRouter.post('/run', async (req, res) => {
   } catch (error) {
     // Distinguish validation errors from runtime errors
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ 
-        error: 'Invalid request parameters', 
-        details: error.errors 
+      return res.status(400).json({
+        error: 'Invalid request parameters',
+        details: error.errors,
       });
     }
 
     if (error instanceof BacktestValidationError) {
-      return res.status(400).json({ 
-        error: error.message 
+      return res.status(400).json({
+        error: error.message,
       });
     }
 
     console.error('Backtest error:', error);
-    res.status(500).json({ 
-      error: error instanceof Error ? error.message : 'Backtest failed' 
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Backtest failed',
     });
   }
 });

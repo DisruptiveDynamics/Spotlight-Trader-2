@@ -113,7 +113,7 @@ This system enables strategy automation with AI explanations:
 - Event-driven system listening to `rule:evaluated` and `signal:approved` events
 - Daily metrics computation: expectancy score = (good - bad) / actionable
 - Exponential decay for historical feedback (0.95 decay factor)
-- Scoring algorithm: baseScore * (1 + expectancy * 0.5) for rule quality ranking
+- Scoring algorithm: baseScore _ (1 + expectancy _ 0.5) for rule quality ranking
 
 **Deterministic Backtest Harness** (`apps/server/src/backtest/engine.ts`):
 

@@ -6,6 +6,7 @@ import { SignalDensityControl } from './components/SignalDensityControl';
 import { VWAPControls } from './components/VWAPControls';
 import { TapePeek } from './components/TapePeek';
 import { AccessibilityControls } from './components/AccessibilityControls';
+import { ChartView } from './features/chart/ChartView';
 import { focusManager } from './services/FocusManager';
 
 function App() {
@@ -30,8 +31,8 @@ function App() {
   const opacity = focusManager.getNonPriceOpacity();
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      <header className="bg-gray-800 border-b border-gray-700 p-4" style={{ opacity }}>
+    <div className="min-h-screen bg-gray-900 text-white flex flex-col">
+      <header className="bg-gray-800 border-b border-gray-700 p-4 flex-shrink-0" style={{ opacity }}>
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Spotlight Trader</h1>
           <div className="flex items-center gap-4">
@@ -44,16 +45,15 @@ function App() {
           </div>
         </div>
       </header>
-      <main className="container mx-auto p-8">
-        <div className="grid grid-cols-12 gap-6">
-          <div className="col-span-12 lg:col-span-9 space-y-6">
+      <main className="container mx-auto p-4 flex-1 flex flex-col min-h-0">
+        <div className="grid grid-cols-12 gap-4 flex-1 min-h-0">
+          <div className="col-span-12 lg:col-span-9 space-y-4 flex flex-col min-h-0">
             <div
-              className={`bg-gray-800 p-6 rounded-lg ${
-                focusMode === 'trade' ? 'min-h-[600px]' : ''
+              className={`bg-gray-800 rounded-lg flex-1 min-h-0 ${
+                focusMode === 'trade' ? 'row-span-2' : ''
               }`}
             >
-              <h2 className="text-xl font-semibold mb-4">Market Chart</h2>
-              <p className="text-gray-400">Real-time market data visualization</p>
+              <ChartView />
             </div>
             {focusManager.isPanelVisible('coach') && (
               <div

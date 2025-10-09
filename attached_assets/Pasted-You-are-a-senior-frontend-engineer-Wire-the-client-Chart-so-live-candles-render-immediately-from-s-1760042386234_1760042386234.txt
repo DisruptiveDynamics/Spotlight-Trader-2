@@ -1,0 +1,72 @@
+You are a senior frontend engineer. Wire the client Chart so live candles render immediately from /stream/market and /api/history. Use strict TypeScript and small commits.
+
+GOALS
+- Show 1m candles for SPY by default
+- Backfill recent history, then live-update with SSE
+- Smooth wick movement using microbars (250ms)
+- Clean unmount/dispose, no leaks
+
+DEPENDENCIES
+- If missing, add in @spotlight/client workspace: lightweight-charts and @tanstack/react-query
+
+STRUCTURE
+1) Create apps/client/src/lib/marketStream.ts
+   export type Ohlcv = { o:number; h:number; l:number; c:number; v:number };
+   export type Bar = { symbol:string; timeframe:'1m'; seq:number; bar_start:number; bar_end:number; ohlcv: Ohlcv };
+   export type Micro = { symbol:string; ts:number; ohlcv: Ohlcv };
+
+   export function connectMarketSSE(symbols = ['SPY'], opts?: { sinceSeq?: number }) {
+     const qs = new URLSearchParams({ symbols: symbols.join(','), ...(opts?.sinceSeq ? { sinceSeq: String(opts.sinceSeq) } : {}) });
+     const es = new EventSource(`/stream/market?${qs.toString()}`);
+     const listeners = { bar: [] as ((b:Bar)=>void)[], microbar: [] as ((m:Micro)=>void)[] };
+     es.addEventListener('bar', (e) => { const b = JSON.parse((e as MessageEvent).data) as Bar; listeners.bar.forEach(fn => fn(b)); });
+     es.addEventListener('microbar', (e) => { const m = JSON.parse((e as MessageEvent).data) as Micro; listeners.microbar.forEach(fn => fn(m)); });
+     es.onerror = () => console.warn('SSE error');
+     return {
+       onBar(fn:(b:Bar)=>void){ listeners.bar.push(fn); },
+       onMicro(fn:(m:Micro)=>void){ listeners.microbar.push(fn); },
+       close(){ es.close(); }
+     };
+   }
+
+   export async function fetchHistory(symbol='SPY', timeframe='1m', limit=300) {
+     const qs = new URLSearchParams({ symbol, timeframe, limit: String(limit) });
+     const res = await fetch(`/api/history?${qs.toString()}`);
+     if (!res.ok) throw new Error('history fetch failed');
+     return (await res.json()) as Bar[];
+   }
+
+2) Create apps/client/src/features/chart/ChartView.tsx
+   - Lazy import `lightweight-charts` to keep first paint fast:
+     const { createChart, CrosshairMode } = await import('lightweight-charts');
+   - On mount:
+     a) Fetch history for SPY (300 bars). Convert time to seconds: time = Math.floor(bar_end/1000).
+     b) Create chart with dark theme using CSS vars; full-bleed container.
+     c) Create one candlestick series and setData(history).
+     d) Connect MarketSSE(["SPY"]). On each "bar": series.update({ time, open, high, low, close }).
+     e) On each "microbar": optimistically update the last candle’s high/low/close if within current minute.
+   - On unmount: close SSE and remove the chart (chart.remove()).
+   - Add minimal error boundary and a skeleton placeholder while lazy import resolves.
+
+   Example color config (read from CSS variables):
+     upColor: 'var(--positive)', downColor: 'var(--negative)',
+     borderUpColor: 'var(--positive)', borderDownColor: 'var(--negative)',
+     wickUpColor: 'var(--positive)', wickDownColor: 'var(--negative)'
+
+3) Wire into layout
+   - Import ChartView in AppShell and render it as the default main panel.
+   - Ensure container fills available space (flex:1; min-height: 0).
+
+4) Hooks & utils
+   - Create apps/client/src/features/chart/useLastSeq.ts to store last seen seq in localStorage ('lastSeq:SPY:1m'), use it for SSE sinceSeq resume.
+   - Coalesce microbar paints via requestAnimationFrame; do not apply more than one series.update per frame.
+
+5) Small UX niceties
+   - Show a tiny status pill at top-right of the chart ("LIVE", "PAUSED") that toggles with Space bar (pause freezes microbar updates, but still buffers last finalized bar).
+   - Console.log the first 3 incoming bars for sanity: "BAR seq=… time=… close=…".
+
+6) Types & lint
+   - No `any`. All events typed. Fix ESLint warnings in the new files.
+
+TEST
+- With SIMULATED_DATA=true or real Polygon, you should see history paint instantly, then live candles update, with wicks moving ~every 250ms.

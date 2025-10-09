@@ -1,0 +1,55 @@
+You are a senior full-stack architect and DevOps engineer. 
+Fix the workspace lint/build issues that cause ESLint and Prettier to fail with “Cannot find package '@spotlight/config'” and “None of the selected packages has a build script.”
+
+Apply the following changes cleanly and consistently:
+
+1️⃣ ESLint + Prettier path fixes
+- In every package that references "@spotlight/config" (especially packages/shared, packages/config, apps/server, and apps/client), update import paths to use correct relative references.
+  Example:
+    import config from '@spotlight/config/eslint.config.js'
+  → becomes
+    import config from '../config/eslint.config.js'
+  or correct relative path to /packages/config/
+- Verify that all eslint.config.js and prettier.config.js files import correctly and compile under TypeScript strict mode.
+
+2️⃣ Add dummy build scripts
+- In /packages/shared/package.json and /packages/config/package.json, add:
+  "scripts": {
+    "build": "echo 'no build step required for this package'"
+  }
+  This prevents pnpm recursive build failures during workspace builds.
+
+3️⃣ Ensure ESLint resolver knows path aliases
+- Add the following to the root eslint.config.js (or each package’s config if needed):
+
+  settings: {
+    'import/resolver': {
+      alias: {
+        map: [
+          ['@client', './apps/client/src'],
+          ['@server', './apps/server/src'],
+          ['@shared', './packages/shared/src'],
+          ['@config', './packages/config']
+        ],
+        extensions: ['.ts', '.tsx', '.js', '.jsx']
+      }
+    }
+  }
+
+4️⃣ Verify ESLint and Prettier configs
+- Ensure ESLint 9+ uses Flat Config syntax.
+- Ensure Prettier’s config points to valid local files; remove any invalid @spotlight/config import.
+- Confirm scripts in root package.json:
+  "lint": "eslint . --max-warnings 0",
+  "fmt": "prettier --write ."
+
+5️⃣ Re-run verification
+After applying these fixes, ensure the following commands pass with zero errors:
+  pnpm i
+  pnpm run check
+  pnpm run lint
+  pnpm run fmt
+  pnpm run build
+
+Commit the changes with message:
+  "fix: corrected config import paths, added dummy build scripts, updated eslint resolver"

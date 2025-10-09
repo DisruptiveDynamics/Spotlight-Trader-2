@@ -24,16 +24,13 @@ async function generateIcons() {
     console.log(`✓ Generated ${name} (${size}x${size})`);
   }
 
-  // Generate favicon.ico (multi-resolution)
-  const favicon16 = await sharp(logoMarkSvg).resize(16, 16).png().toBuffer();
-  const favicon32 = await sharp(logoMarkSvg).resize(32, 32).png().toBuffer();
-  
-  // For now, just save as PNG favicon (browsers support it)
+  // Generate favicon.ico fallback (PNG format, widely supported)
+  // Note: Sharp doesn't support ICO format, but modern browsers accept PNG
   await sharp(logoMarkSvg)
     .resize(32, 32)
     .png()
-    .toFile(join(brandDir, 'favicon.png'));
-  console.log('✓ Generated favicon.png (32x32)');
+    .toFile(join(brandDir, 'favicon.ico'));
+  console.log('✓ Generated favicon.ico (32x32 PNG format)');
 
   // Generate Open Graph image (1200x630 with centered logo)
   const ogWidth = 1200;

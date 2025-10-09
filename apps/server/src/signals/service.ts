@@ -50,7 +50,7 @@ export class SignalsService {
         ts: signal.ts,
       });
 
-      riskGovernor.registerSignal(signal);
+      riskGovernor.registerSignal(signal, ruleEval.barSeq);
       eventBus.emit('signal:new', signal);
 
       console.log(

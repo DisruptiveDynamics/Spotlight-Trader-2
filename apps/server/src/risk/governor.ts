@@ -44,20 +44,27 @@ export class RiskGovernor {
       return false;
     }
 
+    if (this.isRiskBudgetExceeded()) {
+      console.warn(
+        `RiskGovernor: Risk budget exceeded (${this.getCurrentRiskExposure().toFixed(2)})`
+      );
+      return false;
+    }
+
     this.recentEvaluations.set(throttleKey, Date.now());
     this.cleanupThrottleCache();
 
     return true;
   }
 
-  registerSignal(signal: Signal): void {
+  registerSignal(signal: Signal, barSeq: number): void {
     const key = `${signal.ruleId}:${signal.symbol}`;
 
     this.activeSignals.set(key, {
       ruleId: signal.ruleId,
       symbol: signal.symbol,
       direction: signal.direction,
-      barSeq: 0,
+      barSeq,
       timestamp: signal.ts.getTime(),
     });
   }

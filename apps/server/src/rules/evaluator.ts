@@ -1,6 +1,35 @@
 import { create, all, type ConfigOptions, type EvalFunction } from 'mathjs';
 import type { Rule, EvaluatedRule, RuleContext } from '@shared/types/rules';
 
+const ALLOWED_FUNCTIONS = new Set([
+  'abs',
+  'max',
+  'min',
+  'mean',
+  'sqrt',
+  'pow',
+  'log',
+  'exp',
+]);
+
+const ALLOWED_OPERATORS = new Set(['+', '-', '*', '/', '>', '<', '>=', '<=', '==', '!=', '&&', '||', '!', '(', ')', ',']);
+
+const ALLOWED_SCOPE_VARS = new Set([
+  'open',
+  'high',
+  'low',
+  'close',
+  'volume',
+  'vwap',
+  'ema20',
+  'ema50',
+  'ema200',
+  'sma20',
+  'sma50',
+  'rsi',
+  'atr',
+]);
+
 const mathConfig: ConfigOptions = {
   epsilon: 1e-12,
   matrix: 'Matrix',
@@ -12,18 +41,24 @@ const mathConfig: ConfigOptions = {
 
 const math = create(all ?? {}, mathConfig);
 
-const ALLOWED_FUNCTIONS = new Set([
-  'abs',
-  'max',
-  'min',
-  'avg',
-  'mean',
-  'std',
-  'sqrt',
-  'pow',
-  'log',
-  'exp',
-]);
+function validateExpression(expr: string, allowedParams: Set<string> = new Set()): void {
+  const tokenRegex = /[a-zA-Z_]\w*|\d+\.?\d*|>=|<=|==|!=|&&|\|\||[+\-*/><!(),]/g;
+  const tokens = expr.match(tokenRegex) || [];
+  
+  for (const token of tokens) {
+    if (/^\d+\.?\d*$/.test(token)) continue;
+    if (ALLOWED_OPERATORS.has(token)) continue;
+    if (ALLOWED_FUNCTIONS.has(token)) continue;
+    if (ALLOWED_SCOPE_VARS.has(token)) continue;
+    if (allowedParams.has(token)) continue;
+    
+    if (/^[a-zA-Z_]\w*$/.test(token)) {
+      throw new Error(`Disallowed identifier in expression: ${token}`);
+    }
+    
+    throw new Error(`Invalid token in expression: ${token}`);
+  }
+}
 
 function sigmoid(x: number): number {
   return 1 / (1 + Math.exp(-x));
@@ -46,6 +81,8 @@ export class RuleEvaluator {
     }
 
     try {
+      const allowedParams = new Set(Object.keys(rule.parameters || {}));
+      validateExpression(rule.expression, allowedParams);
       const compiled = math.compile(rule.expression);
       this.compiledCache.set(cacheKey, compiled);
       return compiled;

@@ -3,6 +3,7 @@ import { db } from '../db/index.js';
 import { signals } from '../db/schema.js';
 import { eq, and, gte, lt } from 'drizzle-orm';
 import { addJournalEntry, linkJournalToSignal } from './service.js';
+import { getRuleScore, getRuleMetrics } from '../learning/loop.js';
 
 export interface EodSummary {
   date: string;
@@ -10,8 +11,11 @@ export interface EodSummary {
   topSignals: Array<{
     signalId: string;
     ruleId: string;
+    symbol: string;
+    time: string;
     confidence: number;
     expectancy: number;
+    acted?: boolean;
   }>;
   drift: string[];
   keepStopTry: {
@@ -34,26 +38,71 @@ export async function generateEodSummary(userId: string, date: string): Promise<
     .where(and(eq(signals.userId, userId), gte(signals.ts, dateStart), lt(signals.ts, dateEnd)))
     .orderBy(signals.ts);
 
-  const topSignals = daySignals
-    .map((s) => ({
-      signalId: s.id,
-      ruleId: s.ruleId,
-      confidence: s.confidence,
-      expectancy: s.confidence * 0.5,
-    }))
-    .sort((a, b) => b.expectancy - a.expectancy)
-    .slice(0, 3);
+  // Calculate expectancy: confidence × rule score (from learning loop)
+  const signalsWithExpectancy = await Promise.all(
+    daySignals.map(async (s) => {
+      const ruleScore = await getRuleScore(userId, s.ruleId);
+      const expectancy = s.confidence * (ruleScore + 1) * 0.5; // Normalize to [0, 1]
+
+      return {
+        signalId: s.id,
+        ruleId: s.ruleId,
+        symbol: s.symbol,
+        time: new Date(s.ts).toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        }),
+        confidence: s.confidence,
+        expectancy,
+        acted: false, // TODO: Link to actual trades when available
+      };
+    })
+  );
+
+  const topSignals = signalsWithExpectancy.sort((a, b) => b.expectancy - a.expectancy).slice(0, 3);
 
   const drift: string[] = [];
   if (daySignals.length < 3) {
     drift.push('Low signal volume - check if rules are too strict');
   }
 
+  // Check for rules that fired but may have been softened/refused by RiskGovernor
+  const lowConfidenceSignals = daySignals.filter((s) => s.confidence < 0.4);
+  if (lowConfidenceSignals.length > 0) {
+    drift.push(
+      `${lowConfidenceSignals.length} signals had low confidence (<40%) - possible RiskGovernor intervention`
+    );
+  }
+
+  // Collect rule metrics for keep/stop/try recommendations
+  const uniqueRules = [...new Set(daySignals.map((s) => s.ruleId))];
+  const ruleMetrics = await Promise.all(
+    uniqueRules.map((ruleId) => getRuleMetrics(userId, ruleId))
+  );
+
   const keepStopTry = {
-    keep: ['Top performing rules with >0.6 confidence'],
-    stop: ['Rules that fired but resulted in losses'],
-    try: ['Adjust thresholds if signals are too conservative'],
+    keep: ruleMetrics
+      .filter((m) => m.score > 0.3 && m.actionable7d > 0)
+      .map((m) => `Rule with score ${m.score.toFixed(2)} (${m.good7d} good, ${m.bad7d} bad in 7d)`)
+      .slice(0, 3),
+    stop: ruleMetrics
+      .filter((m) => m.score < -0.3 && m.actionable7d > 0)
+      .map((m) => `Rule with score ${m.score.toFixed(2)} (${m.good7d} good, ${m.bad7d} bad in 7d)`)
+      .slice(0, 3),
+    try: [
+      'Review rules with neutral scores (±0.3) for potential improvements',
+      'Adjust confidence thresholds if signal density is too low/high',
+    ],
   };
+
+  // Add defaults if empty
+  if (keepStopTry.keep.length === 0) {
+    keepStopTry.keep.push('No rules with sufficient positive performance yet');
+  }
+  if (keepStopTry.stop.length === 0) {
+    keepStopTry.stop.push('No rules with significant losses identified');
+  }
 
   return {
     date,
@@ -67,24 +116,39 @@ export async function generateEodSummary(userId: string, date: string): Promise<
 export function formatEodSummary(summary: EodSummary): string {
   const lines: string[] = [];
 
-  lines.push(`# End of Day Summary - ${summary.date}`);
+  lines.push(`# EOD – ${summary.date}`);
   lines.push('');
   lines.push(`**Signals Fired:** ${summary.signalsFired}`);
   lines.push('');
 
-  lines.push('## Top 3 Signals by Expectancy');
+  lines.push('## Signals Fired');
   lines.push('');
-  lines.push('| Rule ID | Confidence | Expectancy |');
-  lines.push('|---------|-----------|------------|');
+  lines.push('| Time | Symbol | Rule | Confidence | Acted |');
+  lines.push('|------|--------|------|-----------|-------|');
 
   summary.topSignals.forEach((sig) => {
+    const acted = sig.acted ? '✓' : '—';
     lines.push(
-      `| ${sig.ruleId} | ${(sig.confidence * 100).toFixed(0)}% | ${sig.expectancy.toFixed(2)} |`
+      `| ${sig.time} | ${sig.symbol} | ${sig.ruleId.substring(0, 8)}… | ${(sig.confidence * 100).toFixed(0)}% | ${acted} |`
     );
   });
 
   if (summary.topSignals.length === 0) {
-    lines.push('| No signals | - | - |');
+    lines.push('| — | — | — | — | — |');
+  }
+
+  lines.push('');
+
+  lines.push('## Top 3 by Expectancy');
+  lines.push('');
+  summary.topSignals.slice(0, 3).forEach((sig, idx) => {
+    lines.push(
+      `${idx + 1}. **${sig.symbol}** @ ${sig.time} — Confidence ${(sig.confidence * 100).toFixed(0)}%, Expectancy ${sig.expectancy.toFixed(2)}`
+    );
+  });
+
+  if (summary.topSignals.length === 0) {
+    lines.push('_No signals today_');
   }
 
   lines.push('');

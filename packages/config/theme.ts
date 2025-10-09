@@ -4,10 +4,10 @@
  */
 
 export const brand = {
-  primary: '#F3AE3D',           // bulb gold
+  primary: '#F3AE3D', // bulb gold
   primaryGlow: 'rgba(243,174,61,0.35)',
   textOnPrimary: '#101318',
-  accent: '#6C8BFF',            // existing accent for links/highlights
+  accent: '#6C8BFF', // existing accent for links/highlights
 } as const;
 
 export const dark = {

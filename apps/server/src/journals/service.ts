@@ -59,11 +59,11 @@ export async function listJournals(
       date: row.date,
       markdown: row.markdown,
     };
-    
+
     if (row.trades) {
       entry.trades = JSON.parse(row.trades as string) as Trade[];
     }
-    
+
     return entry;
   });
 }
@@ -86,11 +86,11 @@ export async function getJournal(userId: string, journalId: string): Promise<Jou
     date: row.date,
     markdown: row.markdown,
   };
-  
+
   if (row.trades) {
     entry.trades = JSON.parse(row.trades as string) as Trade[];
   }
-  
+
   return entry;
 }
 

@@ -12,6 +12,7 @@ import insightRouter from './routes/insight';
 import { flagsRouter } from './routes/flags';
 import { feedbackRouter } from './routes/feedback';
 import { backtestRouter } from './routes/backtest';
+import { signalsRouter } from './routes/signals';
 import { startEodScheduler } from './journals/eod';
 import { initializeLearningLoop } from './learning/loop';
 
@@ -37,6 +38,7 @@ app.use('/api/insight', insightRouter);
 app.use('/api/flags', flagsRouter);
 app.use('/api/feedback', feedbackRouter);
 app.use('/api/backtest', backtestRouter);
+app.use('/api/signals', signalsRouter);
 
 initializeLearningLoop();
 startEodScheduler();

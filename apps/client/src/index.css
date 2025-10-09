@@ -4,33 +4,33 @@
 
 :root {
   /* Brand colors */
-  --brand-primary: #F3AE3D;
+  --brand-primary: #f3ae3d;
   --brand-primary-glow: rgba(243, 174, 61, 0.35);
   --brand-text-on-primary: #101318;
-  --brand-accent: #6C8BFF;
-  
+  --brand-accent: #6c8bff;
+
   /* Trading colors */
   --color-up: #10b981;
   --color-down: #ef4444;
   --color-neutral: #6b7280;
-  
+
   /* Dark theme base */
-  --bg-dark: #0B0F14;
-  --bg-elevated: #161B22;
+  --bg-dark: #0b0f14;
+  --bg-elevated: #161b22;
   --bg-glass: rgba(22, 27, 34, 0.8);
   --border-dark: rgba(255, 255, 255, 0.1);
-  --text-primary: #E6EDF3;
-  --text-muted: #8B949E;
+  --text-primary: #e6edf3;
+  --text-muted: #8b949e;
 }
 
 /* Dark theme (default) */
-body[data-theme="dark"] {
+body[data-theme='dark'] {
   background-color: var(--bg-dark);
   color: var(--text-primary);
 }
 
 /* Light theme placeholder for future */
-body[data-theme="light"] {
+body[data-theme='light'] {
   /* TODO: Implement light theme tokens */
   background-color: #ffffff;
   color: #1a1a1a;

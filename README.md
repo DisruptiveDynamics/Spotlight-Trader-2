@@ -153,6 +153,7 @@ Brand colors are defined in `packages/config/theme.ts`:
 - **Dark BG**: `#0B0F14` (app background)
 
 CSS variables are available in all components:
+
 - `var(--brand-primary)`
 - `var(--brand-primary-glow)`
 - `var(--brand-accent)`

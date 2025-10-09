@@ -2,12 +2,13 @@ import { db } from '../db/index.js';
 import { journals, journalLinks } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import type { JournalEntry, JournalLink } from './model.js';
+import type { JournalEntry, JournalLink, Trade } from './model.js';
 
 export async function addJournalEntry(
   userId: string,
   date: string,
-  textOrJson: string | object
+  textOrJson: string | object,
+  trades?: Trade[]
 ): Promise<string> {
   const id = nanoid();
   const markdown =
@@ -18,6 +19,7 @@ export async function addJournalEntry(
     userId,
     date,
     markdown,
+    trades: trades ? JSON.stringify(trades) : null,
   });
 
   return id;
@@ -50,12 +52,20 @@ export async function listJournals(
 
   const results = await db.select().from(journals).where(whereClause).orderBy(journals.date);
 
-  return results.map((row) => ({
-    id: row.id,
-    userId: row.userId,
-    date: row.date,
-    markdown: row.markdown,
-  }));
+  return results.map((row) => {
+    const entry: JournalEntry = {
+      id: row.id,
+      userId: row.userId,
+      date: row.date,
+      markdown: row.markdown,
+    };
+    
+    if (row.trades) {
+      entry.trades = JSON.parse(row.trades as string) as Trade[];
+    }
+    
+    return entry;
+  });
 }
 
 export async function getJournal(userId: string, journalId: string): Promise<JournalEntry | null> {
@@ -70,12 +80,18 @@ export async function getJournal(userId: string, journalId: string): Promise<Jou
   }
 
   const row = results[0];
-  return {
+  const entry: JournalEntry = {
     id: row.id,
     userId: row.userId,
     date: row.date,
     markdown: row.markdown,
   };
+  
+  if (row.trades) {
+    entry.trades = JSON.parse(row.trades as string) as Trade[];
+  }
+  
+  return entry;
 }
 
 export async function updateJournal(

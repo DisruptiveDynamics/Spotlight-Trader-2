@@ -80,6 +80,7 @@ export const journals = pgTable('journals', {
   userId: text('user_id').notNull(),
   date: date('date').notNull(),
   markdown: text('markdown').notNull(),
+  trades: jsonb('trades'), // Array of Trade objects
 });
 
 export const journalLinks = pgTable('journal_links', {

@@ -9,6 +9,20 @@ export default defineConfig({
     port: 5000,
     strictPort: true,
     allowedHosts: ['.replit.dev'],
+    proxy: {
+      '/api': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
+      '/stream': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: 'ws://localhost:4000',
+        ws: true,
+      },
+    },
   },
   resolve: {
     alias: {

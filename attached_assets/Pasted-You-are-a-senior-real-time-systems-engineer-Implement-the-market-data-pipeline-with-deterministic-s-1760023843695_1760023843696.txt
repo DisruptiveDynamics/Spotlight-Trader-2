@@ -1,0 +1,81 @@
+You are a senior real-time systems engineer. Implement the market data pipeline with deterministic sequencing and lossless resume.
+
+Create in apps/server/src:
+
+1) market/eventBus.ts
+   - Tiny typed EventEmitter wrapper. Topics:
+     "tick:{symbol}", "microbar:{symbol}", "bar:new:{symbol}:1m"
+
+2) market/polygonWs.ts
+   - Single Polygon WebSocket client (level-1 trades/quotes) with robust reconnect, heartbeats, and backoff.
+   - Normalize ticks using EXCHANGE timestamps (not server time).
+   - Publish ticks: eventBus.emit(`tick:${symbol}`, { ts, price, size, side })
+
+3) market/barBuilder.ts
+   - Subscribe to ticks for subscribed symbols.
+   - Build microbars at 250ms cadence (ring buffer in memory, maintain last ~2–5 minutes).
+   - Aggregate to 1m bars with explicit rollover driven by exchange time.
+   - Maintain per symbol state:
+       {
+         currentBar: { open, high, low, close, volume },
+         seq: number,           // strictly monotonic
+         bar_start: number,     // ms epoch aligned to minute
+         bar_end: number        // ms epoch
+       }
+   - On minute rollover:
+       - finalize prior bar
+       - emit eventBus.emit(`bar:new:${symbol}:1m`, { symbol, timeframe:"1m", seq, bar_start, bar_end, ohlcv })
+       - NEVER mutate finalized bars
+   - Emit microbars continuously:
+       eventBus.emit(`microbar:${symbol}`, { symbol, tf:"250ms", ts, ohlcv })
+   - Hook to favorites (temporary default: ["SPY","QQQ"]) and start/stop subscriptions.
+
+4) cache/ring.ts (Redis ring buffer)
+   - Store last 5,000 finalized 1m bars per {symbol}.
+   - API:
+       putBars(symbol, bars[])     // append and trim ring
+       getSinceSeq(symbol, seq)    // return bars with seq > given seq
+       getRecent(symbol, n)        // tail n bars
+   - Use a compact JSON encoding; include {seq, bar_start, bar_end, ohlcv}.
+
+5) history/service.ts
+   - GET /api/history
+     Query params: symbol (required), timeframe=1m, limit=1000, before?, sinceSeq?
+     Behavior:
+       - If sinceSeq provided: attempt Redis getSinceSeq; if empty, fall back to Polygon REST.
+       - Otherwise: Polygon REST backfill (compact bars with seq assigned by aligning to minute and ordering), then cache to Redis via putBars.
+     - Return array of { seq, bar_start, bar_end, ohlcv }
+
+6) stream/sse.ts
+   - GET /stream/market (SSE)
+     Headers: "Content-Type: text/event-stream", "Cache-Control: no-store", "Connection: keep-alive"
+     Heartbeat comment ":\n\n" every 15s.
+     Support query params:
+       - symbols=SPY,QQQ (defaults to SPY)
+       - sinceSeq=<number> (optional resume)
+     On connect:
+       - If sinceSeq set: backfill via history/service, send each backfilled bar as:
+           id: <seq>
+           event: bar
+           data: { symbol, timeframe:"1m", seq, bar_start, bar_end, ohlcv }
+         (one per line, double newline)
+     Live stream:
+       - On eventBus "microbar:{symbol}" → send:
+           event: microbar
+           data: { symbol, ts, ohlcv }
+       - On eventBus "bar:new:{symbol}:1m" → send:
+           id: <seq>
+           event: bar
+           data: { symbol, timeframe:"1m", seq, bar_start, bar_end, ohlcv }
+     NOTE: Do not gzip; set TCP_NODELAY; flush after each event write.
+
+7) wiring/index.ts
+   - Initialize polygonWs, barBuilder, ring cache, history, and sse route.
+   - Add /ready to check Redis + DB connections.
+
+8) tests:
+   - Unit: barBuilder minute rollover never mutates finalized bar; seq strictly increases.
+   - Unit: ring.getSinceSeq returns correct slice.
+   - Integration: simulate ticks across minute boundary; expect exactly one finalized bar + new current bar.
+
+Keep TypeScript strict. No rules/signals yet—just market stream + history + ring cache.

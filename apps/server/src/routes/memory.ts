@@ -7,6 +7,7 @@ import {
   deleteMemory,
   type MemoryKind,
 } from '../memory/store.js';
+import { AuthRequest } from '../middleware/requireUser.js';
 
 const router: Router = Router();
 
@@ -27,10 +28,10 @@ const SearchMemoriesSchema = z.object({
   k: z.coerce.number().optional(),
 });
 
-router.post('/', async (req, res) => {
+router.post('/', async (req: AuthRequest, res) => {
   try {
     const parsed = SaveMemorySchema.parse(req.body);
-    const userId = 'demo-user';
+    const userId = req.user!.userId;
 
     const id = await saveMemory(userId, parsed.kind, parsed.text, parsed.tags);
 
@@ -44,10 +45,10 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.get('/', async (req, res) => {
+router.get('/', async (req: AuthRequest, res) => {
   try {
     const parsed = ListMemoriesSchema.parse(req.query);
-    const userId = 'demo-user';
+    const userId = req.user!.userId;
 
     const options: { kind?: MemoryKind; limit?: number; tag?: string } = {};
     if (parsed.kind) options.kind = parsed.kind;
@@ -66,10 +67,10 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/search', async (req, res) => {
+router.get('/search', async (req: AuthRequest, res) => {
   try {
     const parsed = SearchMemoriesSchema.parse(req.query);
-    const userId = 'demo-user';
+    const userId = req.user!.userId;
 
     const k = parsed.k ?? 4;
     const memories = await retrieveTopK(userId, parsed.q, k);
@@ -84,9 +85,9 @@ router.get('/search', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', async (req: AuthRequest, res) => {
   try {
-    const userId = 'demo-user';
+    const userId = req.user!.userId;
     const { id } = req.params;
 
     await deleteMemory(userId, id);

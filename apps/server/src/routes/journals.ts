@@ -9,6 +9,7 @@ import {
   linkJournalToSignal,
 } from '../journals/service.js';
 import { generateEodSummary, formatEodSummary } from '../journals/eod.js';
+import { AuthRequest } from '../middleware/requireUser.js';
 
 const router: Router = Router();
 
@@ -22,10 +23,10 @@ const ListJournalsSchema = z.object({
   date: z.string().optional(),
 });
 
-router.post('/', async (req, res) => {
+router.post('/', async (req: AuthRequest, res) => {
   try {
     const parsed = CreateJournalSchema.parse(req.body);
-    const userId = 'demo-user';
+    const userId = req.user!.userId;
 
     const content = parsed.text ?? parsed.tradeJson;
     if (!content) {
@@ -51,10 +52,10 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.get('/', async (req, res) => {
+router.get('/', async (req: AuthRequest, res) => {
   try {
     const parsed = ListJournalsSchema.parse(req.query);
-    const userId = 'demo-user';
+    const userId = req.user!.userId;
 
     const options = parsed.date ? { date: parsed.date } : {};
     const journals = await listJournals(userId, options);
@@ -69,9 +70,9 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req: AuthRequest, res) => {
   try {
-    const userId = 'demo-user';
+    const userId = req.user!.userId;
     const { id } = req.params;
 
     const journal = await getJournal(userId, id);
@@ -87,10 +88,10 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', async (req: AuthRequest, res) => {
   try {
     const parsed = CreateJournalSchema.parse(req.body);
-    const userId = 'demo-user';
+    const userId = req.user!.userId;
     const { id } = req.params;
 
     const content = parsed.text ?? parsed.tradeJson;
@@ -110,9 +111,9 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', async (req: AuthRequest, res) => {
   try {
-    const userId = 'demo-user';
+    const userId = req.user!.userId;
     const { id } = req.params;
 
     await deleteJournal(userId, id);
@@ -124,9 +125,9 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-router.post('/eod/preview', async (req, res) => {
+router.post('/eod/preview', async (req: AuthRequest, res) => {
   try {
-    const userId = 'demo-user';
+    const userId = req.user!.userId;
     const today = new Date().toISOString().split('T')[0] ?? '';
 
     const summary = await generateEodSummary(userId, today);

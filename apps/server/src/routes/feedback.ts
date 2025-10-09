@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { saveFeedback, getRuleMetrics } from '../learning/loop';
+import { AuthRequest } from '../middleware/requireUser.js';
 
 export const feedbackRouter: Router = Router();
 
@@ -16,10 +17,10 @@ const FeedbackSchema = z.object({
  * POST /api/feedback
  * Submit feedback for a signal
  */
-feedbackRouter.post('/', async (req, res) => {
+feedbackRouter.post('/', async (req: AuthRequest, res) => {
   try {
     const parsed = FeedbackSchema.parse(req.body);
-    const userId = 'demo-user'; // TODO: Get from auth
+    const userId = req.user!.userId;
 
     await saveFeedback({
       userId,
@@ -41,14 +42,14 @@ feedbackRouter.post('/', async (req, res) => {
  * GET /api/rules/metrics?ruleId=...
  * Get aggregated metrics and score for a rule
  */
-feedbackRouter.get('/rules/metrics', async (req, res) => {
+feedbackRouter.get('/rules/metrics', async (req: AuthRequest, res) => {
   try {
     const ruleId = req.query.ruleId as string;
     if (!ruleId) {
       return res.status(400).json({ error: 'Missing ruleId' });
     }
 
-    const userId = 'demo-user'; // TODO: Get from auth
+    const userId = req.user!.userId;
     const metrics = await getRuleMetrics(userId, ruleId);
 
     res.json({ metrics });

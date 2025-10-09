@@ -1,0 +1,121 @@
+Nice catch — that screenshot shows three separate but minor issues, none of which are serious. You’re very close to running clean. Here’s how to fix each one:
+
+⸻
+
+🧩 1. TypeScript composite project error
+
+TS6306: Referenced project ... must have setting "composite": true.
+
+This means your shared workspace (packages/shared) isn’t marked as a composite TypeScript project — required for monorepos with project references.
+
+✅ Fix
+Edit /packages/shared/tsconfig.json
+Add the following at the top level (or change to true if it already exists):
+
+{
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": false,
+    "outDir": "dist",
+    "module": "ESNext",
+    "target": "ES2022",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "include": ["src"]
+}
+
+Then make sure your root tsconfig.json has:
+
+{
+  "references": [
+    { "path": "./packages/shared" },
+    { "path": "./packages/config" },
+    { "path": "./apps/client" },
+    { "path": "./apps/server" }
+  ]
+}
+
+
+⸻
+
+🔥 2. “Port 5000 is already in use”
+
+error when starting dev server: Error: Port 5000 is already in use
+
+This just means the client dev server is still running in the background (Replit sometimes doesn’t kill it cleanly when restarting concurrently).
+
+✅ Fix
+
+In your Replit shell, run:
+
+kill -9 $(lsof -t -i:5000)
+
+Then restart dev:
+
+pnpm run dev
+
+
+⸻
+
+⚙️ 3. Address in use on 8000 (server)
+
+EADDRINUSE: address already in use 0.0.0.0:8000
+
+Same thing — the server didn’t shut down before re-launch.
+
+✅ Fix
+
+kill -9 $(lsof -t -i:8000)
+
+Then rerun:
+
+pnpm run dev
+
+
+⸻
+
+✅ 4. After fixing, verify
+
+Run this sequence:
+
+pnpm run check
+pnpm run lint
+pnpm run fmt
+pnpm run build
+pnpm run dev
+
+Watch that both client and server start cleanly — you should see:
+
+[server] listening on 8000
+[client] vite dev server running on port 5000
+
+Then hit your preview URL; it should load without errors.
+
+⸻
+
+⚡ 5. Optional optimization (recommended)
+
+Add --port 5173 for the client in package.json scripts so it doesn’t clash with Replit’s internal port.
+
+In /apps/client/package.json:
+
+"scripts": {
+  "dev": "vite --host 0.0.0.0 --port 5173",
+  "build": "tsc && vite build"
+}
+
+
+⸻
+
+Once you do this, you’ll have:
+✅ TypeScript composite fixed
+✅ Clean ports
+✅ Both services running smoothly
+
+After you confirm the chart renders (candles + data stream), you’re clear to move on to the Pro Chart (8b) prompt.
+
+Would you like me to write the exact Replit agent prompt that applies these fixes automatically before continuing?

@@ -1,0 +1,105 @@
+You are a senior full-stack engineer. Add production-grade Journaling and a Coach Memory (pgvector) so the coach learns across sessions, using strict types and small commits.
+
+GOALS
+- Structured journals with Trade objects (plan → entry → scale → exit → outcome)
+- Automatic end-of-day (EOD) summaries linked to signals
+- Coach Memory store backed by pgvector with decay-aware retrieval
+- Surface memory + profile (tone/decisiveness/jargon) in session.update context
+
+SERVER (apps/server/src)
+
+1) journals/model.ts
+   - Export types:
+     type TradeSide = 'long'|'short';
+     interface Trade {
+       id: string; userId: string; symbol: string; side: TradeSide;
+       planText?: string; ruleId?: string; ruleVersion?: string;
+       entryTime?: string; entryPrice?: number;
+       scales?: { at: string; price: number; size?: number }[];
+       exitTime?: string; exitPrice?: number;
+       outcomePnl?: number; notes?: string;
+       regime?: 'trend'|'range'|'news'|'illiquid';
+       tape?: { volumeZ?: number; spreadBp?: number; uptickDelta?: number };
+       createdAt: string;
+     }
+   - Map to existing tables: journals (daily markdown) + journal_links (links to signal IDs) and allow storage of structured Trade as JSON inside journals markdown front-matter or separate JSON page (choose simplest: JSON).
+
+2) journals/service.ts
+   - addJournalEntry(userId, date, textOrJson)
+   - linkJournalToSignal(journalId, signalId)
+   - listJournals(userId, {date?})
+   - getJournal(userId, journalId)
+
+3) journals/eod.ts
+   - Cron-like job (node-cron or setInterval) at 15:59:30 America/New_York:
+     * Query signals for user for that day
+     * Compute: “Signals fired”, “Top 3 by expectancy (confidence × realized win rate)”, “Drift notes” (rule fired but RiskGovernor softened/refused)
+     * Compose markdown with a small table + 3 bullets “Keep / Stop / Try”
+     * Save to journals and create journal_links for each signal
+   - Export startEodScheduler() and call it from server bootstrap only in NODE_ENV !== 'test'
+
+4) memory/embed.ts
+   - embedText(text: string) → number[] using OpenAI embeddings (model from env or default)
+   - Guardrail: truncate >2k chars
+
+5) memory/store.ts
+   - saveMemory(userId, kind: 'playbook'|'glossary'|'postmortem', text: string, tags: string[]) → id
+   - listMemories(userId, {kind?, limit?, tag?})
+   - retrieveTopK(userId, query: string, k=4, decayHalfLifeDays=10, diversityPenalty=0.1)
+     * SQL with pgvector: cosine distance
+     * Add time-decay weight: score = cosSim * exp(-age/halfLife)
+     * Simple diversity: skip items with Jaccard tags overlap > 0.8 if we already have similar
+
+6) coach/sessionContext.ts
+   - buildSessionContext(userId):
+     * Load coach_profile (tone, decisiveness, jargon, voice, agent_name)
+     * Fetch topK memories via retrieveTopK('what should I keep in mind today?')
+     * Include a compact “profile + memory” block limited to 1200 tokens
+   - Export getInitialSessionUpdate(userId) → the `session.update.session` object merged with VOICE_COACH_SYSTEM instructions (from policy.ts)
+
+7) routes/journals.ts
+   - POST /api/journals { text | tradeJson, links?: [signalId] } → returns {journalId}
+   - GET  /api/journals?date=YYYY-MM-DD → list
+   - GET  /api/journals/:id → single
+   - POST /api/journals/eod/preview → compute but don’t persist (for testing)
+
+8) routes/memory.ts
+   - POST /api/memory { kind, text, tags[] } → id
+   - GET  /api/memory?kind=&tag= → list
+   - GET  /api/memory/search?q= → retrieveTopK
+
+9) wire session context
+   - When issuing the server-side FIRST `session.update` in realtime/voiceProxy.ts, call getInitialSessionUpdate(userId) and merge:
+     {
+       ...sessionFields,
+       instructions: VOICE_COACH_SYSTEM + "\n\n" + profileAndMemoryBlock
+     }
+
+CLIENT (apps/client/src)
+
+10) features/journal/JournalView.tsx
+    - Daily list (left sidebar by date) + markdown/JSON render (main)
+    - “Journal it” quick action: opens modal to add note or structured Trade (symbol, side, entry/exit, notes). On save, POST /api/journals.
+    - “Preview EOD” button calls /api/journals/eod/preview and displays in modal.
+
+11) features/coach/MemoryPanel.tsx
+    - Add memory item: kind select + textarea + tags
+    - List recent items; search (calls /api/memory/search?q=…)
+    - When saved, toast success
+
+TESTS
+
+12) tests/journals.test.ts
+    - create journal, link signal, fetch by date
+    - eod preview produces markdown with 3 sections and links
+
+13) tests/memory.test.ts
+    - embedding mocked; saveMemory → vector stored; retrieveTopK returns by similarity with decay and diversity
+
+DOCS
+
+14) README
+    - “Journaling & Memory” section with API examples
+    - How the memory is included in the initial session.update
+
+Keep TypeScript strict. Avoid any ‘any’. Ensure routes validate input with zod. Keep commits small.

@@ -2,7 +2,7 @@ import type { Server as HTTPServer } from 'http';
 import type { Express } from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
 import { verifyVoiceToken } from './auth';
-import { VOICE_COACH_SYSTEM } from '../coach/policy';
+import { getInitialSessionUpdate } from '../coach/sessionContext';
 import { validateEnv } from '@shared/env';
 
 const env = validateEnv(process.env);
@@ -75,26 +75,21 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
     let clientHeartbeat: NodeJS.Timeout | null = null;
     let upstreamHeartbeat: NodeJS.Timeout | null = null;
 
-    upstreamWs.on('open', () => {
-      const sessionUpdate = {
-        type: 'session.update',
+    upstreamWs.on('open', async () => {
+      const sessionUpdate = await getInitialSessionUpdate(userId);
+
+      const fullUpdate = {
+        ...sessionUpdate,
         session: {
+          ...sessionUpdate.session,
           modalities: ['audio', 'text'],
-          turn_detection: {
-            type: 'server_vad',
-            threshold: 0.5,
-            prefix_padding_ms: 200,
-            silence_duration_ms: 350,
-          },
           input_audio_format: 'pcm16',
           output_audio_format: 'pcm16',
           temperature: 0.3,
-          instructions: VOICE_COACH_SYSTEM,
-          voice: 'alloy',
         },
       };
 
-      upstreamWs.send(JSON.stringify(sessionUpdate));
+      upstreamWs.send(JSON.stringify(fullUpdate));
       upstreamReady = true;
 
       while (clientBuffer.length > 0) {

@@ -6,6 +6,9 @@ import { initializeMarketPipeline } from './wiring';
 import { setupVoiceProxy } from './realtime/voiceProxy';
 import { setupVoiceTokenRoute } from './routes/voiceToken';
 import { rulesRouter } from './routes/rules';
+import journalsRouter from './routes/journals';
+import memoryRouter from './routes/memory';
+import { startEodScheduler } from './journals/eod';
 
 const env = validateEnv(process.env);
 const app = express();
@@ -23,6 +26,10 @@ setupVoiceTokenRoute(app);
 setupVoiceProxy(app, server);
 
 app.use('/api', rulesRouter);
+app.use('/api/journals', journalsRouter);
+app.use('/api/memory', memoryRouter);
+
+startEodScheduler();
 
 const PORT = 4000;
 

@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { InsightRequest, InsightResponse } from '@spotlight/shared';
+import OpenAI from 'openai';
 
 const router = Router();
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 // Rate limiting map: userId -> last request timestamps
 const rateLimitMap = new Map<string, number[]>();
@@ -106,25 +110,49 @@ ${signalsSummary}
 
 Question: ${question}`;
 
-    // For now, return a structured response (OpenAI integration pending)
-    // TODO: Integrate with OpenAI Responses API when key is available
-    const response: InsightResponse = {
-      text: `I'm analyzing ${context.symbol} on the ${context.timeframe} timeframe. Current price is ${currentBar?.c.toFixed(2)}. ${
-        context.overlays.ema 
-          ? `The EMAs show ${Object.entries(context.overlays.ema).map(([p, v]) => `${p}-period at ${v.toFixed(2)}`).join(', ')}.` 
-          : ''
-      } ${question.includes('signal') && context.activeSignals?.length ? `You have an active ${context.activeSignals[0].direction} signal with ${context.activeSignals[0].confidence}% confidence.` : ''}`,
-      timestamp: Date.now(),
-    };
+    // Call OpenAI for analysis
+    try {
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 300,
+        temperature: 0.7,
+      });
 
-    // Log for development
-    console.log('📊 Insight Request:', {
-      symbol: context.symbol,
-      question: question.substring(0, 50),
-      bars: context.bars.length,
-    });
+      const aiResponse = completion.choices[0]?.message?.content || 
+        'Unable to analyze at this time.';
 
-    res.json(response);
+      const response: InsightResponse = {
+        text: aiResponse,
+        timestamp: Date.now(),
+      };
+
+      // Log for development
+      console.log('📊 Insight Request:', {
+        symbol: context.symbol,
+        question: question.substring(0, 50),
+        bars: context.bars.length,
+      });
+
+      res.json(response);
+    } catch (aiError) {
+      console.error('❌ OpenAI error:', aiError);
+      
+      // Fallback response
+      const response: InsightResponse = {
+        text: `I'm analyzing ${context.symbol} on the ${context.timeframe} timeframe. Current price is ${currentBar?.c.toFixed(2)}. ${
+          context.overlays.ema 
+            ? `The EMAs show ${Object.entries(context.overlays.ema).map(([p, v]) => `${p}-period at ${v.toFixed(2)}`).join(', ')}.` 
+            : ''
+        }`,
+        timestamp: Date.now(),
+      };
+      
+      res.json(response);
+    }
   } catch (error) {
     console.error('❌ Insight error:', error);
     res.status(500).json({

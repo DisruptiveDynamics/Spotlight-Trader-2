@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useExplainSignal } from './useExplainSignal';
 import { useInsightJournal } from './useInsightJournal';
 import type { InsightContext } from '@spotlight/shared';
@@ -11,38 +11,31 @@ interface ExplainPanelProps {
 
 export function ExplainPanel({ isOpen, onClose, context }: ExplainPanelProps) {
   const [question, setQuestion] = useState('');
-  const { explain, response, isLoading, error } = useExplainSignal();
+  const { explain, response, lastQuestion, isLoading, error, clearResponse } = useExplainSignal();
   const { saveInsight } = useInsightJournal();
+  const lastSavedTimestampRef = useRef<number>(0);
 
   const handleAsk = async () => {
     if (!question.trim() || !context) return;
     
-    await explain(question, context);
-    
-    // Save to journal if response received
-    if (context) {
-      await saveInsight({
-        symbol: context.symbol,
-        timeframe: context.timeframe,
-        question,
-        response: '', // Will be filled by response
-      });
-    }
-    
+    const userQuestion = question;
+    clearResponse(); // Clear previous response
+    await explain(userQuestion, context);
     setQuestion('');
   };
 
-  // Save insights to journal when response is received
+  // Save insights to journal when NEW response is received
   useEffect(() => {
-    if (response && context) {
+    if (response && context && lastQuestion && response.timestamp > lastSavedTimestampRef.current) {
       saveInsight({
         symbol: context.symbol,
         timeframe: context.timeframe,
-        question: context.lastPrompt || 'Chart analysis',
+        question: lastQuestion,
         response: response.text,
       });
+      lastSavedTimestampRef.current = response.timestamp;
     }
-  }, [response, context, saveInsight]);
+  }, [response, context, lastQuestion, saveInsight]);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -58,6 +51,13 @@ export function ExplainPanel({ isOpen, onClose, context }: ExplainPanelProps) {
     "What are the key support/resistance levels?",
     "Is this a good entry point?",
   ];
+
+  const handleQuickQuestion = async (q: string) => {
+    if (!context || isLoading) return;
+    setQuestion(q);
+    clearResponse(); // Clear previous response
+    await explain(q, context);
+  };
 
   if (!isOpen) return null;
 
@@ -124,13 +124,9 @@ export function ExplainPanel({ isOpen, onClose, context }: ExplainPanelProps) {
           {quickQuestions.map((q) => (
             <button
               key={q}
-              onClick={() => {
-                setQuestion(q);
-                if (context) {
-                  explain(q, context);
-                }
-              }}
-              className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded transition-colors"
+              onClick={() => handleQuickQuestion(q)}
+              disabled={isLoading}
+              className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors"
             >
               {q}
             </button>

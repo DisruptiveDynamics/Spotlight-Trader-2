@@ -3,19 +3,23 @@ import type { InsightContext, InsightResponse } from '@spotlight/shared';
 
 interface UseExplainSignalResult {
   explain: (question: string, context: InsightContext) => Promise<void>;
+  clearResponse: () => void;
   response: InsightResponse | null;
+  lastQuestion: string | null;
   isLoading: boolean;
   error: string | null;
 }
 
 export function useExplainSignal(): UseExplainSignalResult {
   const [response, setResponse] = useState<InsightResponse | null>(null);
+  const [lastQuestion, setLastQuestion] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const explain = useCallback(async (question: string, context: InsightContext) => {
     setIsLoading(true);
     setError(null);
+    setLastQuestion(question); // Track the question
 
     try {
       const res = await fetch('/api/insight/explain', {
@@ -51,9 +55,15 @@ export function useExplainSignal(): UseExplainSignalResult {
     }
   }, []);
 
+  const clearResponse = useCallback(() => {
+    setResponse(null);
+  }, []);
+
   return {
     explain,
+    clearResponse,
     response,
+    lastQuestion,
     isLoading,
     error,
   };

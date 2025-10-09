@@ -94,6 +94,51 @@ This system enables strategy automation with AI explanations:
 - **Journaling Architecture**: Provides structured trade tracking and automated end-of-day summaries with markdown entries, trade objects, and links to signals.
 - **Coach Memory System (Pgvector)**: Stores and retrieves `playbook`, `glossary`, and `postmortem` memories with OpenAI embeddings, featuring decay-aware retrieval and diversity filtering. This system integrates a personalized context into the OpenAI Realtime API.
 
+### Continuous Learning Loop & Backtesting
+
+**Feature Flags System** (`apps/server/src/flags.ts`):
+
+- In-memory feature flags for safe rollouts: `enableBacktest`, `enableLearning`, `enableCoachMemory`
+- GET `/api/flags` endpoint for client feature discovery
+- Helper functions: `isEnabled()`, `getFlags()` for server-side checks
+
+**Feedback Schema** (Database):
+
+- `feedback` table: Stores user feedback on signals (good/bad/missed/late) with optional notes
+- `rule_metrics_daily` table: Aggregates daily rule performance (fired, actionable, good, bad counts)
+- Supports continuous improvement of rule quality based on trader feedback
+
+**Learning Loop Service** (`apps/server/src/learning/loop.ts`):
+
+- Event-driven system listening to `rule:evaluated` and `signal:approved` events
+- Daily metrics computation: expectancy score = (good - bad) / actionable
+- Exponential decay for historical feedback (0.95 decay factor)
+- Scoring algorithm: baseScore * (1 + expectancy * 0.5) for rule quality ranking
+
+**Deterministic Backtest Harness** (`apps/server/src/backtest/engine.ts`):
+
+- POST `/api/backtest/run` - Run deterministic backtests with historical data
+- GET `/api/backtest/presets` - Common strategy presets
+- Uses SAME evaluator as live trading for consistency
+- Custom `BacktestValidationError` for proper 400/500 error mapping
+- Chronological bar replay sorted by `bar_start` for deterministic results
+- Metrics: avgHoldBars, triggersPerDay, regimeBreakdown (by hour)
+- Currently supports 1m timeframe only
+
+**Golden Test Corpus** (`apps/server/src/backtest/golden.test.ts`):
+
+- Fixtures with sample bars, rules, and expected triggers
+- Per-rule trigger validation (seq, price)
+- Metrics validation for deterministic behavior
+- Vitest with vi.spyOn for clean test isolation
+- Edge cases: empty bars, zero triggers, reproducibility tests
+
+**Client Feedback UI**:
+
+- `SignalFeedback.tsx` - Component for rating signals (good/bad/missed/late) with optional notes
+- `BacktestPanel.tsx` - UI for running backtests with date range, symbol, and rule selection
+- Displays trigger count, hold duration, triggers/day, and regime breakdown
+
 ### Trader UX Pack
 
 Focuses on professional ergonomics with zero-lag interactions:

@@ -1,0 +1,34 @@
+1) Stack Compatibility
+Proceed with the Best Effort Fallback stack. We are building a Node.js monorepo using pnpm workspaces with:
+	•	apps/client: Vite + React + TypeScript
+	•	apps/server: Node 20 + Express + WebSocket + SSE
+	•	packages/shared: shared TypeScript types, Zod schemas
+	•	packages/config: ESLint/Prettier/tsconfig bases
+Include Husky + lint-staged + GitHub Actions. This is intentional and required.
+
+2) Application Purpose
+This monorepo is for Spotlight Trader, a real-time trading coach web app. It includes:
+	•	A web dashboard (charts, alerts, journals, rule library, coach settings)
+	•	A realtime API for market data (Polygon) via SSE + REST backfill
+	•	A voice proxy (WebSocket → OpenAI Realtime) that behaves like GPT-Voice, with instant interrupt, coach persona, and risk guardrails
+	•	A rules engine (deterministic, versioned) + regime/tape gates for higher-quality signals
+	•	Journaling + pgvector memory for a “coach brain” that improves across sessions
+This is not a template; it’s the production app scaffold + MVP features.
+
+3) WebSocket/SSE Use Case
+	•	SSE (/stream/market) streams finalized 1m bars and microbars (250ms) per symbol, plus alerts from the rules engine.
+	•	WebSocket (/ws/realtime) is only for the voice coach proxy to OpenAI Realtime (audio in/out, response.cancel, server-side VAD).
+Use real integrations, not mocks. Provide a simple favorites list to subscribe symbols; use Polygon WS for ticks and Polygon REST for backfill.
+
+⸻
+
+Extra build specifics for the agent
+	•	Ports: server on 4000, client on 5173.
+	•	Env required: APP_ORIGIN, ADMIN_ORIGIN, OPENAI_API_KEY, POLYGON_API_KEY, DATABASE_URL (Neon), REDIS_URL (Upstash), LOG_LEVEL.
+	•	Data flow: Polygon WS → barBuilder (tick→microbars→1m bars with seq, bar_start/end) → SSE to client.
+	•	Security: WS upgrade requires a short-lived HS256 token (60s) + strict origin allowlist; max 3 realtime connections/user.
+	•	MVP pages: Chart + alerts, Coach bubble (talk/stop), Settings (tone/decisiveness/jargon/voice/name), Rules (browse + draft + dry-run), Journal (EOD summary + notes).
+
+⸻
+
+If you get any more “is this compatible?” prompts, answer “Yes—use the monorepo plan above and proceed with the ordered prompts.”

@@ -1,0 +1,135 @@
+You’re seeing **CSP (Content-Security-Policy)** mistakes in your app’s header. What’s wrong:
+
+1. You put **`'unsafe-dynamic'`** in **`default-src`**.
+
+   * That token **doesn’t exist** (you probably meant **`'strict-dynamic'`** or **`'unsafe-inline'`), and in any case those only belong in **`script-src`**, not `default-src`.
+
+2. You placed **`report-uri`** inside the **source list** of `default-src`.
+
+   * `report-uri` (or `report-to`) is a **separate directive**, not a source value. That’s why the console says “Did you want to add it as a directive…?”
+
+3. You listed a **URL with a query string** (your Sentry endpoint) as a **source** in `default-src`.
+
+   * Because it’s in the wrong place, the browser ignores the `?…` part and flags it.
+
+4. Edge “Tracking Prevention blocked access to storage” is just the browser blocking 3P cookies/storage. Not fatal to your app.
+
+---
+
+## Fix: use a clean CSP (Express + helmet)
+
+Add/replace your CSP with something like this (adjust CDNs you actually use). Keep **scripts nonce-based** if you have any inline code; otherwise avoid inline.
+
+```ts
+// server/security.ts
+import helmet from "helmet";
+import { randomBytes } from "crypto";
+
+export function security() {
+  return [
+    // attach a per-request nonce for any inline <script nonce="..."> you truly need
+    (req, res, next) => { (res as any).locals = (res as any).locals || {};
+      (res as any).locals.scriptNonce = randomBytes(16).toString("base64"); next(); },
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          defaultSrc: ["'self'"],
+          // If you do NOT have inline scripts, omit nonce/unsafe-inline entirely.
+          // If you DO, add: `'nonce-<dynamic>'` at render time instead of 'unsafe-inline'.
+          scriptSrc: [
+            "'self'",
+            // `'nonce-${res.locals.scriptNonce}'`  // add via a small wrapper if you must keep a tiny inline script
+            "https://cdn.jsdelivr.net", "https://unpkg.com"
+          ],
+          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+          connectSrc: [
+            "'self'",
+            "https://api.polygon.io",
+            "wss://socket.polygon.io",
+            "https://*.sentry.io"
+          ],
+          imgSrc: ["'self'", "data:", "blob:", "https:"],
+          fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+          mediaSrc: ["'self'", "blob:"],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          frameAncestors: ["'self'"],
+          // choose one of the reporting mechanisms:
+          // reportUri: "/csp-report",
+          // or modern reporting:
+          // reportTo: "csp-endpoint",
+          upgradeInsecureRequests: null
+        }
+      },
+      crossOriginEmbedderPolicy: false, // set per your needs
+    }),
+  ];
+}
+```
+
+Register it:
+
+```ts
+// server/index.ts
+import express from "express";
+import { security } from "./security";
+const app = express();
+app.use(security());
+```
+
+If you want browser reporting to Sentry, **don’t** shove the Sentry URL into `default-src`. Use a **reporting directive**:
+
+```ts
+// Modern (preferred)
+app.use(helmet({
+  // ...
+  crossOriginEmbedderPolicy: false,
+  reportTo: {
+    group: "csp-endpoint",
+    max_age: 10886400,
+    endpoints: [{ url: "https://o123456.ingest.sentry.io/api/4509.../security/?sentry_key=YOUR_KEY" }]
+  },
+  contentSecurityPolicy: { /* directives with reportTo: "csp-endpoint" */ }
+}));
+
+// Or legacy:
+app.post("/csp-report", express.json({ type: "application/csp-report" }), (req, res) => {
+  // forward to Sentry server-side so keys stay off the client
+  res.sendStatus(204);
+});
+```
+
+> Also search your code for `default-src` containing `'unsafe-dynamic'` and remove it; if you meant **`'strict-dynamic'`**, that belongs in **`script-src`** and only with **nonces** on all trusted scripts.
+
+---
+
+## One-shot Replit Agent prompt (to auto-fix)
+
+```
+Act as a security-focused principal engineer. Fix our CSP and related issues:
+
+1) Scan the codebase for Content-Security-Policy setup (headers, meta tags, helmet config).
+2) Remove any usage of "'unsafe-dynamic'" anywhere. It is invalid. If present in default-src, delete it.
+3) Ensure "report-uri" or "report-to" appear only as CSP directives, not as sources inside default-src.
+4) Replace our CSP with a safe default using helmet. Directives:
+   - default-src 'self'
+   - script-src 'self' (add CDN domains actually used; prefer nonce on any inline script)
+   - style-src 'self' 'unsafe-inline' (plus fonts.googleapis.com if used)
+   - connect-src 'self' https://api.polygon.io wss://socket.polygon.io https://*.sentry.io
+   - img-src 'self' data: blob: https:
+   - font-src 'self' https://fonts.gstatic.com data:
+   - media-src 'self' blob:
+   - object-src 'none'; base-uri 'self'; frame-ancestors 'self'
+   - use report-to "csp-endpoint" or local /csp-report (create endpoint if not present)
+5) Create server/security.ts with the helmet setup and a per-request script nonce hook. Wire it in server/index.ts.
+6) If any <meta http-equiv="Content-Security-Policy"> exists in HTML, remove it to avoid conflicts with headers.
+7) Add a short SECURITY_NOTES.md explaining the policy, how to add a new domain (CDN), and how to use a script nonce.
+8) Run and verify in the browser console that CSP errors disappear. Provide a before/after screenshot path and note any remaining third-party “Tracking Prevention” warnings as non-blockers.
+
+Do not expose secrets. Keep commits small and include a summary of changes.
+```
+
+---
+
+If you paste that prompt into Replit, it’ll clean up your CSP config and those console errors should vanish. If you want me to tailor the exact `scriptSrc/styleSrc/connectSrc` to your concrete CDNs and runtime endpoints, paste the domains you use (chart lib CDN, fonts, images) and I’ll tighten it further.

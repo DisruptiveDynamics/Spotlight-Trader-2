@@ -59,7 +59,11 @@ export function initializeMarketPipeline(app: Express) {
 
       const bars = await getHistory(query);
 
-      res.json(bars);
+      // Return bars in the format expected by the client
+      res.json(bars.map(bar => ({
+        bar_end: bar.bar_end,
+        ohlcv: bar.ohlcv
+      })));
     } catch (err) {
       console.error('History API error:', err);
       res.status(500).json({ error: 'Internal server error' });

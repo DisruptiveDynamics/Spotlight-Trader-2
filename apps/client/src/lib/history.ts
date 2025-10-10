@@ -21,7 +21,10 @@ export async function fetchHistory(
   limit: number = 500
 ): Promise<HistoryCandle[]> {
   const response = await fetch(
-    `/api/history?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}`
+    `/api/history?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}`,
+    {
+      credentials: 'include', // Include cookies for authentication
+    }
   );
 
   if (!response.ok) {

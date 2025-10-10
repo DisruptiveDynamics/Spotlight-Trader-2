@@ -16,9 +16,9 @@ export class PolygonWebSocket {
 
   async connect() {
     try {
-      // Use delayed feed (free tier) - upgrade to real-time requires paid Polygon plan
-      const wsUrl = 'wss://delayed.polygon.io';
-      console.log(`📡 Connecting to Polygon delayed feed (15-min delay)`);
+      // Stock Advanced plan uses real-time feed
+      const wsUrl = 'wss://socket.polygon.io';
+      console.log(`📡 Connecting to Polygon real-time feed`);
 
       this.ws = websocketClient(env.POLYGON_API_KEY, wsUrl).stocks();
 
@@ -31,6 +31,10 @@ export class PolygonWebSocket {
           this.reconnectAttempts = 0;
           this.lastMessageTime = Date.now();
           this.startHeartbeat();
+          
+          // Manually send auth message (library not doing it automatically)
+          ws.send(JSON.stringify({ action: 'auth', params: env.POLYGON_API_KEY }));
+          
           this.resubscribe();
         };
 

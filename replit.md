@@ -118,8 +118,8 @@ Focuses on professional ergonomics with zero-lag interactions:
 - **Health Endpoint**: Added `/api/voice/health` endpoint for voice assistant health checks
 - **URL Fix**: Fixed hardcoded `localhost:4000` URL in CoachBubble.tsx to use relative path `/api/voice/token` with proper credentials
 - **Voice Token Auth**: Added `credentials: 'include'` to PresenceBubble fetchToken to send session cookies for authentication
-- **Polygon WebSocket Limitation**: Polygon.io WebSocket (even delayed feed) requires paid subscription - free tier only supports REST API. Charts will use simulator fallback until subscription upgraded.
-- **Integration Status**: Voice assistant credentials fixed and ready for testing. All optimizations (AudioWorklet, barge-in, backpressure, idle detection) integrated.
+- **Polygon WebSocket Fix**: Fixed `@polygon.io/client-js` library not auto-sending auth message by manually sending `{action: 'auth', params: API_KEY}` on connection. Charts now receive real-time tick data from Polygon Stock Advanced plan.
+- **Integration Status**: Both voice assistant and live market data fully operational. All optimizations (AudioWorklet, barge-in, backpressure, idle detection) integrated.
 
 ### Market Data Pipeline Improvements
 - **DST-Safe Bucketing**: Implemented exchange timezone-aware bar bucketing using `date-fns-tz` to handle DST transitions correctly

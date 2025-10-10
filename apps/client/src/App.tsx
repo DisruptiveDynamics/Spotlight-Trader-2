@@ -15,8 +15,8 @@ const MultiChart = lazy(() =>
   import('./features/chart/MultiChart').then((m) => ({ default: m.MultiChart }))
 );
 const TapePeek = lazy(() => import('./components/TapePeek').then((m) => ({ default: m.TapePeek })));
-const CoachBubble = lazy(() =>
-  import('./features/coach/CoachBubble').then((m) => ({ default: m.CoachBubble }))
+const PresenceBubble = lazy(() =>
+  import('./features/coach/PresenceBubble').then((m) => ({ default: m.PresenceBubble }))
 );
 const ExplainPanel = lazy(() =>
   import('./features/coach/ExplainPanel').then((m) => ({ default: m.ExplainPanel }))
@@ -163,7 +163,7 @@ function App() {
           </div>
         </main>
         <Suspense fallback={null}>
-          <CoachBubble />
+          <PresenceBubble />
         </Suspense>
         <Suspense fallback={null}>
           <CommandPalette />

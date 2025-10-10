@@ -28,6 +28,14 @@ A deterministic and lossless data pipeline processes live market data, including
 ### Security Model
 Security features include Helmet.js, strict CORS allowlisting, short-lived JWTs, connection limits, and Zod for environment validation. CORS is dynamically configured for trusted origins, Replit preview environments, and rejects unauthorized requests. Cookie-based authentication with httpOnly session cookies is used, with a demo mode for Replit-specific authentication flow.
 
+**Session Validation (October 2025):**
+- Fixed "zombie login" bug where localStorage trusted stale sessions without server validation
+- Created `authStorage` module for centralized localStorage with expiry tracking
+- Added `/api/auth/session` endpoint that validates JWT and returns user + session expiry timestamp
+- `AuthGate` always validates with server on mount, clearing storage if session invalid
+- Session expiry shows amber notification prompting re-login
+- Voice coach and protected features require valid server-backed session
+
 ### Frontend Architecture
 Built with React 18 and TypeScript, using Lightweight Charts, Zustand for state management, and Tailwind CSS. Vite handles bundling and API proxying.
 

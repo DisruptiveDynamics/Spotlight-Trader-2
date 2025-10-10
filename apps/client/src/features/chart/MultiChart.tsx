@@ -1,5 +1,6 @@
 import { useChartState } from '../../state/chartState';
 import { Pane } from './Pane';
+import { ChartErrorBoundary } from '../../components/ChartErrorBoundary';
 
 export function MultiChart() {
   const { layout, focusedPane } = useChartState();
@@ -41,7 +42,9 @@ export function MultiChart() {
             focusedPane === index ? 'border-blue-500 ring-2 ring-blue-500/50' : 'border-gray-800'
           }`}
         >
-          <Pane paneId={index} className="w-full h-full" />
+          <ChartErrorBoundary paneId={`pane-${index}`}>
+            <Pane paneId={index} className="w-full h-full" />
+          </ChartErrorBoundary>
         </div>
       ))}
     </div>

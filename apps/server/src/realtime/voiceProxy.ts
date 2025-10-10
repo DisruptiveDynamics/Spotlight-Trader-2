@@ -4,6 +4,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { verifyVoiceToken } from './auth';
 import { getInitialSessionUpdate } from '../coach/sessionContext';
 import { validateEnv } from '@shared/env';
+import { recordWSConnection, recordWSDisconnection, recordWSLRUEviction } from '../metrics/registry';
 
 const env = validateEnv(process.env);
 
@@ -65,6 +66,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
       userConnections.sort((a, b) => a.lastActivity - b.lastActivity);
       const lruConnection = userConnections.shift();
       if (lruConnection) {
+        recordWSLRUEviction();
         lruConnection.ws.close(1000, 'Connection limit reached - disconnecting LRU');
       }
     }
@@ -75,6 +77,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
     };
     
     userConnections.push(connectionInfo);
+    recordWSConnection(userId);
     
     const updateActivity = () => {
       connectionInfo.lastActivity = Date.now();
@@ -155,7 +158,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
       console.error('Client WebSocket error:', error.message);
     });
 
-    clientWs.on('close', () => {
+    clientWs.on('close', (code) => {
       upstreamWs.close();
       const index = userConnections.findIndex(conn => conn.ws === clientWs);
       if (index !== -1) {
@@ -165,6 +168,9 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
       if (userConnections.length === 0) {
         activeConnections.delete(userId);
       }
+
+      const reason = code === 1000 ? 'normal' : code === 1008 ? 'unauthorized' : 'error';
+      recordWSDisconnection(userId, reason);
 
       if (clientHeartbeat) clearInterval(clientHeartbeat);
       if (upstreamHeartbeat) clearInterval(upstreamHeartbeat);

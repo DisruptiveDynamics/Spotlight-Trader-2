@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { eventBus } from '@server/market/eventBus';
 import { getHistory } from '@server/history/service';
 import { BackpressureController } from './backpressure';
+import { recordSSEConnection, recordSSEDisconnection, recordSSEEvent, recordSSEBackpressure } from '@server/metrics/registry';
 
 export async function sseMarketStream(req: Request, res: Response) {
   const symbolsParam = (req.query.symbols as string) || 'SPY';
@@ -13,6 +14,9 @@ export async function sseMarketStream(req: Request, res: Response) {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
+
+  const userId = (req as any).userId || 'anonymous';
+  recordSSEConnection(userId);
 
   const bpc = new BackpressureController(res, 100);
 
@@ -41,6 +45,7 @@ export async function sseMarketStream(req: Request, res: Response) {
   const listeners: Array<{ event: string; handler: (data: any) => void }> = [];
 
   const alertHandler = (signal: any) => {
+    recordSSEEvent('alert');
     bpc.write('alert', {
       id: signal.id,
       symbol: signal.symbol,
@@ -55,6 +60,7 @@ export async function sseMarketStream(req: Request, res: Response) {
 
   for (const symbol of symbols) {
     const microbarHandler = (data: any) => {
+      recordSSEEvent('microbar');
       bpc.write('microbar', {
         symbol: data.symbol,
         ts: data.ts,
@@ -69,6 +75,7 @@ export async function sseMarketStream(req: Request, res: Response) {
     };
 
     const barHandler = (data: any) => {
+      recordSSEEvent('bar');
       bpc.write('bar', {
         symbol: data.symbol,
         timeframe: data.timeframe,
@@ -94,8 +101,13 @@ export async function sseMarketStream(req: Request, res: Response) {
     );
   }
 
+  let lastDropped = 0;
+
   const heartbeat = setInterval(() => {
     res.write(':\n\n');
+    const stats = bpc.getStats();
+    recordSSEBackpressure(stats.buffered, stats.dropped, lastDropped);
+    lastDropped = stats.dropped;
   }, 15000);
 
   req.on('close', () => {
@@ -104,5 +116,6 @@ export async function sseMarketStream(req: Request, res: Response) {
       eventBus.off(event as any, handler);
     });
     bpc.destroy();
+    recordSSEDisconnection(userId);
   });
 }

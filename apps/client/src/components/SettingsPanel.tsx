@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useCoachSettings } from '../state/coachSettings';
+import { useAuthStore } from '../stores/authStore';
 
 interface Voice {
   id: string;
@@ -13,6 +14,7 @@ interface SettingsPanelProps {
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const { settings, updateSettings, resetSettings, loadSettings } = useCoachSettings();
+  const { logout } = useAuthStore();
   const [voices, setVoices] = useState<Voice[]>([]);
   const [isLoadingVoices, setIsLoadingVoices] = useState(false);
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
@@ -217,6 +219,19 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
             >
               Reset to Defaults
+            </button>
+          </div>
+
+          {/* Logout Button */}
+          <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              onClick={() => {
+                logout();
+                onClose();
+              }}
+              className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium"
+            >
+              Sign Out
             </button>
           </div>
         </div>

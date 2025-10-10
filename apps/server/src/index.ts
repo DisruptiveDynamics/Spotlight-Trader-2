@@ -77,6 +77,12 @@ initializeLearningLoop();
 startEodScheduler();
 loadFlags();
 
+// Error middleware - must be last, catches all route errors
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('API_ERROR:', err);
+  res.status(500).json({ error: 'internal_error', message: err.message });
+});
+
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 8080;
 
 // Initialize market source (Polygon auth check with simulator fallback)

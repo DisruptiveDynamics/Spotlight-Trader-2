@@ -240,6 +240,9 @@ export class EnhancedVoiceClient {
 
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/realtime?t=${token}`;
     this.ws = new WebSocket(wsUrl);
+    
+    // CRITICAL: Set binaryType to receive ArrayBuffer instead of Blob
+    this.ws.binaryType = 'arraybuffer';
 
     this.ws.onopen = () => {
       this.setState('connected');
@@ -252,43 +255,50 @@ export class EnhancedVoiceClient {
 
     this.ws.onmessage = async (event) => {
       try {
-        // Check if message is binary (Blob/ArrayBuffer) or text (JSON)
-        if (event.data instanceof Blob) {
-          // Binary audio data - convert to base64 safely for large blobs
-          const arrayBuffer = await event.data.arrayBuffer();
-          const bytes = new Uint8Array(arrayBuffer);
-          let binary = '';
-          const chunkSize = 0x8000; // 32KB chunks to avoid stack overflow
-          for (let i = 0; i < bytes.length; i += chunkSize) {
-            binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)));
-          }
-          const base64 = btoa(binary);
-          await this.handleAudioDelta(base64);
+        const data = event.data;
+        
+        // Binary audio data (ArrayBuffer)
+        if (data instanceof ArrayBuffer) {
+          await this.handleAudioArrayBuffer(data);
+          return;
+        }
+        
+        // Legacy Blob handling (should not happen with binaryType='arraybuffer')
+        if (data instanceof Blob) {
+          const arrayBuffer = await data.arrayBuffer();
+          await this.handleAudioArrayBuffer(arrayBuffer);
           return;
         }
 
         // Text message - parse as JSON
-        const data = JSON.parse(event.data);
+        if (typeof data === 'string') {
+          const msg = JSON.parse(data);
 
-        if (data.type === 'response.audio.delta' && data.delta) {
-          await this.handleAudioDelta(data.delta);
-        }
+          if (msg.type === 'response.audio.delta' && msg.delta) {
+            await this.handleAudioDelta(msg.delta);
+          }
 
-        if (data.type === 'response.audio_transcript.delta' && data.delta) {
-          console.log('[Voice] Transcript:', data.delta);
-        }
+          if (msg.type === 'response.audio_transcript.delta' && msg.delta) {
+            console.log('[Voice] Transcript:', msg.delta);
+          }
 
-        if (data.type === 'response.done' && this.lastRequestTime > 0) {
-          const responseTime = Date.now() - this.lastRequestTime;
-          this.notifyLatency(responseTime);
-          this.lastRequestTime = 0;
-        }
+          if (msg.type === 'response.done' && this.lastRequestTime > 0) {
+            const responseTime = Date.now() - this.lastRequestTime;
+            this.notifyLatency(responseTime);
+            this.lastRequestTime = 0;
+          }
 
-        if (data.type === 'error') {
-          console.error('[Voice] Server error:', data.error);
+          if (msg.type === 'error') {
+            console.error('[Voice] Server error:', msg.error);
+          }
+          
+          // Heartbeat response
+          if (msg.type === 'pong') {
+            // Heartbeat acknowledged
+          }
         }
       } catch (error) {
-        console.error('Error processing WebSocket message:', error, 'Data type:', typeof event.data, 'Data:', event.data instanceof Blob ? '<Blob>' : String(event.data).substring(0, 100));
+        console.error('Error processing WebSocket message:', error);
       }
     };
 
@@ -324,6 +334,27 @@ export class EnhancedVoiceClient {
   private handleSpeechStop(): void {
     if (!this.isMuted && !this.isPlaying) {
       this.setCoachState('thinking');
+    }
+  }
+
+  private async handleAudioArrayBuffer(arrayBuffer: ArrayBuffer): Promise<void> {
+    const audioContext = getAudioContext();
+    if (!audioContext) return;
+
+    // Convert PCM16 ArrayBuffer directly to Float32 for playback
+    const float32 = this.pcm16ToFloat32(new Int16Array(arrayBuffer));
+
+    const audioBuffer = audioContext.createBuffer(
+      1,
+      float32.length,
+      audioContext.sampleRate
+    );
+    audioBuffer.getChannelData(0).set(float32);
+
+    this.playbackQueue.push(audioBuffer);
+
+    if (!this.isPlaying) {
+      this.playNextBuffer();
     }
   }
 

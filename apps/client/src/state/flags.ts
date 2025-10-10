@@ -36,7 +36,7 @@ const defaults: Flags = {
   chartMaxFps: 60,
 };
 
-export const useFlagsStore = create<FlagsStore>((set, get) => ({
+export const useFlagsStore = create<FlagsStore>((set) => ({
   flags: defaults,
   loading: false,
   error: null,

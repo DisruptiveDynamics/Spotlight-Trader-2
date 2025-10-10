@@ -214,7 +214,7 @@ export function PresenceBubble() {
   const [hasInteracted, setHasInteracted] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
-  const [permissionState, setPermissionState] = useState<PermissionState>('pending');
+  const [_permissionState, setPermissionState] = useState<PermissionState>('pending');
   const [statusMessage, setStatusMessage] = useState<string>('');
 
   const voiceClientRef = useRef<EnhancedVoiceClient | null>(null);

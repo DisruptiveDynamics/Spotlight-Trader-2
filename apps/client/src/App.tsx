@@ -87,7 +87,6 @@ function App() {
   // Bootstrap splash: hide after SSE connection or 1.5s timeout
   useEffect(() => {
     let sseConnected = false;
-    let timeoutId: NodeJS.Timeout;
 
     const handleSseConnect = () => {
       sseConnected = true;
@@ -98,7 +97,7 @@ function App() {
     window.addEventListener('sse:connected', handleSseConnect);
 
     // Fallback timeout: hide splash after 1.5s regardless
-    timeoutId = setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       if (!sseConnected) {
         setShowSplash(false);
       }

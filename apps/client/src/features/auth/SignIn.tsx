@@ -30,9 +30,9 @@ export function SignIn({ sessionExpired = false }: SignInProps) {
       }
 
       setSent(true);
-    } catch (err) {
+    } catch {
       setError('Failed to send magic link. Please try again.');
-    } finally {
+    } finally{
       setLoading(false);
     }
   };
@@ -60,7 +60,7 @@ export function SignIn({ sessionExpired = false }: SignInProps) {
           createdAt: new Date().toISOString(),
         });
       }
-    } catch (err) {
+    } catch {
       setError('Demo login failed. Please try again.');
       setLoading(false);
     }

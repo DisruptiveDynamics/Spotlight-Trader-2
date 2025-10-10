@@ -64,7 +64,7 @@ function barToContext(bar: Bar): RuleContext {
  * Uses the SAME evaluation logic as live trading
  */
 export async function runBacktest(input: BacktestInput): Promise<BacktestResult> {
-  const { symbol, timeframe, start, end, rules } = input;
+  const { symbol, start, end, rules } = input;
 
   const startMs = new Date(start).getTime();
   const endMs = new Date(end).getTime();

@@ -1,10 +1,6 @@
-import dayjs from 'dayjs';
-import utc from 'dayjs/plugin/utc';
-import timezone from 'dayjs/plugin/timezone';
+import { toZonedTime, fromZonedTime } from 'date-fns-tz';
+import { setHours, setMinutes, setSeconds, setMilliseconds } from 'date-fns';
 import type { Timeframe } from '../state/chartState';
-
-dayjs.extend(utc);
-dayjs.extend(timezone);
 
 export interface HistoryCandle {
   time: number; // Unix timestamp in seconds (for lightweight-charts)
@@ -58,21 +54,30 @@ export function sessionStartMs(
   msEnd: number,
   tz: string = 'America/New_York'
 ): number {
-  const date = dayjs(msEnd).tz(tz);
+  const date = toZonedTime(msEnd, tz);
 
   // Set to 9:30 AM ET on the same day
-  const sessionStart = date.hour(9).minute(30).second(0).millisecond(0);
+  const sessionStart = setMilliseconds(
+    setSeconds(
+      setMinutes(
+        setHours(date, 9),
+        30
+      ),
+      0
+    ),
+    0
+  );
 
-  return sessionStart.valueOf();
+  return fromZonedTime(sessionStart, tz).getTime();
 }
 
 /**
  * Check if a timestamp is within market hours (9:30 AM - 4:00 PM ET)
  */
 export function isMarketHours(msTimestamp: number, tz: string = 'America/New_York'): boolean {
-  const time = dayjs(msTimestamp).tz(tz);
-  const hour = time.hour();
-  const minute = time.minute();
+  const time = toZonedTime(msTimestamp, tz);
+  const hour = time.getHours();
+  const minute = time.getMinutes();
 
   // Before 9:30 AM
   if (hour < 9 || (hour === 9 && minute < 30)) {
@@ -91,9 +96,9 @@ export function isMarketHours(msTimestamp: number, tz: string = 'America/New_Yor
  * Check if timestamp is in premarket (before 9:30 AM ET)
  */
 export function isPremarket(msTimestamp: number, tz: string = 'America/New_York'): boolean {
-  const time = dayjs(msTimestamp).tz(tz);
-  const hour = time.hour();
-  const minute = time.minute();
+  const time = toZonedTime(msTimestamp, tz);
+  const hour = time.getHours();
+  const minute = time.getMinutes();
 
   return hour < 9 || (hour === 9 && minute < 30);
 }
@@ -102,6 +107,6 @@ export function isPremarket(msTimestamp: number, tz: string = 'America/New_York'
  * Check if timestamp is after hours (after 4:00 PM ET)
  */
 export function isAfterHours(msTimestamp: number, tz: string = 'America/New_York'): boolean {
-  const time = dayjs(msTimestamp).tz(tz);
-  return time.hour() >= 16;
+  const time = toZonedTime(msTimestamp, tz);
+  return time.getHours() >= 16;
 }

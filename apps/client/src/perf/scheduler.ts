@@ -6,7 +6,7 @@
 type ScheduledTask = () => void;
 
 let rafId: number | null = null;
-let pendingTasks: Set<ScheduledTask> = new Set();
+const pendingTasks: Set<ScheduledTask> = new Set();
 
 /**
  * Schedule a task to run on the next animation frame

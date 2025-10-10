@@ -63,7 +63,7 @@ class FpsProbe {
       return { current: 0, avg: 0, min: 0, max: 0 };
     }
 
-    const current = this.frames[this.frames.length - 1];
+    const current = this.frames[this.frames.length - 1] || 0;
     const sum = this.frames.reduce((a, b) => a + b, 0);
     const avg = sum / this.frames.length;
     const min = Math.min(...this.frames);

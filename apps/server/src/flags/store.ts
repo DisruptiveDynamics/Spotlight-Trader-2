@@ -36,9 +36,9 @@ let currentFlags: Flags = { ...defaults };
 
 /**
  * Get current feature flags
- * @param userId Optional user ID for user-scoped flags (currently global)
+ * @param _userId Optional user ID for user-scoped flags (currently global)
  */
-export function getFlags(userId?: string): Flags {
+export function getFlags(_userId?: string): Flags {
   return { ...currentFlags };
 }
 
@@ -74,12 +74,12 @@ export async function loadFlags(): Promise<void> {
       SELECT value FROM feature_flags WHERE key = 'global' LIMIT 1
     `);
 
-    if (result.rows.length > 0) {
+    if (result.rows.length > 0 && result.rows[0]) {
       const stored = result.rows[0].value as Partial<Flags>;
       currentFlags = { ...defaults, ...stored };
       console.log('✅ Feature flags loaded from database');
     }
-  } catch (error) {
+  } catch {
     // Table might not exist yet, that's ok
     console.log('ℹ️  Feature flags using defaults (DB table not found)');
   }

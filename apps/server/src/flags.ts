@@ -15,6 +15,7 @@ export type FeatureFlag = keyof import('./flags/store').Flags;
  * Execute a function only if the feature flag is enabled
  */
 export function ifFlag<T>(flag: FeatureFlag, fn: () => T, fallback?: () => T): T | undefined {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { isEnabled } = require('./flags/store');
   if (isEnabled(flag)) {
     return fn();
@@ -27,6 +28,7 @@ export function ifFlag<T>(flag: FeatureFlag, fn: () => T, fallback?: () => T): T
  * @deprecated Use getFlags() from flags/store.ts
  */
 export function getAllFlags() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { getFlags } = require('./flags/store');
   return getFlags();
 }

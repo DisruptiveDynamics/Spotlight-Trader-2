@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Response } from 'express';
 import { ruleRegistry } from '../rules/registry';
 import { ruleEvaluator } from '../rules/evaluator';
 import type { Rule, RuleContext } from '@shared/types/rules';

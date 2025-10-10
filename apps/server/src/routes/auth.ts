@@ -41,7 +41,13 @@ router.get('/callback', async (req, res) => {
     const [link] = await db
       .select()
       .from(magicLinks)
-      .where(and(eq(magicLinks.token, token), eq(magicLinks.used, false), gte(magicLinks.expiresAt, new Date())))
+      .where(
+        and(
+          eq(magicLinks.token, token),
+          eq(magicLinks.used, false),
+          gte(magicLinks.expiresAt, new Date())
+        )
+      )
       .limit(1);
 
     if (!link) {
@@ -51,7 +57,7 @@ router.get('/callback', async (req, res) => {
     await db.update(magicLinks).set({ used: true }).where(eq(magicLinks.id, link.id));
 
     const existingUsers = await db.select().from(users).where(eq(users.email, link.email)).limit(1);
-    
+
     let user = existingUsers[0];
     if (!user) {
       const newUsers = await db.insert(users).values({ email: link.email }).returning();
@@ -95,7 +101,7 @@ router.post('/demo', async (req, res) => {
     const demoEmail = 'demo-user@local';
 
     const existingUsers = await db.select().from(users).where(eq(users.email, demoEmail)).limit(1);
-    
+
     let user = existingUsers[0];
     if (!user) {
       const newUsers = await db.insert(users).values({ email: demoEmail }).returning();

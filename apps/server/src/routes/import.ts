@@ -11,31 +11,39 @@ const router = Router();
 const importSchema = z.object({
   version: z.string(),
   exportedAt: z.string(),
-  rules: z.array(z.object({
-    id: z.string().optional(),
-    baseRuleId: z.string().optional(),
-    versions: z.array(z.object({
+  rules: z.array(
+    z.object({
       id: z.string().optional(),
-      userRuleId: z.string().optional(),
-      version: z.string(),
-      doc: z.any(),
+      baseRuleId: z.string().optional(),
+      versions: z.array(
+        z.object({
+          id: z.string().optional(),
+          userRuleId: z.string().optional(),
+          version: z.string(),
+          doc: z.any(),
+          createdAt: z.string().optional(),
+        })
+      ),
+    })
+  ),
+  memories: z.array(
+    z.object({
+      id: z.string().optional(),
+      kind: z.string(),
+      text: z.string(),
+      tags: z.array(z.string()),
       createdAt: z.string().optional(),
-    })),
-  })),
-  memories: z.array(z.object({
-    id: z.string().optional(),
-    kind: z.string(),
-    text: z.string(),
-    tags: z.array(z.string()),
-    createdAt: z.string().optional(),
-  })),
-  coachProfile: z.object({
-    agentName: z.string(),
-    voiceId: z.string(),
-    jargonLevel: z.number(),
-    decisiveness: z.number(),
-    tone: z.string(),
-  }).nullable(),
+    })
+  ),
+  coachProfile: z
+    .object({
+      agentName: z.string(),
+      voiceId: z.string(),
+      jargonLevel: z.number(),
+      decisiveness: z.number(),
+      tone: z.string(),
+    })
+    .nullable(),
 });
 
 router.post('/all', requireUser, async (req: AuthRequest, res) => {
@@ -45,7 +53,7 @@ router.post('/all', requireUser, async (req: AuthRequest, res) => {
 
     for (const rule of data.rules) {
       const ruleId = nanoid();
-      
+
       await db.insert(userRules).values({
         id: ruleId,
         userId,

@@ -121,9 +121,7 @@ export function SignIn() {
           >
             Try demo mode
           </button>
-          <p className="text-xs text-gray-500 text-center mt-2">
-            For development and testing
-          </p>
+          <p className="text-xs text-gray-500 text-center mt-2">For development and testing</p>
         </div>
       </div>
     </div>

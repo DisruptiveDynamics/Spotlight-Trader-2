@@ -65,7 +65,7 @@ export async function generateEodSummary(userId: string, date: string): Promise<
 
   // Keep original chronological order for the table
   const allSignals = signalsWithExpectancy;
-  
+
   // Sort by expectancy for top 3
   const sortedByExpectancy = [...signalsWithExpectancy].sort((a, b) => b.expectancy - a.expectancy);
   const topSignals = sortedByExpectancy.slice(0, 3);

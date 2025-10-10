@@ -144,11 +144,14 @@ importers:
       openai:
         specifier: ^4.104.0
         version: 4.104.0(ws@8.18.3(bufferutil@4.0.9)(utf-8-validate@5.0.10))(zod@3.25.76)
+      resend:
+        specifier: ^6.1.2
+        version: 6.1.2
       ws:
         specifier: ^8.16.0
         version: 8.18.3(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       zod:
-        specifier: ^3.22.4
+        specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
       '@spotlight/config':
@@ -2946,6 +2949,15 @@ packages:
   require-directory@2.1.1:
     resolution: {integrity: sha512-fGxEI7+wsG9xrvdjsrlmL22OMTTiHRwAMroiEeMgq8gzoLC/PQr7RsRDSTLUg/bZAZtF+TVIkHc6/4RIKrui+Q==}
     engines: {node: '>=0.10.0'}
+
+  resend@6.1.2:
+    resolution: {integrity: sha512-C9Q+YkRe57P8MQlkHG3yatSR/B6sqBGA06Ri2DveJfkz9Vm16182FC/iHB0K6IAfmqZ4yRrFebFw1EPuktLtSg==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@react-email/render': '*'
+    peerDependenciesMeta:
+      '@react-email/render':
+        optional: true
 
   resolve-from@4.0.0:
     resolution: {integrity: sha512-pb/MYmXstAkysRFx8piNI1tGFNQIFA3vkE3Gq4EuA1dF6gHp/+vgZqsCGJapvy8N3Q+4o7FwvquPJcnZ7RYy4g==}
@@ -6141,6 +6153,8 @@ snapshots:
       vfile: 6.0.3
 
   require-directory@2.1.1: {}
+
+  resend@6.1.2: {}
 
   resolve-from@4.0.0: {}
 

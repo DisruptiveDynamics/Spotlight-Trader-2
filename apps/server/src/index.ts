@@ -47,6 +47,10 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, timestamp: Date.now() });
 });
 
+app.get('/api/voice/health', (_req, res) => {
+  res.json({ ok: true, timestamp: Date.now() });
+});
+
 app.use('/api/auth', authRouter);
 app.use('/auth', authRouter);
 
@@ -73,7 +77,7 @@ initializeLearningLoop();
 startEodScheduler();
 loadFlags();
 
-const PORT = 8000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 8080;
 
 // Initialize market source (Polygon auth check with simulator fallback)
 await initializeMarketSource();

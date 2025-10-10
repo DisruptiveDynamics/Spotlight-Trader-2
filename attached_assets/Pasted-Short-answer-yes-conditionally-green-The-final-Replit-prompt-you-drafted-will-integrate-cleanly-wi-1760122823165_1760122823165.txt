@@ -1,0 +1,54 @@
+Short answer: yes—conditionally green.
+The final Replit prompt you drafted will integrate cleanly with what you’ve built and addresses the blockers we’ve uncovered (proxy/ports, audio unlock, AudioWorklet, barge-in, backpressure, VAD pause, session UX) provided you hit the small integration checks below. If you do these, it should “officially work.”
+
+Auditor verdict
+	•	Scope match: Covers all prior requirements: instant mic unlock on Safari, AudioWorklet capture, visible coach states, token/session validation, WS health, bubble placement, and a built-in self-test. ✅
+	•	Backwards-compat: Additive and behind UI affordances; won’t break existing charts/auth if files/paths are correct. ✅
+	•	Known risks: Only minor wiring/paths. No architectural contradictions. ⚠️
+
+Final integration checks (do these exactly)
+	1.	Paths & imports
+	•	Ensure the worklet file is served at /worklets/micProcessor.js:
+	•	File should live at client/public/worklets/micProcessor.js (or public/worklets/micProcessor.js depending on your setup).
+	•	Import via await ctx.audioWorklet.addModule('/worklets/micProcessor.js').
+	•	Import the bubble CSS somewhere global (e.g., client/src/main.tsx or the bubble component):
+import '@/styles/voice.css'.
+	2.	Vite proxy + URLs
+	•	client/vite.config.ts proxies:
+	•	/api → http://localhost:8080
+	•	/ws  → ws://localhost:8080 with ws: true
+	•	All client calls are relative (/api/..., ws(s)://${location.host}/ws/...). No hard-coded 127.0.0.1:8000.
+	3.	Server port & health
+	•	Server listens on process.env.PORT || 8080.
+	•	Add /api/voice/health route and /api/auth/session if missing.
+	4.	Anchor target exists
+	•	The Journal button must have id="journal-btn". If not, add it; the bubble anchor logic depends on it.
+	5.	Gesture ordering
+	•	In the bubble click handler: ensureAudioUnlocked() → start mic in the same click. (Safari requires this ordering.)
+	6.	Gain node wiring
+	•	Your playback chain must route through a GainNode (so barge-in can mute instantly). Verify gainNode.gain.setValueAtTime(0, audioCtx.currentTime) runs before source.stop().
+	7.	Auth flow
+	•	Global 401 interceptor clears storage and dispatches auth:expired; App.tsx listener redirects to /login and shows a toast.
+	•	Self-test hits /api/auth/session then /api/voice/token then WS connect; all three must succeed.
+	8.	Build/dev sanity
+	•	Kill ports then run dev on 8080:
+
+npx kill-port 5000 8000 8080 || true
+export PORT=8080
+npm run dev
+
+
+	•	If the client can’t hit /api, recheck the proxy block (and that dev server printed :8080).
+
+Sign-off criteria (must all pass)
+	•	Bubble sits under Journal across breakpoints; no drift on scroll/resize.
+	•	States visibly change: listening (blue), thinking, speaking (green), idle, and error. VU meter moves while you speak.
+	•	Self-Test shows: “Checking session → Fetching token → WS connected → Health OK” and plays a short TTS line.
+	•	Talk-over interrupts instantly (<250ms to silence), then coach listens.
+	•	Hidden tab pauses VAD/capture; CPU drops; resume is clean.
+	•	No ECONNREFUSED 127.0.0.1:8000 or proxy errors in console.
+	•	No “AudioContext suspended” on Safari after a single tap.
+
+If any single item above fails, it will be one of the small checks (path, proxy, anchor id, or gain node route). Fix that one wire, and you’re done.
+
+Conclusion: with the checks above, I’m comfortable signing off. ✅

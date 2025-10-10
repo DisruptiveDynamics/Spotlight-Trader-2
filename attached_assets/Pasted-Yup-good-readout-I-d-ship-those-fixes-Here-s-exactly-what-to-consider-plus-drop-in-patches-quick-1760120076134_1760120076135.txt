@@ -1,0 +1,189 @@
+Yup—good readout. I’d ship those fixes. Here’s exactly what to consider plus drop-in patches + quick shell steps (including the port clash).
+
+0) Port conflict (EADDRINUSE: 8000)
+
+Why: A previous dev server didn’t exit cleanly.
+
+Fix (Replit shell):
+
+# find & kill the process using 8000
+lsof -i :8000 || ss -lntp | grep 8000
+kill -9 $(lsof -t -i :8000 2>/dev/null) 2>/dev/null || true
+
+# OR temporarily move your server to another port
+export PORT=8080
+npm run dev
+
+Also ensure your server reads process.env.PORT || 8000.
+
+⸻
+
+1) Barge-in: add gain duck before stop (instant silence)
+
+File: VoiceClient.ts (or your playback service)
+
+private handleSpeechStart() {
+  // 1) duck audio NOW (no click)
+  if (this.gainNode?.gain) {
+    this.gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+  }
+
+  // 2) stop current source & clear queue
+  if (this.currentSource) this.currentSource.stop();
+  this.clearPlaybackQueue();
+
+  // 3) cancel the model’s current response
+  if (this.ws?.readyState === WebSocket.OPEN) {
+    this.ws.send(JSON.stringify({ type: 'response.cancel' }));
+  }
+
+  this.setCoachState('listening');
+}
+
+
+⸻
+
+2) Migrate ScriptProcessorNode → AudioWorklet (lower latency, Safari-safe)
+
+A) Register worklet
+
+// AudioCapture.ts
+export async function startMicWorklet(ctx: AudioContext, onFrame: (pcm: Int16Array)=>void) {
+  await ctx.audioWorklet.addModule('/worklets/micProcessor.js');
+  const node = new AudioWorkletNode(ctx, 'mic-processor');
+  node.port.onmessage = (e) => e.data?.pcm && onFrame(new Int16Array(e.data.pcm));
+
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1, sampleRate:16000 }
+  });
+  ctx.resume(); // make sure it’s resumed from a user gesture
+  const src = ctx.createMediaStreamSource(stream);
+  src.connect(node);
+  // don’t route to speakers; keep node unconnected or to a GainNode at 0
+  return { node, stream };
+}
+
+B) Worklet processor
+
+/public/worklets/micProcessor.js
+
+class MicProcessor extends AudioWorkletProcessor {
+  process(inputs) {
+    const ch = inputs?.[0]?.[0];
+    if (!ch) return true;
+    const pcm = new Int16Array(ch.length);
+    for (let i=0;i<ch.length;i++) pcm[i] = Math.max(-1, Math.min(1, ch[i])) * 0x7fff;
+    this.port.postMessage({ pcm: pcm.buffer }, [pcm.buffer]);
+    return true;
+  }
+}
+registerProcessor('mic-processor', MicProcessor);
+
+
+⸻
+
+3) Mic backpressure (20–40 ms frames + oldest-drop)
+
+// RealtimeClient or VoiceClient (sender side)
+const MAX_QUEUE = 8;                 // ~160–320ms if 20–40ms frames
+const frameMs = 20;
+let sendQueue: Int16Array[] = [];
+let sending = false;
+
+function enqueue(frame: Int16Array) {
+  if (sendQueue.length >= MAX_QUEUE) sendQueue.shift();  // drop oldest
+  sendQueue.push(frame);
+  if (!sending) drain();
+}
+
+async function drain() {
+  sending = true;
+  while (sendQueue.length) {
+    const frame = sendQueue.shift()!;
+    // encode base64 or binary depending on your WS protocol
+    this.ws?.send(JSON.stringify({ type:'input_audio_buffer.append', audio: base64Encode(frame) }));
+    await new Promise(r => setTimeout(r, frameMs));
+  }
+  sending = false;
+}
+
+
+⸻
+
+4) Pause VAD when tab is hidden (save battery)
+
+// VAD loop owner (hook/service)
+let rafId: number | null = null;
+
+function vadLoop() {
+  if (document.hidden) {
+    // hard pause VAD when hidden
+    rafId = requestAnimationFrame(() => {}); // no-op to keep state alive if needed
+    return;
+  }
+  // ... measure RMS, thresholds, emit start/stop
+  rafId = requestAnimationFrame(vadLoop);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && rafId) { cancelAnimationFrame(rafId); rafId = null; }
+  else if (!rafId) { rafId = requestAnimationFrame(vadLoop); }
+});
+
+
+⸻
+
+5) Session refresh UX (toast + clear + redirect)
+
+If not already merged, add:
+
+Global 401 interceptor
+
+// client/src/lib/api.ts
+api.interceptors.response.use(
+  r => r,
+  err => {
+    if (err?.response?.status === 401) {
+      authStorage.clear();
+      window.dispatchEvent(new CustomEvent('auth:expired'));
+    }
+    return Promise.reject(err);
+  }
+);
+
+App listener
+
+useEffect(() => {
+  const onExpired = () => {
+    toast({ title:'Session expired', description:'Please log in again.' });
+    navigate('/login', { replace:true });
+  };
+  window.addEventListener('auth:expired', onExpired);
+  return () => window.removeEventListener('auth:expired', onExpired);
+}, []);
+
+
+⸻
+
+6) Quick verification checklist (do these once it boots)
+	•	Barge-in: while coach is speaking, start talking → audio cuts instantly and coach listens.
+	•	Latency: round-trip < ~250 ms perceived; no “clicks” on interrupt.
+	•	Hidden tab: CPU drops, mic VAD stops; battery drain minimal.
+	•	Auth: after idle/expire, first protected action → toast + redirect to login.
+	•	Port: dev server starts without EADDRINUSE.
+
+⸻
+
+7) If you want 1-liners to run now
+
+# kill anything on 8000
+kill -9 $(lsof -t -i :8000 2>/dev/null) 2>/dev/null || true
+
+# ensure worklet is served
+mkdir -p public/worklets && touch public/worklets/micProcessor.js
+
+# rebuild & run
+npm run build || true
+npm run dev
+
+If you paste me any new errors (especially around the worklet path or WS audio messages), I’ll give exact diffs for your codebase structure.

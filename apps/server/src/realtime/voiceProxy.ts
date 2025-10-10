@@ -7,7 +7,12 @@ import { validateEnv } from '@shared/env';
 
 const env = validateEnv(process.env);
 
-const activeConnections = new Map<string, Set<WebSocket>>();
+interface ConnectionInfo {
+  ws: WebSocket;
+  lastActivity: number;
+}
+
+const activeConnections = new Map<string, ConnectionInfo[]>();
 
 const MAX_CONNECTIONS_PER_USER = 3;
 const HEARTBEAT_INTERVAL = 25000;
@@ -51,17 +56,29 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
     }
 
     if (!activeConnections.has(userId)) {
-      activeConnections.set(userId, new Set());
+      activeConnections.set(userId, []);
     }
 
     const userConnections = activeConnections.get(userId)!;
 
-    if (userConnections.size >= MAX_CONNECTIONS_PER_USER) {
-      clientWs.close(1008, 'Too many connections');
-      return;
+    if (userConnections.length >= MAX_CONNECTIONS_PER_USER) {
+      userConnections.sort((a, b) => a.lastActivity - b.lastActivity);
+      const lruConnection = userConnections.shift();
+      if (lruConnection) {
+        lruConnection.ws.close(1000, 'Connection limit reached - disconnecting LRU');
+      }
     }
 
-    userConnections.add(clientWs);
+    const connectionInfo: ConnectionInfo = {
+      ws: clientWs,
+      lastActivity: Date.now(),
+    };
+    
+    userConnections.push(connectionInfo);
+    
+    const updateActivity = () => {
+      connectionInfo.lastActivity = Date.now();
+    };
 
     const upstreamWs = new WebSocket(
       'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01',
@@ -126,6 +143,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
     });
 
     clientWs.on('message', (data) => {
+      updateActivity();
       if (upstreamReady && upstreamWs.readyState === WebSocket.OPEN) {
         upstreamWs.send(data);
       } else {
@@ -139,9 +157,12 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
 
     clientWs.on('close', () => {
       upstreamWs.close();
-      userConnections.delete(clientWs);
+      const index = userConnections.findIndex(conn => conn.ws === clientWs);
+      if (index !== -1) {
+        userConnections.splice(index, 1);
+      }
 
-      if (userConnections.size === 0) {
+      if (userConnections.length === 0) {
         activeConnections.delete(userId);
       }
 

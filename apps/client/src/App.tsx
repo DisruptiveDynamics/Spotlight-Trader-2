@@ -1,19 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { AuthGate } from './features/auth/AuthGate';
-import { CoachBubble } from './features/coach/CoachBubble';
-import { ExplainPanel } from './features/coach/ExplainPanel';
-import { CommandPalette } from './components/CommandPalette';
 import { LatencyHUD } from './components/LatencyHUD';
 import { SignalDensityControl } from './components/SignalDensityControl';
-import { TapePeek } from './components/TapePeek';
 import { AccessibilityControls } from './components/AccessibilityControls';
 import { Brand } from './components/Brand';
 import { Splash } from './components/Splash';
-import { MultiChart } from './features/chart/MultiChart';
 import { Toolbar } from './features/chart/Toolbar';
 import { focusManager } from './services/FocusManager';
 import { startFlagSync, stopFlagSync } from './state/flags';
 import type { InsightContext } from '@spotlight/shared';
+
+// Lazy load heavy components for code-splitting
+const MultiChart = lazy(() => import('./features/chart/MultiChart').then(m => ({ default: m.MultiChart })));
+const TapePeek = lazy(() => import('./components/TapePeek').then(m => ({ default: m.TapePeek })));
+const CoachBubble = lazy(() => import('./features/coach/CoachBubble').then(m => ({ default: m.CoachBubble })));
+const ExplainPanel = lazy(() => import('./features/coach/ExplainPanel').then(m => ({ default: m.ExplainPanel })));
+const CommandPalette = lazy(() => import('./components/CommandPalette').then(m => ({ default: m.CommandPalette })));
+
+// Minimal loading fallback for Suspense boundaries
+const LoadingFallback = () => (
+  <div className="flex items-center justify-center p-4">
+    <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+  </div>
+);
 
 function App() {
   const [focusMode, setFocusMode] = useState(focusManager.getMode());
@@ -105,7 +114,9 @@ function App() {
           <div className="flex-1 flex gap-2 min-h-0 p-2">
             {/* Main Chart Area - Takes 85% of width */}
             <div className="flex-1 min-w-0">
-              <MultiChart />
+              <Suspense fallback={<LoadingFallback />}>
+                <MultiChart />
+              </Suspense>
             </div>
 
             {/* Right Sidebar - Takes 15% of width */}
@@ -136,14 +147,22 @@ function App() {
             </div>
           </div>
         </main>
-        <CoachBubble />
-        <CommandPalette />
-        <TapePeek />
-        <ExplainPanel
-          isOpen={explainPanelOpen}
-          onClose={() => setExplainPanelOpen(false)}
-          context={explainContext}
-        />
+        <Suspense fallback={null}>
+          <CoachBubble />
+        </Suspense>
+        <Suspense fallback={null}>
+          <CommandPalette />
+        </Suspense>
+        <Suspense fallback={null}>
+          <TapePeek />
+        </Suspense>
+        <Suspense fallback={null}>
+          <ExplainPanel
+            isOpen={explainPanelOpen}
+            onClose={() => setExplainPanelOpen(false)}
+            context={explainContext}
+          />
+        </Suspense>
       </div>
     </AuthGate>
   );

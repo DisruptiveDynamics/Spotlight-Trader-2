@@ -17,6 +17,7 @@ interface HistoryQuery {
 export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
   const { symbol, timeframe = '1m', limit = 1000, before, sinceSeq } = query;
 
+  // Always check ring buffer first (has real-time data from WebSocket)
   if (sinceSeq !== undefined) {
     const cached = ringBuffer.getSinceSeq(symbol, sinceSeq);
     if (cached.length > 0) {
@@ -24,6 +25,14 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
     }
   }
 
+  // Try ring buffer for recent data (last N bars)
+  const recentFromBuffer = ringBuffer.getRecent(symbol, limit);
+  if (recentFromBuffer.length >= Math.min(limit, 10)) {
+    console.log(`Using ${recentFromBuffer.length} bars from ring buffer for ${symbol}`);
+    return recentFromBuffer.map((bar) => ({ ...bar, symbol, timeframe }));
+  }
+
+  // Fall back to Polygon REST API for older historical data
   const toMs = before || Date.now();
   const fromMs = toMs - limit * 60000;
 
@@ -34,11 +43,16 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
       'minute',
       new Date(fromMs).toISOString().split('T')[0]!,
       new Date(toMs).toISOString().split('T')[0]!,
-      { limit }
+      { limit, adjusted: true }
     );
 
-    if (!data || !Array.isArray(data.results) || data.results.length === 0) {
-      console.warn(`No history data for ${symbol} from Polygon`);
+    if (!data || !data.results || !Array.isArray(data.results) || data.results.length === 0) {
+      console.warn(`No history data for ${symbol} from Polygon, checking ring buffer again`);
+      // Try ring buffer again - might have some data even if less than limit
+      if (recentFromBuffer.length > 0) {
+        console.log(`Using ${recentFromBuffer.length} bars from ring buffer (fallback)`);
+        return recentFromBuffer.map((bar) => ({ ...bar, symbol, timeframe }));
+      }
       return generateMockBars(symbol, fromMs, toMs, limit);
     }
 
@@ -66,7 +80,12 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
 
     return bars;
   } catch (err) {
-    console.warn('Polygon API unavailable, using mock data:', (err as Error).message);
+    console.warn('Polygon API unavailable:', (err as Error).message);
+    // Try ring buffer as final fallback
+    if (recentFromBuffer.length > 0) {
+      console.log(`Using ${recentFromBuffer.length} bars from ring buffer (API error fallback)`);
+      return recentFromBuffer.map((bar) => ({ ...bar, symbol, timeframe }));
+    }
     return generateMockBars(symbol, fromMs, toMs, limit);
   }
 }

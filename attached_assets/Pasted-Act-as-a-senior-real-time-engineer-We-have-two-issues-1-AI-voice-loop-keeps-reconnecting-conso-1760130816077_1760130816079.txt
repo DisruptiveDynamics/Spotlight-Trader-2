@@ -1,0 +1,34 @@
+Act as a senior real-time engineer. We have two issues:
+(1) AI voice loop keeps reconnecting; console shows: SyntaxError: "[object Blob] is not valid JSON", and "AudioBatcher: dropping oldest frame due to backpressure".
+(2) Charts aren’t live (socket flaps).
+
+Goals:
+- Make the WS transport robust (voice + chart), with JSON control messages and binary audio handled separately.
+- Add backpressure control, mono 16k PCM16 frames (20–40ms), and a heartbeat.
+- Ensure CSP `connect-src` allows our WS and Polygon.
+- Prove charts get steady real-time updates and voice is conversational without flapping.
+
+Deliverables:
+1) Patches:
+   - client/voice/wsClient.ts: `ws.binaryType='arraybuffer'`, branch on text vs binary, ping/pong handling.
+   - client/voice/micSender.ts: PCM16 mono, 20–40ms frames, `ws.bufferedAmount` backoff.
+   - server/realtime.ts (or equivalent): WS message handler that:
+       • treats JSON as control, sends `pong` replies
+       • treats non-JSON as **binary audio** (no JSON.parse)
+       • emits small TTS binary chunks to client
+       • has heartbeat/drop if no pings
+   - server/security.ts (helmet): add `connect-src` for our WS origin and `wss://socket.polygon.io`.
+   - client/chart/live.ts: ensure it consumes only JSON events (`intraBarUpdated`, `minuteClosed`) from `/ws`; no JSON.parse on binary.
+2) Add latency metrics: `stt_first_partial_ms`, `tts_first_audio_ms`, `ws_reconnects`, `ws_buffered_peaks`.
+3) Verification:
+   - Log: steady pings/pongs, zero JSON parse errors on Blobs.
+   - Voice: speak for 10s; show no “listening ↔ reconnecting” loop; barge-in cancels TTS.
+   - Charts: during market hours, forming bar updates ≥2x/sec, minute finalizes cleanly.
+   - DevTools console screenshot: no Blob/JSON errors, no backpressure warnings.
+4) DIAGNOSIS.md + VERIFY.md summarizing root cause and proof.
+
+Acceptance:
+- No `"[object Blob] is not valid JSON"` errors.
+- No repeated “dropping oldest frame” (occasional under load is okay).
+- WS remains connected ≥ 5 minutes with healthy ping/pong.
+- Forming candle updates ≥ 2×/sec; minute close matches official aggregate.

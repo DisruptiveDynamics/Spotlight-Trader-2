@@ -268,13 +268,21 @@ export class EnhancedVoiceClient {
           await this.handleAudioDelta(data.delta);
         }
 
+        if (data.type === 'response.audio_transcript.delta' && data.delta) {
+          console.log('[Voice] Transcript:', data.delta);
+        }
+
         if (data.type === 'response.done' && this.lastRequestTime > 0) {
           const responseTime = Date.now() - this.lastRequestTime;
           this.notifyLatency(responseTime);
           this.lastRequestTime = 0;
         }
+
+        if (data.type === 'error') {
+          console.error('[Voice] Server error:', data.error);
+        }
       } catch (error) {
-        console.error('Error processing message:', error);
+        console.error('Error processing WebSocket message:', error, 'Data type:', typeof event.data, 'Data:', event.data instanceof Blob ? '<Blob>' : String(event.data).substring(0, 100));
       }
     };
 

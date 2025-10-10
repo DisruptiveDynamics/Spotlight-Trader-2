@@ -199,6 +199,14 @@ A legendary, state-of-the-art voice interface featuring modern animations, robus
 - Efficient canvas rendering with state-driven animations
 - Graceful degradation with fallback UI
 
+**iOS/iPadOS Compatibility** (October 2025):
+
+- **AudioContext iOS Restrictions**: Lazy initialization only after user gesture (bubble tap), explicit `context.resume()` before TTS playback to handle Safari suspended state, prevents double context creation
+- **Smart Permission Flow**: Permission state tracking (pending/granted/denied), "Mic activated ✅" tooltip for 2s on grant, automatic fallback to text input when denied, no permission loops
+- **Network Resilience**: Offline state detection using `navigator.onLine`, exponential backoff retry [200ms, 400ms, 800ms, 1600ms, 3200ms, 5000ms], "Offline — retrying…" status message, single WebSocket instance guaranteed, online/offline event listeners registered once in constructor
+- **Mobile UX Optimizations**: `touch-manipulation` CSS for smooth touch, `WebkitTapHighlightColor: transparent` prevents iOS blue flash, background tab handling pauses animations, status message tooltips with auto-dismiss
+- **Clean Lifecycle**: No duplicate event listeners, WebSocket handlers cleared before close to prevent duplicate reconnects, offline state preserved throughout retry attempts
+
 ### Trader UX Pack
 
 Focuses on professional ergonomics with zero-lag interactions:

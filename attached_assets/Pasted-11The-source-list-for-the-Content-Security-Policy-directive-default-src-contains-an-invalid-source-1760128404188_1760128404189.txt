@@ -1,0 +1,82 @@
+11The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+11The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+11The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+104Tracking Prevention blocked access to storage for <URL>.
+/~:1  The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+/~:1  The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+/~:1  The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+_app-40e88f14da9398d9.js:28 
+      /////////////////////
+   ///////////////////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////        Curious and driven?
+  ///////////////@@@@@@@///////        Work with us!
+  ///////////////@@@@@@@///////
+  ///////////////@@@@@@@///////        https://join.replit.com/hack.with.us
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@#//////////////
+   ///////////////////////////
+      /////////////////////
+      
+_app-40e88f14da9398d9.js:28 [LaunchDarkly] LaunchDarkly client initialized
+FusionForge:1 Banner not shown: beforeinstallpromptevent.preventDefault() called. The page must call beforeinstallpromptevent.prompt() to show the banner.
+framework-cedd748963b10d85.js:1  Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+_ @ framework-cedd748963b10d85.js:1
+framework-cedd748963b10d85.js:1  Unrecognized feature: 'ambient-light-sensor'.
+_ @ framework-cedd748963b10d85.js:1
+framework-cedd748963b10d85.js:1  Unrecognized feature: 'battery'.
+_ @ framework-cedd748963b10d85.js:1
+framework-cedd748963b10d85.js:1  Unrecognized feature: 'execution-while-not-rendered'.
+_ @ framework-cedd748963b10d85.js:1
+framework-cedd748963b10d85.js:1  Unrecognized feature: 'execution-while-out-of-viewport'.
+_ @ framework-cedd748963b10d85.js:1
+framework-cedd748963b10d85.js:1  Unrecognized feature: 'layout-animations'.
+_ @ framework-cedd748963b10d85.js:1
+framework-cedd748963b10d85.js:1  Unrecognized feature: 'legacy-image-formats'.
+_ @ framework-cedd748963b10d85.js:1
+framework-cedd748963b10d85.js:1  Unrecognized feature: 'navigation-override'.
+_ @ framework-cedd748963b10d85.js:1
+framework-cedd748963b10d85.js:1  Unrecognized feature: 'oversized-images'.
+_ @ framework-cedd748963b10d85.js:1
+framework-cedd748963b10d85.js:1  Unrecognized feature: 'publickey-credentials'.
+_ @ framework-cedd748963b10d85.js:1
+framework-cedd748963b10d85.js:1  Unrecognized feature: 'speaker-selection'.
+_ @ framework-cedd748963b10d85.js:1
+framework-cedd748963b10d85.js:1  Unrecognized feature: 'unoptimized-images'.
+_ @ framework-cedd748963b10d85.js:1
+framework-cedd748963b10d85.js:1  Unrecognized feature: 'unsized-media'.
+_ @ framework-cedd748963b10d85.js:1
+framework-cedd748963b10d85.js:1  Unrecognized feature: 'pointer-lock'.
+_ @ framework-cedd748963b10d85.js:1
+framework-cedd748963b10d85.js:1  Allow attribute will take precedence over 'allowfullscreen'.
+_ @ framework-cedd748963b10d85.js:1
+framework-cedd748963b10d85.js:1  Allow attribute will take precedence over 'allowpaymentrequest'.
+_ @ framework-cedd748963b10d85.js:1
+workspace_iframe.html?initialPath=%2F&id=%3Ar7r%3A:32  Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+workspace_iframe.html?initialPath=%2F&id=%3Ar7r%3A:32  Unrecognized feature: 'ambient-light-sensor'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar7r%3A:32  Unrecognized feature: 'battery'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar7r%3A:32  Unrecognized feature: 'execution-while-not-rendered'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar7r%3A:32  Unrecognized feature: 'execution-while-out-of-viewport'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar7r%3A:32  Unrecognized feature: 'layout-animations'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar7r%3A:32  Unrecognized feature: 'legacy-image-formats'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar7r%3A:32  Unrecognized feature: 'navigation-override'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar7r%3A:32  Unrecognized feature: 'oversized-images'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar7r%3A:32  Unrecognized feature: 'publickey-credentials'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar7r%3A:32  Unrecognized feature: 'speaker-selection'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar7r%3A:32  Unrecognized feature: 'unoptimized-images'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar7r%3A:32  Unrecognized feature: 'unsized-media'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar7r%3A:32  Allow attribute will take precedence over 'allowfullscreen'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar7r%3A:32  Allow attribute will take precedence over 'allowpaymentrequest'.
+e199d459-9ac1-4537-92b9-45e1d8c9ce73-00-3tbav7f2sae7.worf.replit.dev/api/auth/session:1   Failed to load resource: the server responded with a status of 401 (Unauthorized)
+sw_iframe.html?origin=https%3A%2F%2Freplit.com:1  Error handling response: Error: runtime/sendMessage: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+    at chrome-extension://gehmmocbbkpblljhkekmfhjpfbkclbph/content/contentScripts/kwift.CHROME.js:1:186336
+sw_iframe.html?origin=https%3A%2F%2Freplit.com:1  Error handling response: Error: runtime/sendMessage: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+    at chrome-extension://gehmmocbbkpblljhkekmfhjpfbkclbph/content/contentScripts/kwift.CHROME.js:1:186336
+[NEW] Explain Console errors by using Copilot in Edge: click
+         
+         to explain an error. 
+        Learn more
+        Don't show again
+stallwart.build.js:1 stallwart: failed ping 1

@@ -43,6 +43,10 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
 
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true, timestamp: Date.now() });
+});
+
 app.use('/api/auth', authRouter);
 app.use('/auth', authRouter);
 

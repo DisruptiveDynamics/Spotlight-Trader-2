@@ -1,0 +1,99 @@
+You’re right—that’s the whole issue. The client is still pointing at 127.0.0.1:8000, but your server is on a different port/host under Vite’s proxy. Do these exact fixes to make the client↔server link bullet-proof (including websockets), then restart.
+
+1) Pick a single backend port (recommend 8080)
+
+In your server entry:
+
+// server/index.ts
+const PORT = process.env.PORT ? Number(process.env.PORT) : 8080; // <- 8080 default
+app.listen(PORT, '0.0.0.0', () => console.log(`API on :${PORT}`));
+
+2) Point the Vite dev proxy at that port (HTTP + WS)
+
+// client/vite.config.ts
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  server: {
+    host: '0.0.0.0',
+    port: 5000,
+    proxy: {
+      // REST
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        secure: false,
+      },
+      // WebSockets (realtime, voice)
+      '/ws': {
+        target: 'ws://localhost:8080',
+        ws: true,
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+  },
+  plugins: [react()],
+});
+
+3) Use relative URLs in the client (no hard-coded 127.0.0.1)
+
+// REST everywhere
+fetch('/api/auth/session')         // not http://127.0.0.1:8000/...
+
+// WS everywhere (auto–same-host in dev)
+const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+const ws = new WebSocket(`${proto}://${location.host}/ws/realtime`);
+
+This makes Vite proxy take over in dev, and in prod it’ll hit your server at the same host.
+
+4) CORS (server) allow dev + replit hosts (only if you’re using cookies)
+
+// server/cors.ts
+import cors from 'cors';
+app.use(cors({
+  origin: [
+    'http://localhost:5000',
+    /\.replit\.dev$/,           // Replit preview
+    /\.repl\.co$/,              // older Replit domains
+  ],
+  credentials: true,
+}));
+
+5) Health route (quick connectivity test)
+
+// server/routes/health.ts
+app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
+6) Voice client selection (log which one is active)
+
+If you have multiple voice clients (e.g., different endpoints), log the chosen one at startup:
+
+// client/src/services/RealtimeClient.ts
+console.info('[Voice] Using endpoint:', `${proto}://${location.host}/ws/realtime`);
+
+7) Restart cleanly
+
+Shell:
+
+npx kill-port 5000 8000 8080 || true
+export PORT=8080
+npm run dev
+
+8) Verify quickly
+
+Shell (new tab):
+
+# Through Vite proxy → should hit server and return { ok: true }
+curl -s http://localhost:5000/api/health
+
+# Direct to server
+curl -s http://localhost:8080/api/health
+
+Browser console should no longer show ECONNREFUSED 127.0.0.1:8000.
+If WS still fails, confirm the WS path is /ws/realtime (and matches your server route), and that the Vite proxy block for /ws includes ws: true.
+
+⸻
+
+If you paste your vite.config.ts proxy section and the snippet where you build the WebSocket URL, I’ll sanity-check them in place.

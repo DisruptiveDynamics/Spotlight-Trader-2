@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { EnhancedVoiceClient } from '../../voice/EnhancedVoiceClient';
+import { EnhancedVoiceClient } from '../../voice/EnhancedVoiceClient.v2';
 import { VoiceFallback } from './VoiceFallback';
 import { ensureiOSAudioUnlocked } from '../../voice/ios';
 
@@ -241,7 +241,7 @@ export function PresenceBubble() {
     const unsubscribeState = client.onStateChange(setConnectionState);
     const unsubscribeCoach = client.onCoachStateChange(setCoachState);
     const unsubscribeAmplitude = client.onAmplitudeChange(setAmplitude);
-    const unsubscribeLatency = client.onLatencyChange(setLatency);
+    const unsubscribeLatency = client.onLatency(setLatency);
     const unsubscribePermission = client.onPermissionChange((state) => {
       setPermissionState(state);
 

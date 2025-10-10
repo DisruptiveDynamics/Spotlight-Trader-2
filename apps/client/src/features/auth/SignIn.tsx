@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useAuthStore } from '../../stores/authStore';
-import { authStorage } from '../../auth/authStorage';
 
 interface SignInProps {
   sessionExpired?: boolean;
@@ -55,19 +54,11 @@ export function SignIn({ sessionExpired = false }: SignInProps) {
       const data = await res.json();
 
       if (data.user) {
-        const user = {
+        setUser({
           userId: data.user.id,
           email: data.user.email,
           createdAt: new Date().toISOString(),
-        };
-        
-        // Save to authStorage with 30 min expiry
-        authStorage.set({
-          user,
-          expiresAt: Date.now() + 30 * 60 * 1000,
         });
-        
-        setUser(user);
       }
     } catch (err) {
       setError('Demo login failed. Please try again.');

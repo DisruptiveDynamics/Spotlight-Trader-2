@@ -1,38 +1,39 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { authStorage } from '../auth/authStorage';
 
 interface User {
   userId: string;
   email: string;
-  createdAt: string;
+  createdAt?: string;
 }
 
 interface AuthState {
   user: User | null;
-  loading: boolean;
   setUser: (user: User | null) => void;
-  setLoading: (loading: boolean) => void;
   logout: () => void;
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set) => ({
-      user: null,
-      loading: true,
-      setUser: (user) => set({ user, loading: false }),
-      setLoading: (loading) => set({ loading }),
-      logout: () => {
-        set({ user: null });
-        fetch('/api/auth/logout', {
-          method: 'POST',
-          credentials: 'include',
-        }).catch(console.error);
-      },
-    }),
-    {
-      name: 'auth-storage',
-      partialize: (state) => ({ user: state.user }),
+export const useAuthStore = create<AuthState>((set) => ({
+  user: null,
+  
+  setUser: (user) => {
+    set({ user });
+    if (user) {
+      authStorage.set({
+        user,
+        expiresAt: Date.now() + 30 * 60 * 1000,
+      });
+    } else {
+      authStorage.clear();
     }
-  )
-);
+  },
+  
+  logout: () => {
+    authStorage.clear();
+    set({ user: null });
+    fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+    }).catch(console.error);
+  },
+}));

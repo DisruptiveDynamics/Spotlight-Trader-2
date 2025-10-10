@@ -1,0 +1,195 @@
+Yes, I agree with that approach. Your diagnosis is spot-on: trusting localStorage without server validation leaves you in a “zombie” logged-in state. Here’s a tight, copy-paste Replit Agent Work Order to implement the fix cleanly.
+
+⸻
+
+Replit Agent Work Order — Robust Session Validation & UX
+
+Goal: Eliminate “zombie login” by always validating the server session, clearing stale local state, and providing clear UX when a session expires. Works on iPad/Safari/desktop.
+
+Summary of Changes
+	1.	AuthGate: never trust localStorage alone; always validate with server.
+	2.	Global 401 handling: intercept 401s from API → clear client auth → redirect to login with a “Session expired” toast.
+	3.	Storage hygiene: single authStorage module; remove all ad-hoc localStorage reads.
+	4.	Optional (if backend supports): silent refresh using refresh tokens; otherwise, fail fast to login.
+
+⸻
+
+1) Create an authStorage helper
+
+File: client/src/auth/authStorage.ts
+
+const KEY = 'sl_auth_v1';
+
+export type AuthSnapshot = {
+  user?: { id: string; email: string; name?: string };
+  accessToken?: string;   // if you use JWT/Bearer
+  expiresAt?: number;     // epoch ms
+};
+
+export const authStorage = {
+  get(): AuthSnapshot | null {
+    try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch { return null; }
+  },
+  set(s: AuthSnapshot) { localStorage.setItem(KEY, JSON.stringify(s)); },
+  clear() { localStorage.removeItem(KEY); }
+};
+
+
+⸻
+
+2) Add a “validate session” API
+
+Backend (if missing): GET /api/auth/session
+	•	Returns 200 with { user, expiresAt } if valid.
+	•	Returns 401 if invalid/expired.
+
+⸻
+
+3) Fix AuthGate
+
+File: client/src/auth/AuthGate.tsx (or wherever the gate is)
+
+import { useEffect, useState } from 'react';
+import { authStorage } from './authStorage';
+import { api } from '@/lib/api'; // your fetch/axios wrapper
+import { useNavigate } from 'react-router-dom';
+import { toast } from '@/components/ui/use-toast';
+
+export function AuthGate({ children }: { children: React.ReactNode }) {
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // Always validate server session (even if local storage has a user)
+        const res = await api.get('/api/auth/session'); // expects 200 or 401
+        if (cancelled) return;
+
+        // Server says session is valid → normalize local snapshot
+        authStorage.set({
+          user: res.data.user,
+          expiresAt: res.data.expiresAt ?? Date.now() + 30 * 60 * 1000,
+        });
+        setLoading(false);
+      } catch (err: any) {
+        if (cancelled) return;
+        // Session invalid → clear local state, route to login
+        authStorage.clear();
+        setLoading(false);
+        toast({ title: 'Session expired', description: 'Please log in again.' });
+        navigate('/login', { replace: true });
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [navigate]);
+
+  if (loading) return <div className="p-6 text-sm text-muted-foreground">Checking session…</div>;
+  return <>{children}</>;
+}
+
+Important: This replaces the problematic early return:
+
+if (user) { setLoading(false); return; } // ❌ remove this
+
+
+
+⸻
+
+4) Add global 401 interceptors
+
+File: client/src/lib/api.ts (axios example)
+
+import axios from 'axios';
+import { authStorage } from '@/auth/authStorage';
+
+export const api = axios.create({ baseURL: '/' });
+
+api.interceptors.response.use(
+  (res) => res,
+  async (error) => {
+    if (error?.response?.status === 401) {
+      authStorage.clear();
+      // optional: broadcast a logout event
+      window.dispatchEvent(new CustomEvent('auth:expired'));
+    }
+    return Promise.reject(error);
+  }
+);
+
+Listen once in app root (e.g., App.tsx):
+
+useEffect(() => {
+  const handler = () => {
+    // centralize redirect and message
+    toast({ title: 'Session expired', description: 'Please log in again.' });
+    navigate('/login', { replace: true });
+  };
+  window.addEventListener('auth:expired', handler);
+  return () => window.removeEventListener('auth:expired', handler);
+}, [navigate]);
+
+
+⸻
+
+5) Login & Logout plumbing
+	•	On login success: call authStorage.set({ user, accessToken?, expiresAt }).
+	•	On logout: call authStorage.clear() and navigate('/login', { replace: true }).
+
+⸻
+
+6) Optional: Silent refresh (if backend supports refresh tokens)
+	•	Store refreshToken httpOnly cookie.
+	•	On 401 for access token only, call /api/auth/refresh once (with a short mutex), then retry original request.
+	•	If refresh fails → clear storage and redirect to login.
+
+Pseudocode in the interceptor:
+
+let refreshing = false;
+let queue: ((t: string|null) => void)[] = [];
+
+api.interceptors.response.use(undefined, async (error) => {
+  if (error.response?.status !== 401) throw error;
+
+  if (!refreshing) {
+    refreshing = true;
+    try {
+      const r = await api.post('/api/auth/refresh'); // sets new access token cookie/header
+      queue.splice(0).forEach(fn => fn('ok'));
+    } catch {
+      queue.splice(0).forEach(fn => fn(null));
+      window.dispatchEvent(new CustomEvent('auth:expired'));
+    } finally {
+      refreshing = false;
+    }
+  }
+
+  // wait for refresh result, then retry or fail
+  const token = await new Promise<string|null>(res => queue.push(res));
+  if (token) return api.request(error.config);
+  throw error;
+});
+
+
+⸻
+
+7) UX polish
+	•	Show a toast “Session expired, please log in again.”
+	•	If the user interacts with protected features while unauthenticated, push to login.
+	•	On iPad/Safari, ensure cookies are allowed for your domain; avoid third-party cookies.
+
+⸻
+
+Definition of Done
+	•	From an expired session, visiting the app always leads to an automatic check:
+	•	If valid → app loads normally.
+	•	If invalid → localStorage cleared, user redirected to /login with a toast.
+	•	No screen where the user “looks logged in” but features silently fail.
+	•	All API calls hitting a dead session result in a single redirect flow (no loops, no flicker).
+
+⸻
+
+This will fix the UX hole you’re seeing and make auth behavior predictable across devices.

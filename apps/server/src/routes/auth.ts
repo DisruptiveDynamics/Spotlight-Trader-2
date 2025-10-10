@@ -137,6 +137,55 @@ router.post('/demo', async (req, res) => {
   }
 });
 
+router.get('/session', async (req, res) => {
+  try {
+    const token = req.cookies?.sid || req.headers.authorization?.replace('Bearer ', '');
+
+    if (!token) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const payload = verifyJwt(token);
+
+    if (!payload) {
+      return res.status(401).json({ error: 'Invalid or expired session' });
+    }
+
+    const userResults = await db.select().from(users).where(eq(users.id, payload.userId)).limit(1);
+    const user = userResults[0];
+
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    const sessionResults = await db
+      .select()
+      .from(sessions)
+      .where(
+        and(
+          eq(sessions.userId, user.id),
+          gte(sessions.expiresAt, new Date())
+        )
+      )
+      .orderBy(sessions.createdAt)
+      .limit(1);
+
+    const session = sessionResults[0];
+
+    res.json({
+      user: {
+        userId: user.id,
+        email: user.email,
+        createdAt: user.createdAt,
+      },
+      expiresAt: session?.expiresAt?.getTime() || Date.now() + 30 * 60 * 1000,
+    });
+  } catch (error) {
+    console.error('Failed to validate session:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.get('/me', async (req, res) => {
   try {
     const token = req.cookies?.sid || req.headers.authorization?.replace('Bearer ', '');

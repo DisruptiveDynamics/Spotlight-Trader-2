@@ -3,7 +3,8 @@ import { EnhancedVoiceClient } from '../../voice/EnhancedVoiceClient';
 import { VoiceFallback } from './VoiceFallback';
 
 type CoachState = 'listening' | 'thinking' | 'speaking' | 'idle' | 'muted';
-type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error';
+type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error' | 'offline';
+type PermissionState = 'pending' | 'granted' | 'denied';
 
 interface WaveProps {
   amplitude: number;
@@ -192,10 +193,13 @@ export function PresenceBubble() {
   const [hasInteracted, setHasInteracted] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
+  const [permissionState, setPermissionState] = useState<PermissionState>('pending');
+  const [statusMessage, setStatusMessage] = useState<string>('');
 
   const voiceClientRef = useRef<EnhancedVoiceClient | null>(null);
   const tokenRef = useRef<string | null>(null);
   const tooltipTimerRef = useRef<number>();
+  const statusTimerRef = useRef<number>();
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -217,6 +221,16 @@ export function PresenceBubble() {
     const unsubscribeCoach = client.onCoachStateChange(setCoachState);
     const unsubscribeAmplitude = client.onAmplitudeChange(setAmplitude);
     const unsubscribeLatency = client.onLatencyChange(setLatency);
+    const unsubscribePermission = client.onPermissionChange((state) => {
+      setPermissionState(state);
+      
+      // Show status message for permission changes
+      if (state === 'granted') {
+        showStatusMessage('Mic activated ✅');
+      } else if (state === 'denied') {
+        showStatusMessage('Mic permission denied');
+      }
+    });
 
     tooltipTimerRef.current = window.setTimeout(() => {
       if (!hasInteracted) {
@@ -229,12 +243,28 @@ export function PresenceBubble() {
       unsubscribeCoach();
       unsubscribeAmplitude();
       unsubscribeLatency();
+      unsubscribePermission();
       client.disconnect();
       if (tooltipTimerRef.current) {
         clearTimeout(tooltipTimerRef.current);
       }
+      if (statusTimerRef.current) {
+        clearTimeout(statusTimerRef.current);
+      }
     };
   }, []);
+
+  const showStatusMessage = (message: string, duration = 2000) => {
+    setStatusMessage(message);
+    
+    if (statusTimerRef.current) {
+      clearTimeout(statusTimerRef.current);
+    }
+    
+    statusTimerRef.current = window.setTimeout(() => {
+      setStatusMessage('');
+    }, duration);
+  };
 
   const fetchToken = async (): Promise<string> => {
     const response = await fetch('/api/voice/token', {
@@ -259,19 +289,19 @@ export function PresenceBubble() {
     const client = voiceClientRef.current;
     if (!client) return;
 
-    if (connectionState === 'disconnected' || connectionState === 'error') {
+    if (connectionState === 'disconnected' || connectionState === 'error' || connectionState === 'offline') {
       try {
         const token = await fetchToken();
         tokenRef.current = token;
         await client.connect(token);
 
-        if (client.isMicPermissionDenied()) {
+        if (client.getPermissionState() === 'denied') {
           setShowFallback(true);
         }
       } catch (error) {
         console.error('Failed to connect:', error);
 
-        if (client.isMicPermissionDenied()) {
+        if (client.getPermissionState() === 'denied') {
           setShowFallback(true);
         }
       }
@@ -321,6 +351,7 @@ export function PresenceBubble() {
   const getStateLabel = () => {
     if (connectionState === 'connecting') return 'Connecting...';
     if (connectionState === 'reconnecting') return 'Reconnecting...';
+    if (connectionState === 'offline') return 'Offline — retrying…';
     if (connectionState === 'error') return 'Error';
     if (connectionState === 'disconnected') return 'Click to activate';
     if (coachState === 'muted') return 'Muted';
@@ -345,10 +376,11 @@ export function PresenceBubble() {
       <div className="relative">
         <button
           onClick={handleBubbleClick}
-          className="relative w-[200px] h-[200px] rounded-full focus:outline-none focus:ring-4 focus:ring-blue-500/50 transition-transform hover:scale-105"
+          className="relative w-[200px] h-[200px] rounded-full focus:outline-none focus:ring-4 focus:ring-blue-500/50 transition-transform hover:scale-105 touch-manipulation"
           aria-label={getStateLabel()}
           aria-pressed={connectionState === 'connected'}
           role="button"
+          style={{ WebkitTapHighlightColor: 'transparent' }}
         >
           <WaveAnimation amplitude={amplitude} state={coachState} reducedMotion={reducedMotion} />
 
@@ -403,6 +435,12 @@ export function PresenceBubble() {
           <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 bg-gray-900 text-white text-sm p-3 rounded-lg shadow-xl animate-fadeIn">
             <div className="text-center">Click to talk. Tap again to mute. X to exit.</div>
             <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-3 h-3 bg-gray-900" />
+          </div>
+        )}
+
+        {statusMessage && (
+          <div className="absolute -top-16 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg animate-fadeIn whitespace-nowrap">
+            {statusMessage}
           </div>
         )}
       </div>

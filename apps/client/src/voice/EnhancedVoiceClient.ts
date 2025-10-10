@@ -1,11 +1,13 @@
 import { VoiceActivityDetector } from './VAD';
 
-type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error';
+type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error' | 'offline';
 type CoachState = 'listening' | 'thinking' | 'speaking' | 'idle' | 'muted';
+type PermissionState = 'pending' | 'granted' | 'denied';
 type VoiceClientListener = (state: ConnectionState) => void;
 type StateListener = (state: CoachState) => void;
 type AmplitudeListener = (level: number) => void;
 type LatencyListener = (ms: number) => void;
+type PermissionListener = (state: PermissionState) => void;
 
 export class EnhancedVoiceClient {
   private ws: WebSocket | null = null;
@@ -22,22 +24,70 @@ export class EnhancedVoiceClient {
   private stateListeners = new Set<StateListener>();
   private amplitudeListeners = new Set<AmplitudeListener>();
   private latencyListeners = new Set<LatencyListener>();
+  private permissionListeners = new Set<PermissionListener>();
   private reconnectTimeout: number | null = null;
   private reconnectAttempts = 0;
-  private maxReconnectDelay = 30000;
-  private maxReconnectAttempts = 5;
+  private reconnectDelays = [200, 400, 800, 1600, 3200, 5000];
+  private maxReconnectAttempts = 10;
   private isMuted = false;
   private audioProcessor: ScriptProcessorNode | null = null;
   private audioSource: MediaStreamAudioSourceNode | null = null;
   private amplitudeMonitorInterval: number | null = null;
   private lastRequestTime = 0;
-  private micPermissionDenied = false;
+  private permissionState: PermissionState = 'pending';
   private currentToken: string | null = null;
+  private isBackgroundTab = false;
 
   constructor() {
     this.vad = new VoiceActivityDetector();
     this.vad.on('start', () => this.handleSpeechStart());
     this.vad.on('stop', () => this.handleSpeechStop());
+    
+    // Monitor tab visibility for mobile optimization
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        this.isBackgroundTab = document.hidden;
+        if (this.isBackgroundTab) {
+          this.stopAmplitudeMonitoring();
+        } else if (this.mediaStream && !this.isMuted) {
+          this.startAmplitudeMonitoring();
+        }
+      });
+    }
+
+    // Listen for online/offline events (registered once)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', () => this.handleOnline());
+      window.addEventListener('offline', () => this.handleOffline());
+    }
+  }
+
+  private handleOnline(): void {
+    if (this.currentToken && this.state === 'offline') {
+      // Cancel any pending reconnect timeout
+      if (this.reconnectTimeout) {
+        clearTimeout(this.reconnectTimeout);
+        this.reconnectTimeout = null;
+      }
+      
+      // Close existing WebSocket if present (clear handlers first to prevent duplicate reconnects)
+      if (this.ws) {
+        this.ws.onclose = null;
+        this.ws.onerror = null;
+        this.ws.onmessage = null;
+        this.ws.close();
+        this.ws = null;
+      }
+      
+      this.reconnectAttempts = 0;
+      this.connectWebSocket(this.currentToken);
+    }
+  }
+
+  private handleOffline(): void {
+    if (this.state === 'connected' || this.state === 'connecting' || this.state === 'reconnecting') {
+      this.setState('offline');
+    }
   }
 
   async connect(token: string): Promise<void> {
@@ -56,7 +106,7 @@ export class EnhancedVoiceClient {
       this.setState('error');
 
       if (error instanceof Error && error.message.includes('Permission denied')) {
-        this.micPermissionDenied = true;
+        this.setPermissionState('denied');
       }
     }
   }
@@ -95,7 +145,7 @@ export class EnhancedVoiceClient {
         },
       });
 
-      this.micPermissionDenied = false;
+      this.setPermissionState('granted');
       await this.vad.start();
 
       this.audioSource = this.audioContext.createMediaStreamSource(this.mediaStream);
@@ -131,12 +181,19 @@ export class EnhancedVoiceClient {
       this.startAmplitudeMonitoring();
     } catch (error) {
       console.error('Failed to setup audio:', error);
-      this.micPermissionDenied = true;
+      this.setPermissionState('denied');
       throw error;
     }
   }
 
   private async connectWebSocket(token: string): Promise<void> {
+    // Check if online before attempting connection
+    if (!navigator.onLine) {
+      this.setState('offline');
+      this.scheduleReconnect(token);
+      return;
+    }
+
     const wsUrl = `ws://${window.location.hostname}:4000/ws/realtime?t=${token}`;
     this.ws = new WebSocket(wsUrl);
 
@@ -166,7 +223,12 @@ export class EnhancedVoiceClient {
 
     this.ws.onerror = (error) => {
       console.error('WebSocket error:', error);
-      this.setState('error');
+      // Check if it's a network error
+      if (!navigator.onLine) {
+        this.setState('offline');
+      } else {
+        this.setState('error');
+      }
     };
 
     this.ws.onclose = () => {
@@ -340,6 +402,15 @@ export class EnhancedVoiceClient {
     this.setCoachState('speaking');
     const buffer = this.playbackQueue.shift()!;
 
+    // iOS Safari compatibility: Resume AudioContext before playback
+    if (this.audioContext.state === 'suspended') {
+      try {
+        await this.audioContext.resume();
+      } catch (error) {
+        console.error('Failed to resume AudioContext:', error);
+      }
+    }
+
     this.currentSource = this.audioContext.createBufferSource();
     this.currentSource.buffer = buffer;
     this.currentSource.connect(this.audioContext.destination);
@@ -396,12 +467,13 @@ export class EnhancedVoiceClient {
   private scheduleReconnect(token: string): void {
     if (this.reconnectTimeout) return;
 
-    this.setState('reconnecting');
+    // Only set reconnecting if not offline (preserve offline state)
+    if (this.state !== 'offline') {
+      this.setState('reconnecting');
+    }
 
-    const delay = Math.min(
-      1000 * Math.pow(2, this.reconnectAttempts) + Math.random() * 1000,
-      this.maxReconnectDelay
-    );
+    const delayIndex = Math.min(this.reconnectAttempts, this.reconnectDelays.length - 1);
+    const delay = this.reconnectDelays[delayIndex] || 5000;
 
     this.reconnectAttempts++;
 
@@ -457,11 +529,21 @@ export class EnhancedVoiceClient {
     return this.coachState;
   }
 
-  isMicPermissionDenied(): boolean {
-    return this.micPermissionDenied;
+  getPermissionState(): PermissionState {
+    return this.permissionState;
   }
 
   isMicMuted(): boolean {
     return this.isMuted;
+  }
+
+  private setPermissionState(state: PermissionState): void {
+    this.permissionState = state;
+    this.permissionListeners.forEach((listener) => listener(state));
+  }
+
+  onPermissionChange(listener: PermissionListener): () => void {
+    this.permissionListeners.add(listener);
+    return () => this.permissionListeners.delete(listener);
   }
 }

@@ -16,6 +16,7 @@ const TapePeek = lazy(() => import('./components/TapePeek').then(m => ({ default
 const CoachBubble = lazy(() => import('./features/coach/CoachBubble').then(m => ({ default: m.CoachBubble })));
 const ExplainPanel = lazy(() => import('./features/coach/ExplainPanel').then(m => ({ default: m.ExplainPanel })));
 const CommandPalette = lazy(() => import('./components/CommandPalette').then(m => ({ default: m.CommandPalette })));
+const AdminConsole = lazy(() => import('./components/AdminConsole').then(m => ({ default: m.AdminConsole })));
 
 // Minimal loading fallback for Suspense boundaries
 const LoadingFallback = () => (
@@ -29,6 +30,7 @@ function App() {
   const [explainPanelOpen, setExplainPanelOpen] = useState(false);
   const [explainContext, setExplainContext] = useState<InsightContext | null>(null);
   const [showSplash, setShowSplash] = useState(true);
+  const [showAdminConsole, setShowAdminConsole] = useState(false);
 
   // Initialize feature flag syncing
   useEffect(() => {
@@ -49,14 +51,17 @@ function App() {
 
     const handleFocusTrade = () => focusManager.toggleTradeMode();
     const handleFocusReview = () => focusManager.toggleReviewMode();
+    const handleToggleAdmin = () => setShowAdminConsole(prev => !prev);
 
     window.addEventListener('command:focus-trade', handleFocusTrade);
     window.addEventListener('command:focus-review', handleFocusReview);
+    window.addEventListener('command:toggle-admin', handleToggleAdmin);
 
     return () => {
       unsubscribe();
       window.removeEventListener('command:focus-trade', handleFocusTrade);
       window.removeEventListener('command:focus-review', handleFocusReview);
+      window.removeEventListener('command:toggle-admin', handleToggleAdmin);
       window.removeEventListener('chart:explain-request', handleExplainRequest as EventListener);
     };
   }, []);
@@ -163,6 +168,23 @@ function App() {
             context={explainContext}
           />
         </Suspense>
+        {showAdminConsole && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="relative w-full max-w-7xl max-h-[90vh] overflow-auto">
+              <button
+                onClick={() => setShowAdminConsole(false)}
+                className="absolute top-4 right-4 z-10 bg-gray-700 hover:bg-gray-600 rounded-full p-2 text-white"
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <Suspense fallback={<LoadingFallback />}>
+                <AdminConsole />
+              </Suspense>
+            </div>
+          </div>
+        )}
       </div>
     </AuthGate>
   );

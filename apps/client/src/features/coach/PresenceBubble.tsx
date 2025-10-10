@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { EnhancedVoiceClient } from '../../voice/EnhancedVoiceClient';
+import { VoiceFallback } from './VoiceFallback';
 
 type CoachState = 'listening' | 'thinking' | 'speaking' | 'idle' | 'muted';
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error';
@@ -162,6 +163,7 @@ export function PresenceBubble() {
   const [showTooltip, setShowTooltip] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [showFallback, setShowFallback] = useState(false);
 
   const voiceClientRef = useRef<EnhancedVoiceClient | null>(null);
   const tokenRef = useRef<string | null>(null);
@@ -234,8 +236,16 @@ export function PresenceBubble() {
         const token = await fetchToken();
         tokenRef.current = token;
         await client.connect(token);
+        
+        if (client.isMicPermissionDenied()) {
+          setShowFallback(true);
+        }
       } catch (error) {
         console.error('Failed to connect:', error);
+        
+        if (client.isMicPermissionDenied()) {
+          setShowFallback(true);
+        }
       }
     } else if (connectionState === 'connected') {
       if (coachState === 'speaking') {
@@ -248,6 +258,19 @@ export function PresenceBubble() {
 
   const handleDisconnect = () => {
     voiceClientRef.current?.disconnect();
+    setShowFallback(false);
+  };
+
+  const handleSendMessage = async (message: string) => {
+    console.log('Text message:', message);
+    
+    // TODO: Implement text-based API endpoint for coach
+    // For now, just log the message
+  };
+
+  const handleCloseFallback = () => {
+    setShowFallback(false);
+    handleDisconnect();
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -284,6 +307,15 @@ export function PresenceBubble() {
   };
 
   const showThinkingOverlay = latency > 1500 && coachState === 'thinking';
+
+  if (showFallback) {
+    return (
+      <VoiceFallback
+        onSendMessage={handleSendMessage}
+        onClose={handleCloseFallback}
+      />
+    );
+  }
 
   return (
     <div className="fixed bottom-8 right-8 z-50">

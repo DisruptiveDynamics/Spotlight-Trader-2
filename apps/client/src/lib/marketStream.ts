@@ -15,39 +15,99 @@ export type Micro = {
   ohlcv: Ohlcv;
 };
 
+export type SSEStatus = 'connecting' | 'connected' | 'reconnecting' | 'error';
+
 interface MarketSSEOptions {
   sinceSeq?: number;
+  maxReconnectDelay?: number;
 }
 
 export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
-  const params = new URLSearchParams({ symbols: symbols.join(',') });
-  if (opts?.sinceSeq) {
-    params.append('sinceSeq', String(opts.sinceSeq));
-  }
-
-  const es = new EventSource(`/stream/market?${params.toString()}`);
+  let es: EventSource | null = null;
+  let reconnectTimeout: number | null = null;
+  let reconnectAttempts = 0;
+  let lastSeq = opts?.sinceSeq || 0;
+  let isManualClose = false;
+  
+  const maxReconnectDelay = opts?.maxReconnectDelay || 30000;
 
   const listeners = {
     bar: [] as ((b: Bar) => void)[],
     microbar: [] as ((m: Micro) => void)[],
+    status: [] as ((s: SSEStatus) => void)[],
+    gap: [] as ((detected: { expected: number; received: number }) => void)[],
   };
 
-  es.addEventListener('open', () => {
-    // Emit custom event for splash screen
-    window.dispatchEvent(new CustomEvent('sse:connected'));
-  });
+  const emitStatus = (status: SSEStatus) => {
+    listeners.status.forEach((fn) => fn(status));
+  };
 
-  es.addEventListener('bar', (e) => {
-    const b = JSON.parse((e as MessageEvent).data) as Bar;
-    listeners.bar.forEach((fn) => fn(b));
-  });
+  const connect = () => {
+    if (isManualClose) return;
 
-  es.addEventListener('microbar', (e) => {
-    const m = JSON.parse((e as MessageEvent).data) as Micro;
-    listeners.microbar.forEach((fn) => fn(m));
-  });
+    const params = new URLSearchParams({ symbols: symbols.join(',') });
+    if (lastSeq > 0) {
+      params.append('sinceSeq', String(lastSeq));
+    }
 
-  es.onerror = () => console.warn('SSE error');
+    emitStatus(reconnectAttempts === 0 ? 'connecting' : 'reconnecting');
+
+    es = new EventSource(`/stream/market?${params.toString()}`);
+
+    es.addEventListener('open', () => {
+      reconnectAttempts = 0;
+      emitStatus('connected');
+      window.dispatchEvent(new CustomEvent('sse:connected'));
+    });
+
+    es.addEventListener('bar', (e) => {
+      const b = JSON.parse((e as MessageEvent).data) as Bar;
+      
+      if (b.seq <= lastSeq) {
+        console.warn(`Duplicate bar detected: seq=${b.seq}, lastSeq=${lastSeq}`);
+        return;
+      }
+      
+      if (b.seq > lastSeq + 1 && lastSeq > 0) {
+        const gap = { expected: lastSeq + 1, received: b.seq };
+        console.warn(`Gap detected: expected seq=${gap.expected}, got ${gap.received}`);
+        listeners.gap.forEach((fn) => fn(gap));
+      }
+      
+      lastSeq = b.seq;
+      listeners.bar.forEach((fn) => fn(b));
+    });
+
+    es.addEventListener('microbar', (e) => {
+      const m = JSON.parse((e as MessageEvent).data) as Micro;
+      listeners.microbar.forEach((fn) => fn(m));
+    });
+
+    es.onerror = () => {
+      console.warn('SSE error, scheduling reconnect');
+      emitStatus('error');
+      es?.close();
+      scheduleReconnect();
+    };
+  };
+
+  const scheduleReconnect = () => {
+    if (reconnectTimeout || isManualClose) return;
+
+    const delay = Math.min(
+      1000 * Math.pow(2, reconnectAttempts) + Math.random() * 1000,
+      maxReconnectDelay
+    );
+
+    reconnectAttempts++;
+
+    reconnectTimeout = window.setTimeout(() => {
+      reconnectTimeout = null;
+      connect();
+    }, delay);
+  };
+
+  connect();
 
   return {
     onBar(fn: (b: Bar) => void) {
@@ -56,8 +116,22 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
     onMicro(fn: (m: Micro) => void) {
       listeners.microbar.push(fn);
     },
+    onStatus(fn: (s: SSEStatus) => void) {
+      listeners.status.push(fn);
+    },
+    onGap(fn: (detected: { expected: number; received: number }) => void) {
+      listeners.gap.push(fn);
+    },
+    getLastSeq() {
+      return lastSeq;
+    },
     close() {
-      es.close();
+      isManualClose = true;
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
+      es?.close();
     },
   };
 }

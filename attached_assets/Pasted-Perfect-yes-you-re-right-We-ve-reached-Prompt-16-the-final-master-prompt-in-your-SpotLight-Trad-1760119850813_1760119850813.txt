@@ -1,0 +1,161 @@
+Perfect — yes, you’re right. We’ve reached Prompt 16, the final master prompt in your SpotLight Trader build sequence.
+This closes the loop: it locks in your Safari/iOS audio reliability, AudioWorklet low-latency pipeline, and final barge-in optimization, completing the AI Voice Coach + real-time chart ecosystem.
+
+Here’s the full, clean copy-and-paste version for Replit 👇
+
+⸻
+
+Replit Agent Work Order — Prompt 16 (Final Master Step)
+
+🎯 Safari AudioContext Gesture Unlock + AudioWorklet Upgrade + Final Voice Coach Tuning
+
+Goal:
+Make the Voice Coach fully production-ready across iOS, macOS, and desktop browsers with flawless mic activation, barge-in control, and sub-100 ms latency.
+This step finalizes the Voice Assistant’s pipeline so it works like Siri/ChatGPT Voice in any browser environment.
+
+⸻
+
+🧠 1 · AudioContext Gesture Unlock (Safari / iPad Fix)
+
+File: client/src/services/AudioManager.ts
+
+export async function ensureAudioUnlocked() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+    await new Promise(r => setTimeout(r, 50));
+    return ctx;
+  } catch (err) {
+    console.warn('Audio unlock failed', err);
+    return null;
+  }
+}
+
+Call ensureAudioUnlocked() from the bubble onClick gesture before creating any mic or playback nodes.
+
+⸻
+
+⚙️ 2 · Switch to AudioWorklet for Low-Latency Capture
+
+Files: client/src/services/AudioCapture.ts, client/src/workers/audioWorkletProcessor.js
+
+A) AudioWorklet Registration
+
+export async function startMicWorklet(ctx: AudioContext, onChunk: (pcm: Int16Array) => void) {
+  await ctx.audioWorklet.addModule('/worklets/micProcessor.js');
+  const node = new AudioWorkletNode(ctx, 'mic-processor');
+  node.port.onmessage = (e) => {
+    if (e.data?.pcm) onChunk(new Int16Array(e.data.pcm));
+  };
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1, sampleRate: 16000 }
+  });
+  const src = ctx.createMediaStreamSource(stream);
+  src.connect(node);
+  node.connect(ctx.destination);
+  return node;
+}
+
+B) Worklet Processor
+
+File: public/worklets/micProcessor.js
+
+class MicProcessor extends AudioWorkletProcessor {
+  process(inputs) {
+    const input = inputs[0];
+    if (!input || !input[0]) return true;
+    const samples = input[0];
+    const pcm16 = new Int16Array(samples.length);
+    for (let i = 0; i < samples.length; i++) {
+      pcm16[i] = Math.max(-1, Math.min(1, samples[i])) * 0x7fff;
+    }
+    this.port.postMessage({ pcm: pcm16.buffer }, [pcm16.buffer]);
+    return true;
+  }
+}
+registerProcessor('mic-processor', MicProcessor);
+
+
+⸻
+
+🗣️ 3 · Barge-In Enhancement (Fast Interrupt)
+
+File: client/src/services/VoiceCoach.ts
+
+export function handleBargeIn(realtime, playbackNode, gainNode) {
+  try {
+    realtime.send(JSON.stringify({ type: 'response.cancel' }));
+  } catch {}
+  if (gainNode?.gain) gainNode.gain.setValueAtTime(0, playbackNode.context.currentTime);
+  playbackNode?.stop?.();
+}
+
+Call handleBargeIn() whenever VAD detects user speech while coach is speaking.
+
+⸻
+
+🔄 4 · Frame Coalescing & Backpressure
+	•	Bundle audio frames (20–40 ms each) before send.
+	•	If sendQueue.length > 8, drop oldest frame.
+	•	Keeps latency < 100 ms under poor networks.
+
+⸻
+
+💤 5 · Idle Sleep / Wake Revalidation
+
+File: client/src/app/idleDetector.ts
+
+let idleTimer;
+function resetIdle() {
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    voiceCoach.stopListening();
+    voiceCoach.closeConnection();
+    console.log('AI Coach asleep due to inactivity');
+  }, 30 * 60 * 1000); // 30 minutes
+}
+window.addEventListener('mousemove', resetIdle);
+window.addEventListener('keydown', resetIdle);
+
+When the user interacts again → reopen Realtime connection + AudioContext.
+
+⸻
+
+✅ Definition of Done
+	•	Mic/Audio works on Safari/iPad with 1-tap unlock.
+	•	AudioWorklet path replaces ScriptProcessorNode for lower latency.
+	•	Barge-in interrupts instantly (< 250 ms end-to-silence).
+	•	Stable across reconnects and idle sleep/wake.
+	•	No console errors: “context suspended”, “scriptProcessor deprecated”, or “session.update missing”.
+
+⸻
+
+💻 After Replit Finishes
+
+Run:
+
+npm run build
+npm run dev
+
+Then test:
+	1.	Tap bubble on Safari → voice unlock works.
+	2.	Speak → assistant responds.
+	3.	Talk over assistant → immediate barge-in.
+	4.	Idle 30 min → coach sleeps; tap bubble → wakes cleanly.
+
+⸻
+
+🏁 Congratulations — This is Prompt 16, the final one.
+
+After this step your SpotLight Trader platform will have:
+	•	ThinkorSwim-grade real-time charting
+	•	A fully functional, cross-platform Voice Coach
+	•	Stable auth and reconnect logic
+	•	Enterprise-quality architecture ready for scale 🚀

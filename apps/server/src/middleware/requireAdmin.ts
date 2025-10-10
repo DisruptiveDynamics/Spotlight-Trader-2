@@ -21,10 +21,10 @@ export interface AuthenticatedRequest extends Request {
  */
 export function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const adminEmail = env.ADMIN_EMAIL;
-  
+
   if (!adminEmail) {
-    return res.status(500).json({ 
-      error: 'Admin access not configured. Set ADMIN_EMAIL environment variable.' 
+    return res.status(500).json({
+      error: 'Admin access not configured. Set ADMIN_EMAIL environment variable.',
     });
   }
 
@@ -33,9 +33,9 @@ export function requireAdmin(req: AuthenticatedRequest, res: Response, next: Nex
   }
 
   if (req.user.email !== adminEmail) {
-    return res.status(403).json({ 
+    return res.status(403).json({
       error: 'Admin access required',
-      message: 'You do not have permission to access this resource' 
+      message: 'You do not have permission to access this resource',
     });
   }
 

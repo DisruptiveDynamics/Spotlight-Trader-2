@@ -2,7 +2,12 @@ import type { Request, Response } from 'express';
 import { eventBus } from '@server/market/eventBus';
 import { getHistory } from '@server/history/service';
 import { BackpressureController } from './backpressure';
-import { recordSSEConnection, recordSSEDisconnection, recordSSEEvent, recordSSEBackpressure } from '@server/metrics/registry';
+import {
+  recordSSEConnection,
+  recordSSEDisconnection,
+  recordSSEEvent,
+  recordSSEBackpressure,
+} from '@server/metrics/registry';
 
 export async function sseMarketStream(req: Request, res: Response) {
   const symbolsParam = (req.query.symbols as string) || 'SPY';
@@ -24,20 +29,24 @@ export async function sseMarketStream(req: Request, res: Response) {
     for (const symbol of symbols) {
       const backfill = await getHistory({ symbol, sinceSeq });
       for (const bar of backfill) {
-        bpc.write('bar', {
-          symbol: bar.symbol,
-          timeframe: bar.timeframe,
-          seq: bar.seq,
-          bar_start: bar.bar_start,
-          bar_end: bar.bar_end,
-          ohlcv: {
-            open: bar.open,
-            high: bar.high,
-            low: bar.low,
-            close: bar.close,
-            volume: bar.volume,
+        bpc.write(
+          'bar',
+          {
+            symbol: bar.symbol,
+            timeframe: bar.timeframe,
+            seq: bar.seq,
+            bar_start: bar.bar_start,
+            bar_end: bar.bar_end,
+            ohlcv: {
+              open: bar.open,
+              high: bar.high,
+              low: bar.low,
+              close: bar.close,
+              volume: bar.volume,
+            },
           },
-        }, String(bar.seq));
+          String(bar.seq)
+        );
       }
     }
   }
@@ -76,20 +85,24 @@ export async function sseMarketStream(req: Request, res: Response) {
 
     const barHandler = (data: any) => {
       recordSSEEvent('bar');
-      bpc.write('bar', {
-        symbol: data.symbol,
-        timeframe: data.timeframe,
-        seq: data.seq,
-        bar_start: data.bar_start,
-        bar_end: data.bar_end,
-        ohlcv: {
-          open: data.open,
-          high: data.high,
-          low: data.low,
-          close: data.close,
-          volume: data.volume,
+      bpc.write(
+        'bar',
+        {
+          symbol: data.symbol,
+          timeframe: data.timeframe,
+          seq: data.seq,
+          bar_start: data.bar_start,
+          bar_end: data.bar_end,
+          ohlcv: {
+            open: data.open,
+            high: data.high,
+            low: data.low,
+            close: data.close,
+            volume: data.volume,
+          },
         },
-      }, String(data.seq));
+        String(data.seq)
+      );
     };
 
     eventBus.on(`microbar:${symbol}` as const, microbarHandler);

@@ -24,7 +24,7 @@ class MetricsRegistry {
   counter(name: string, labels?: Record<string, string>): void {
     const key = this.makeKey(name, labels);
     const existing = this.counters.get(key);
-    
+
     if (existing) {
       existing.value++;
     } else {
@@ -35,7 +35,7 @@ class MetricsRegistry {
   incrementCounter(name: string, value: number, labels?: Record<string, string>): void {
     const key = this.makeKey(name, labels);
     const existing = this.counters.get(key);
-    
+
     if (existing) {
       existing.value += value;
     } else {
@@ -46,14 +46,17 @@ class MetricsRegistry {
   histogram(name: string, value: number, labels?: Record<string, string>): void {
     const key = this.makeKey(name, labels);
     const existing = this.histograms.get(key);
-    
+
     if (existing) {
       existing.values.push(value);
       if (existing.values.length > 1000) {
         existing.values.shift();
       }
     } else {
-      this.histograms.set(key, labels ? { name, values: [value], labels } : { name, values: [value] });
+      this.histograms.set(
+        key,
+        labels ? { name, values: [value], labels } : { name, values: [value] }
+      );
     }
   }
 
@@ -75,7 +78,7 @@ class MetricsRegistry {
 
   getMetrics() {
     const countersData = Array.from(this.counters.values());
-    const histogramsData = Array.from(this.histograms.values()).map(h => ({
+    const histogramsData = Array.from(this.histograms.values()).map((h) => ({
       name: h.name,
       labels: h.labels,
       count: h.values.length,
@@ -121,7 +124,7 @@ export function recordSSEConnection(userId: string) {
   const current = activeSSEByUser.get(userId) || 0;
   activeSSEByUser.set(userId, current + 1);
   metrics.gauge('sse_active_connections', current + 1, { userId });
-  
+
   const total = Array.from(activeSSEByUser.values()).reduce((a, b) => a + b, 0);
   metrics.gauge('sse_active_connections_total', total);
 }
@@ -135,7 +138,7 @@ export function recordSSEDisconnection(userId: string) {
     activeSSEByUser.set(userId, newCount);
   }
   metrics.gauge('sse_active_connections', newCount, { userId });
-  
+
   const total = Array.from(activeSSEByUser.values()).reduce((a, b) => a + b, 0);
   metrics.gauge('sse_active_connections_total', total);
 }
@@ -157,7 +160,7 @@ export function recordWSConnection(userId: string) {
   const current = activeWSByUser.get(userId) || 0;
   activeWSByUser.set(userId, current + 1);
   metrics.gauge('ws_active_connections', current + 1, { userId });
-  
+
   const total = Array.from(activeWSByUser.values()).reduce((a, b) => a + b, 0);
   metrics.gauge('ws_active_connections_total', total);
 }
@@ -171,10 +174,10 @@ export function recordWSDisconnection(userId: string, reason: string) {
     activeWSByUser.set(userId, newCount);
   }
   metrics.gauge('ws_active_connections', newCount, { userId });
-  
+
   const total = Array.from(activeWSByUser.values()).reduce((a, b) => a + b, 0);
   metrics.gauge('ws_active_connections_total', total);
-  
+
   metrics.counter('ws_disconnections_total', { reason });
 }
 

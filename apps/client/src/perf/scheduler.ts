@@ -69,7 +69,9 @@ export function limitFps<T extends (...args: any[]) => void>(
 /**
  * Debounce a function to run at most once per animation frame
  */
-export function debounceRaf<T extends (...args: any[]) => void>(fn: T): (...args: Parameters<T>) => void {
+export function debounceRaf<T extends (...args: any[]) => void>(
+  fn: T
+): (...args: Parameters<T>) => void {
   let rafId: number | null = null;
   let latestArgs: Parameters<T> | null = null;
 

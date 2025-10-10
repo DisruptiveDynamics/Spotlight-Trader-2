@@ -14,9 +14,12 @@ export class BackpressureController {
   private droppedCount = 0;
   private drainHandler: () => void;
 
-  constructor(private res: Response, maxSize = 100) {
+  constructor(
+    private res: Response,
+    maxSize = 100
+  ) {
     this.maxSize = maxSize;
-    
+
     this.drainHandler = () => this.handleDrain();
     res.on('drain', this.drainHandler);
   }
@@ -39,14 +42,14 @@ export class BackpressureController {
     }
 
     const canWrite = this.writeEvent(bufferedEvent);
-    
+
     if (!canWrite) {
       this.isPaused = true;
     }
   }
 
   private dropEvent(newEvent: BufferedEvent): void {
-    const microbarIndex = this.buffer.findIndex(e => e.event === 'microbar');
+    const microbarIndex = this.buffer.findIndex((e) => e.event === 'microbar');
     if (microbarIndex !== -1) {
       this.buffer.splice(microbarIndex, 1);
       this.buffer.push(newEvent);
@@ -77,9 +80,9 @@ export class BackpressureController {
     while (this.buffer.length > 0) {
       const event = this.buffer.shift();
       if (!event) break;
-      
+
       const canWrite = this.writeEvent(event);
-      
+
       if (!canWrite) {
         this.isPaused = true;
         return;

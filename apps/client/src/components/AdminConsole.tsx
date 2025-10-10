@@ -117,14 +117,15 @@ export function AdminConsole() {
             <h2 className="text-lg font-semibold mb-3">Feature Flags</h2>
             <div className="space-y-2">
               {Object.entries(snapshot.flags).map(([key, enabled]) => (
-                <div key={key} className="flex items-center justify-between py-2 px-3 bg-gray-700 rounded">
+                <div
+                  key={key}
+                  className="flex items-center justify-between py-2 px-3 bg-gray-700 rounded"
+                >
                   <span className="font-mono text-sm">{key}</span>
                   <button
                     onClick={() => handleFlagToggle(key, !enabled)}
                     className={`px-3 py-1 rounded text-xs font-medium transition ${
-                      enabled
-                        ? 'bg-green-600 hover:bg-green-700'
-                        : 'bg-gray-600 hover:bg-gray-500'
+                      enabled ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-600 hover:bg-gray-500'
                     }`}
                   >
                     {enabled ? 'ENABLED' : 'DISABLED'}
@@ -143,18 +144,22 @@ export function AdminConsole() {
               </div>
               <div className="flex justify-between">
                 <dt className="text-gray-400">Uptime:</dt>
-                <dd className="font-mono">{uptimeHours}h {uptimeMinutes}m</dd>
+                <dd className="font-mono">
+                  {uptimeHours}h {uptimeMinutes}m
+                </dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-gray-400">Memory (Heap):</dt>
                 <dd className="font-mono">
-                  {Math.round(snapshot.system.memory.heapUsed / 1024 / 1024)}MB / 
+                  {Math.round(snapshot.system.memory.heapUsed / 1024 / 1024)}MB /
                   {Math.round(snapshot.system.memory.heapTotal / 1024 / 1024)}MB
                 </dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-gray-400">Platform:</dt>
-                <dd className="font-mono">{snapshot.system.platform} ({snapshot.system.arch})</dd>
+                <dd className="font-mono">
+                  {snapshot.system.platform} ({snapshot.system.arch})
+                </dd>
               </div>
             </dl>
           </div>

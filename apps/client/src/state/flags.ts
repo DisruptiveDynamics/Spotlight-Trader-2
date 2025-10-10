@@ -47,9 +47,9 @@ export const useFlagsStore = create<FlagsStore>((set, get) => ({
   syncFlags: async () => {
     try {
       set({ loading: true, error: null });
-      
+
       const res = await fetch('/api/flags');
-      
+
       if (!res.ok) {
         throw new Error(`Failed to fetch flags: ${res.status}`);
       }
@@ -58,9 +58,9 @@ export const useFlagsStore = create<FlagsStore>((set, get) => ({
       set({ flags, loading: false, lastSync: Date.now() });
     } catch (error) {
       console.error('Failed to sync flags:', error);
-      set({ 
+      set({
         error: error instanceof Error ? error.message : 'Unknown error',
-        loading: false 
+        loading: false,
       });
     }
   },
@@ -73,15 +73,15 @@ let syncInterval: NodeJS.Timeout | null = null;
  */
 export function startFlagSync() {
   const { syncFlags } = useFlagsStore.getState();
-  
+
   // Initial sync
   syncFlags();
-  
+
   // Sync every 30 seconds
   if (syncInterval) {
     clearInterval(syncInterval);
   }
-  
+
   syncInterval = setInterval(() => {
     syncFlags();
   }, 30000);

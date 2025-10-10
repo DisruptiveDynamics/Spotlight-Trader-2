@@ -28,7 +28,7 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
   let reconnectAttempts = 0;
   let lastSeq = opts?.sinceSeq || 0;
   let isManualClose = false;
-  
+
   const maxReconnectDelay = opts?.maxReconnectDelay || 30000;
 
   const listeners = {
@@ -62,18 +62,18 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
 
     es.addEventListener('bar', (e) => {
       const b = JSON.parse((e as MessageEvent).data) as Bar;
-      
+
       if (b.seq <= lastSeq) {
         console.warn(`Duplicate bar detected: seq=${b.seq}, lastSeq=${lastSeq}`);
         return;
       }
-      
+
       if (b.seq > lastSeq + 1 && lastSeq > 0) {
         const gap = { expected: lastSeq + 1, received: b.seq };
         console.warn(`Gap detected: expected seq=${gap.expected}, got ${gap.received}`);
         listeners.gap.forEach((fn) => fn(gap));
       }
-      
+
       lastSeq = b.seq;
       listeners.bar.forEach((fn) => fn(b));
     });

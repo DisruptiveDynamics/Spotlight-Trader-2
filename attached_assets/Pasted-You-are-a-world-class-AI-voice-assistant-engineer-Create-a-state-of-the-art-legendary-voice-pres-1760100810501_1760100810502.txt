@@ -1,0 +1,77 @@
+You are a world-class AI voice assistant engineer. Create a **state-of-the-art, legendary voice presence control** that feels alive, intuitive, and robust for a trading coach experience. Integrate into our existing architecture cleanly. Use TypeScript strict. Commit small.
+
+### Goals & Behavior
+
+1. **Modern Presence UI (Bubble or Wave Pill)**
+   - Idle: subtle breathing glow or slow wave animation.
+   - Listening: responsive waveform based on mic amplitude.
+   - Thinking: soft fluid gradient or slow shimmer.
+   - Speaking: ripple + halo pulses outward.
+   - Mute state: dim or “frozen” wave briefly, resume on unmute.
+   - High-performance: limit animations by `chartMaxFps` flag or CPU usage heuristics.
+   - Adaptive in dark/light mode.
+
+2. **Interaction Model**
+   - **Click main bubble/pill**:
+     - If idle/disconnected → connect WebSocket and start listening.
+     - If listening → mute microphone (pause audio send).
+     - If muted → unmute and resume listening.
+   - **X button** (only visible when connected): disconnect fully, return to idle.
+   - **Keyboard**:
+     - `T`: toggle mic (mute/unmute) if connected.
+     - `Esc`: disconnect (same as X).
+   - **User interrupt**:
+     - If assistant is speaking, any click or user speech stops TTS immediately and switches to listening.
+
+3. **Robust Mic & WebSocket Handling**
+   - Use a **single `AudioContext`** and **persist MediaStream / nodes** across mute/unmute — do *not* tear down unless disconnect.
+   - Mute via track.enabled = false; unmute via true.
+   - `AnalyserNode` to measure real-time RMS or peak amplitude → store `level` [0,1].
+   - WebSocket handshake with HS256 token; reject if invalid.
+   - If WS disconnects unexpectedly:
+     - Auto-retry with exponential backoff + jitter.
+     - Display “Reconnecting …” status visually.
+   - Dropbuffer logic: if outgoing queue > N events, drop microbar updates (not final bars), increment metric `sse_dropped`.
+
+4. **Latency & Feedback Overlay**
+   - Show a small latency badge (e.g. “75ms”) next to or inside bubble; color-coded green/amber/red.
+   - If processing > 1.5 s, show “Thinking…” or loading spinner overlay.
+   - During slow responses, continue showing waveform or gentle indicator.
+
+5. **Fallback & Graceful Degradation**
+   - If mic permission denied, show “Click to type” icon fallback. Clicking opens a text input to send a textual query.
+   - If WebSocket fails repeatedly (>5 attempts), show “Voice unavailable” message but leave bubble clickable for retry.
+
+6. **Personalization / Coach Settings Integration**
+   - In **SettingsPanel**, under “Coach Personalization” add:
+     - Agent name (string)
+     - Voice selector (GET /api/voice/voices)
+     - Tone preset (Balanced / Friendly / Tough / Mentor)
+     - Jargon (slider 0–100)
+     - Decisiveness (slider 0–100)
+   - When connecting, include personalization in the initial prompt context/session (instructions to the model).
+   - Allow “Preview Voice” button that plays a short sample phrase via TTS (optional).
+
+7. **First Use Onboarding**
+   - When bubble first appears: show tooltip overlay (“Click to talk. Tap again to mute. X to exit.”) fading after first successful interaction.
+   - Delay for 5s before showing tooltip to avoid jarring experience.
+
+8. **Performance & Power Optimization**
+   - If idle > e.g., 3 minutes, reduce wave animation resolution / frame rate.
+   - Pause non-critical animations until user interacts again.
+
+9. **Accessibility**
+   - ARIA: `role="button"`, `aria-pressed`, `aria-label` that updates per state (e.g. “Activate Coach”, “Mute Coach”, “Disconnect Coach”).
+   - Tab focus support + clear focus outline.
+   - Respect `prefers-reduced-motion` to disable wave animations.
+   - Ensure contrast and text size meet WCAG AA.
+
+10. **Tests**
+    - Presence store: state transitions work (idle → connecting → listening → muted → disconnected).
+    - Mute/unmute does not destroy AudioContext.
+    - Interrupting TTS mid-speak stops speech and resumes listening.
+    - Fallback mode shows text input when mic blocked.
+    - Personalization settings propagate and influence session instructions.
+    - Latency badge updates; reconnect logic works.
+
+Commit message: 

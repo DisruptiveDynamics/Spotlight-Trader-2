@@ -34,6 +34,7 @@ A **deterministic and lossless** data pipeline processes live market data. It in
 Security features include **Helmet.js**, strict **CORS** allowlisting, short-lived **JWTs**, connection limits, and **Zod** for environment validation.
 
 **CORS Configuration**: Dynamic origin checking allows:
+
 - Explicitly trusted origins from `APP_ORIGIN` and `ADMIN_ORIGIN` environment variables
 - Any `*.replit.dev` domain when `REPL_ID` is present (Replit preview environment)
 - Proper rejection of unauthorized origins with clear error messages

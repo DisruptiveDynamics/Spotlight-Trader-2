@@ -11,12 +11,22 @@ import { startFlagSync, stopFlagSync } from './state/flags';
 import type { InsightContext } from '@spotlight/shared';
 
 // Lazy load heavy components for code-splitting
-const MultiChart = lazy(() => import('./features/chart/MultiChart').then(m => ({ default: m.MultiChart })));
-const TapePeek = lazy(() => import('./components/TapePeek').then(m => ({ default: m.TapePeek })));
-const CoachBubble = lazy(() => import('./features/coach/CoachBubble').then(m => ({ default: m.CoachBubble })));
-const ExplainPanel = lazy(() => import('./features/coach/ExplainPanel').then(m => ({ default: m.ExplainPanel })));
-const CommandPalette = lazy(() => import('./components/CommandPalette').then(m => ({ default: m.CommandPalette })));
-const AdminConsole = lazy(() => import('./components/AdminConsole').then(m => ({ default: m.AdminConsole })));
+const MultiChart = lazy(() =>
+  import('./features/chart/MultiChart').then((m) => ({ default: m.MultiChart }))
+);
+const TapePeek = lazy(() => import('./components/TapePeek').then((m) => ({ default: m.TapePeek })));
+const CoachBubble = lazy(() =>
+  import('./features/coach/CoachBubble').then((m) => ({ default: m.CoachBubble }))
+);
+const ExplainPanel = lazy(() =>
+  import('./features/coach/ExplainPanel').then((m) => ({ default: m.ExplainPanel }))
+);
+const CommandPalette = lazy(() =>
+  import('./components/CommandPalette').then((m) => ({ default: m.CommandPalette }))
+);
+const AdminConsole = lazy(() =>
+  import('./components/AdminConsole').then((m) => ({ default: m.AdminConsole }))
+);
 
 // Minimal loading fallback for Suspense boundaries
 const LoadingFallback = () => (
@@ -51,7 +61,7 @@ function App() {
 
     const handleFocusTrade = () => focusManager.toggleTradeMode();
     const handleFocusReview = () => focusManager.toggleReviewMode();
-    const handleToggleAdmin = () => setShowAdminConsole(prev => !prev);
+    const handleToggleAdmin = () => setShowAdminConsole((prev) => !prev);
 
     window.addEventListener('command:focus-trade', handleFocusTrade);
     window.addEventListener('command:focus-review', handleFocusReview);
@@ -176,7 +186,12 @@ function App() {
                 className="absolute top-4 right-4 z-10 bg-gray-700 hover:bg-gray-600 rounded-full p-2 text-white"
               >
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
               <Suspense fallback={<LoadingFallback />}>

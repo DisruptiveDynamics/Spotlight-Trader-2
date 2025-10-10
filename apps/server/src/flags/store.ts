@@ -15,7 +15,7 @@ export interface Flags {
   enableLearningLoop: boolean;
   enableBacktest: boolean;
   enableGoldenTests: boolean;
-  
+
   // New performance flags
   governorTight: boolean;
   chartMaxFps: number;

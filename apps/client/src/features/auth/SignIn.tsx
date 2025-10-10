@@ -48,7 +48,7 @@ export function SignIn() {
       }
 
       const data = await res.json();
-      
+
       if (data.user) {
         setUser({
           userId: data.user.id,

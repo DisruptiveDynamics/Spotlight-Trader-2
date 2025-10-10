@@ -9,7 +9,7 @@ router.get('/snapshot', requireAdmin, (async (req, res) => {
   try {
     const metricsData = metrics.getMetrics();
     const flags = getFlags();
-    
+
     const snapshot = {
       timestamp: Date.now(),
       metrics: metricsData,
@@ -22,7 +22,7 @@ router.get('/snapshot', requireAdmin, (async (req, res) => {
         arch: process.arch,
       },
     };
-    
+
     res.json(snapshot);
   } catch (error) {
     console.error('Error generating snapshot:', error);

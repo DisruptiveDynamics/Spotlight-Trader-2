@@ -18,17 +18,22 @@ flagsRouter.get('/', (_req, res) => {
  * POST /api/flags
  * Update feature flags (admin only)
  */
-flagsRouter.post('/', requireUser, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const patch = req.body;
-    const updatedFlags = await updateFlags(patch);
-    
-    res.json({
-      success: true,
-      flags: updatedFlags,
-    });
-  } catch (error) {
-    console.error('Failed to update flags:', error);
-    res.status(500).json({ error: 'Failed to update flags' });
+flagsRouter.post(
+  '/',
+  requireUser,
+  requireAdmin,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const patch = req.body;
+      const updatedFlags = await updateFlags(patch);
+
+      res.json({
+        success: true,
+        flags: updatedFlags,
+      });
+    } catch (error) {
+      console.error('Failed to update flags:', error);
+      res.status(500).json({ error: 'Failed to update flags' });
+    }
   }
-});
+);

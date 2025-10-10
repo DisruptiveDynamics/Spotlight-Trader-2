@@ -4,7 +4,11 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { verifyVoiceToken } from './auth';
 import { getInitialSessionUpdate } from '../coach/sessionContext';
 import { validateEnv } from '@shared/env';
-import { recordWSConnection, recordWSDisconnection, recordWSLRUEviction } from '../metrics/registry';
+import {
+  recordWSConnection,
+  recordWSDisconnection,
+  recordWSLRUEviction,
+} from '../metrics/registry';
 
 const env = validateEnv(process.env);
 
@@ -75,10 +79,10 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
       ws: clientWs,
       lastActivity: Date.now(),
     };
-    
+
     userConnections.push(connectionInfo);
     recordWSConnection(userId);
-    
+
     const updateActivity = () => {
       connectionInfo.lastActivity = Date.now();
     };
@@ -160,7 +164,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
 
     clientWs.on('close', (code) => {
       upstreamWs.close();
-      const index = userConnections.findIndex(conn => conn.ws === clientWs);
+      const index = userConnections.findIndex((conn) => conn.ws === clientWs);
       if (index !== -1) {
         userConnections.splice(index, 1);
       }

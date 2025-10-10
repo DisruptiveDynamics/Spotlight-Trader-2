@@ -30,7 +30,7 @@ async function reportVitals() {
       body: JSON.stringify(vitalsData),
       credentials: 'include',
     });
-    
+
     // Reset after reporting
     vitalsData = {};
   } catch (error) {
@@ -55,7 +55,7 @@ function scheduleReport() {
  */
 function handleMetric(metric: Metric) {
   const { name, value } = metric;
-  
+
   switch (name) {
     case 'CLS':
       vitalsData.cls = value;

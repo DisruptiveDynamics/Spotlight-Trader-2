@@ -1,7 +1,7 @@
 /**
  * Feature flags for safe rollouts
  * Toggle features at runtime without code changes
- * 
+ *
  * @deprecated Use flags/store.ts for new code. This file maintains backward compatibility.
  */
 

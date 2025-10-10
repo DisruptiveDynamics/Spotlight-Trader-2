@@ -21,7 +21,7 @@ class FpsProbe {
 
   start() {
     if (this.rafId !== null) return;
-    
+
     this.lastTime = performance.now();
     this.tick();
   }

@@ -100,4 +100,4 @@ externalPort = 8008
 
 [nix]
 channel = "stable-25_05"
-packages = ["typescript"]
+packages = ["typescript", "lsof"]

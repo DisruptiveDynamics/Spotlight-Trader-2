@@ -69,14 +69,16 @@ export function createFrameQueue(maxSize = 8): AudioFrameQueue {
 }
 
 /**
- * Coalesces audio chunks into batches for efficient transmission
- * Reduces protocol overhead by bundling small frames
+ * Coalesces audio chunks into batches with backpressure control
+ * Reduces protocol overhead and prevents WebSocket flooding
  */
 export class AudioBatcher {
   private buffer: Int16Array[] = [];
+  private batchQueue: Int16Array[] = [];
   private batchDurationMs: number;
   private sampleRate: number;
   private lastFlush: number = Date.now();
+  private maxQueueSize = 8;
 
   constructor(batchDurationMs = 40, sampleRate = 16000) {
     this.batchDurationMs = batchDurationMs;
@@ -92,10 +94,28 @@ export class AudioBatcher {
 
     // Flush if we have enough samples or timeout reached
     if (currentSamples >= targetSamples || elapsed >= this.batchDurationMs * 2) {
-      return this.flush();
+      const batched = this.flush();
+      if (batched) {
+        // Add to queue with backpressure control
+        this.batchQueue.push(batched);
+        
+        // Drop oldest frames if queue exceeds max size
+        while (this.batchQueue.length > this.maxQueueSize) {
+          this.batchQueue.shift();
+          console.warn('AudioBatcher: dropping oldest frame due to backpressure');
+        }
+      }
     }
 
     return null;
+  }
+
+  getNextBatch(): Int16Array | null {
+    return this.batchQueue.shift() || null;
+  }
+
+  getPendingCount(): number {
+    return this.batchQueue.length;
   }
 
   flush(): Int16Array | null {
@@ -119,6 +139,7 @@ export class AudioBatcher {
 
   clear(): void {
     this.buffer = [];
+    this.batchQueue = [];
     this.lastFlush = Date.now();
   }
 }

@@ -189,16 +189,11 @@ export class EnhancedVoiceClient {
         (pcm: Int16Array) => {
           if (this.isMuted) return;
 
-          // Batch audio frames for efficiency
-          const batched = this.audioBatcher.add(pcm);
-          if (batched && this.ws?.readyState === WebSocket.OPEN) {
-            const buffer = batched.buffer as ArrayBuffer;
-            const audioEvent = {
-              type: 'input_audio_buffer.append',
-              audio: this.arrayBufferToBase64(buffer),
-            };
-            this.ws.send(JSON.stringify(audioEvent));
-          }
+          // Add to batcher (internally queues with backpressure)
+          this.audioBatcher.add(pcm);
+          
+          // Drain queue with backpressure control
+          this.drainAudioQueue();
         },
         {
           sampleRate: 16000,
@@ -250,6 +245,9 @@ export class EnhancedVoiceClient {
       this.setState('connected');
       this.setCoachState('listening');
       this.reconnectAttempts = 0;
+      
+      // Flush any pending audio batches from before reconnect
+      this.drainAudioQueue();
     };
 
     this.ws.onmessage = async (event) => {
@@ -394,9 +392,41 @@ export class EnhancedVoiceClient {
     }
   }
 
+  private drainAudioQueue(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+    // Check WebSocket backpressure (bufferedAmount in bytes)
+    const MAX_BUFFERED = 32768; // 32KB threshold
+    
+    while (
+      this.audioBatcher.getPendingCount() > 0 &&
+      this.ws.bufferedAmount < MAX_BUFFERED
+    ) {
+      const batch = this.audioBatcher.getNextBatch();
+      if (!batch) break;
+
+      const buffer = batch.buffer as ArrayBuffer;
+      const audioEvent = {
+        type: 'input_audio_buffer.append',
+        audio: this.arrayBufferToBase64(buffer),
+      };
+      this.ws.send(JSON.stringify(audioEvent));
+    }
+  }
+
   private cleanupAudio(): void {
     this.stopAmplitudeMonitoring();
     this.vad.stop();
+
+    // Stop any currently playing audio to prevent leaks
+    if (this.currentSource) {
+      try {
+        this.currentSource.stop();
+      } catch (err) {
+        // Already stopped, ignore
+      }
+      this.currentSource = null;
+    }
 
     if (this.audioCapture) {
       this.audioCapture.stop();

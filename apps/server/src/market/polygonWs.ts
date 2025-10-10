@@ -75,6 +75,7 @@ export class PolygonWebSocket {
     }
 
     if (msg.ev === 'T') {
+      console.log(`📊 Tick: ${msg.sym} $${msg.p} (${msg.s} shares)`);
       const tick: any = {
         ts: msg.t,
         price: msg.p,

@@ -16,8 +16,9 @@ export class PolygonWebSocket {
 
   async connect() {
     try {
-      const wsUrl =
-        env.NODE_ENV === 'production' ? 'wss://socket.polygon.io' : 'wss://delayed.polygon.io';
+      // Use delayed feed (free tier) - upgrade to real-time requires paid Polygon plan
+      const wsUrl = 'wss://delayed.polygon.io';
+      console.log(`📡 Connecting to Polygon delayed feed (15-min delay)`);
 
       this.ws = websocketClient(env.POLYGON_API_KEY, wsUrl).stocks();
 

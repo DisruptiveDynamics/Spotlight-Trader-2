@@ -291,6 +291,7 @@ export function PresenceBubble() {
     const response = await fetch('/api/voice/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
     });
 
     if (!response.ok) {

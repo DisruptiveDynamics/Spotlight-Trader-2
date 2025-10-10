@@ -1,7 +1,12 @@
 import { useState } from 'react';
 import { useAuthStore } from '../../stores/authStore';
+import { authStorage } from '../../auth/authStorage';
 
-export function SignIn() {
+interface SignInProps {
+  sessionExpired?: boolean;
+}
+
+export function SignIn({ sessionExpired = false }: SignInProps) {
   const { setUser } = useAuthStore();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -50,11 +55,19 @@ export function SignIn() {
       const data = await res.json();
 
       if (data.user) {
-        setUser({
+        const user = {
           userId: data.user.id,
           email: data.user.email,
           createdAt: new Date().toISOString(),
+        };
+        
+        // Save to authStorage with 30 min expiry
+        authStorage.set({
+          user,
+          expiresAt: Date.now() + 30 * 60 * 1000,
         });
+        
+        setUser(user);
       }
     } catch (err) {
       setError('Demo login failed. Please try again.');
@@ -91,6 +104,14 @@ export function SignIn() {
           <h1 className="text-3xl font-bold text-white mb-2">Spotlight Trader</h1>
           <p className="text-gray-400">Sign in to your account</p>
         </div>
+
+        {sessionExpired && (
+          <div className="mb-4 p-3 bg-amber-950 border border-amber-800 rounded-md">
+            <p className="text-amber-400 text-sm text-center">
+              Your session has expired. Please log in again.
+            </p>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

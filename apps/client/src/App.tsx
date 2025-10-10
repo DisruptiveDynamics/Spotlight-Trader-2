@@ -27,6 +27,9 @@ const CommandPalette = lazy(() =>
 const AdminConsole = lazy(() =>
   import('./components/AdminConsole').then((m) => ({ default: m.AdminConsole }))
 );
+const SettingsPanel = lazy(() =>
+  import('./components/SettingsPanel').then((m) => ({ default: m.SettingsPanel }))
+);
 
 // Minimal loading fallback for Suspense boundaries
 const LoadingFallback = () => (
@@ -41,6 +44,7 @@ function App() {
   const [explainContext, setExplainContext] = useState<InsightContext | null>(null);
   const [showSplash, setShowSplash] = useState(true);
   const [showAdminConsole, setShowAdminConsole] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Initialize feature flag syncing
   useEffect(() => {
@@ -62,16 +66,19 @@ function App() {
     const handleFocusTrade = () => focusManager.toggleTradeMode();
     const handleFocusReview = () => focusManager.toggleReviewMode();
     const handleToggleAdmin = () => setShowAdminConsole((prev) => !prev);
+    const handleToggleSettings = () => setShowSettings((prev) => !prev);
 
     window.addEventListener('command:focus-trade', handleFocusTrade);
     window.addEventListener('command:focus-review', handleFocusReview);
     window.addEventListener('command:toggle-admin', handleToggleAdmin);
+    window.addEventListener('command:toggle-settings', handleToggleSettings);
 
     return () => {
       unsubscribe();
       window.removeEventListener('command:focus-trade', handleFocusTrade);
       window.removeEventListener('command:focus-review', handleFocusReview);
       window.removeEventListener('command:toggle-admin', handleToggleAdmin);
+      window.removeEventListener('command:toggle-settings', handleToggleSettings);
       window.removeEventListener('chart:explain-request', handleExplainRequest as EventListener);
     };
   }, []);
@@ -199,6 +206,11 @@ function App() {
               </Suspense>
             </div>
           </div>
+        )}
+        {showSettings && (
+          <Suspense fallback={<LoadingFallback />}>
+            <SettingsPanel onClose={() => setShowSettings(false)} />
+          </Suspense>
         )}
       </div>
     </AuthGate>

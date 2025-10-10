@@ -344,10 +344,12 @@ export class EnhancedVoiceClient {
     // Convert PCM16 ArrayBuffer directly to Float32 for playback
     const float32 = this.pcm16ToFloat32(new Int16Array(arrayBuffer));
 
+    // CRITICAL: OpenAI Realtime API outputs 24kHz PCM16
+    // Create buffer with correct 24kHz rate so browser resamples properly
     const audioBuffer = audioContext.createBuffer(
       1,
       float32.length,
-      audioContext.sampleRate
+      24000  // OpenAI output sample rate
     );
     audioBuffer.getChannelData(0).set(float32);
 
@@ -365,10 +367,12 @@ export class EnhancedVoiceClient {
     const pcm16 = this.base64ToArrayBuffer(deltaBase64);
     const float32 = this.pcm16ToFloat32(new Int16Array(pcm16));
 
+    // CRITICAL: OpenAI Realtime API outputs 24kHz PCM16
+    // Create buffer with correct 24kHz rate so browser resamples properly
     const audioBuffer = audioContext.createBuffer(
       1,
       float32.length,
-      audioContext.sampleRate
+      24000  // OpenAI output sample rate
     );
     audioBuffer.getChannelData(0).set(float32);
 

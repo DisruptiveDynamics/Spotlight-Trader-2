@@ -8,6 +8,7 @@ import {
   recordSSEEvent,
   recordSSEBackpressure,
 } from '@server/metrics/registry';
+import { getMarketSource, getMarketReason } from '@server/market/bootstrap';
 
 export async function sseMarketStream(req: Request, res: Response) {
   const symbolsParam = (req.query.symbols as string) || 'SPY';
@@ -18,6 +19,8 @@ export async function sseMarketStream(req: Request, res: Response) {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('X-Market-Source', getMarketSource());
+  res.setHeader('X-Market-Reason', getMarketReason());
   res.flushHeaders();
 
   const userId = (req as any).userId || 'anonymous';

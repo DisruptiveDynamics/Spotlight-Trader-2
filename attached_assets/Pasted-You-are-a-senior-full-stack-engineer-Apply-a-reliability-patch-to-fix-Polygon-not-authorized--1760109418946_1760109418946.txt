@@ -1,0 +1,84 @@
+You are a senior full-stack engineer. Apply a reliability patch to fix:
+- Polygon “not authorized” + clear fallback to simulator
+- Dev restarts breaking WS/voice
+- iOS mic activation & safe connect
+- Better user feedback when market is closed vs. no data
+
+Keep TypeScript strict, small commits.
+
+A) POLYGON AUTH + STARTUP GUARD
+1) apps/server/src/market/polygon/health.ts
+   - export async function checkPolygonAuth(apiKey:string): Promise<{ok:boolean; reason?:string; level:'fatal'|'warn'}>
+     * If !apiKey → return {ok:false, reason:'missing api key', level:'fatal'}
+     * Do a fast REST probe (e.g. GET https://api.polygon.io/v3/reference/exchanges?apiKey=KEY with 2s timeout via undici)
+       - 401/403 → {ok:false, reason:'unauthorized/forbidden', level:'fatal'}
+       - 429 → {ok:false, reason:'rate limited', level:'warn'}
+       - 200 → {ok:true}
+       - else → {ok:false, reason:'unknown status X', level:'warn'}
+     * Never throw; always return a result.
+
+2) apps/server/src/market/bootstrap.ts
+   - On server start:
+     const apiKey = process.env.POLYGON_API_KEY;
+     const res = await checkPolygonAuth(apiKey ?? '');
+     - If res.ok → log "✅ Polygon auth OK".
+     - If !res.ok:
+         * Log with level based on res.level.
+         * If process.env.SIMULATED_DATA !== 'true', set an in-memory flag MARKET_SOURCE='sim'; also set a process.env flag `FALLBACK_SIM="true"`.
+   - Export getMarketSource(): 'polygon' | 'sim' based on flags.
+
+3) SSE header
+   - In /stream/market handler, add response header `X-Market-Source: polygon|sim` and `X-Market-Reason: <reason?|''>` so the client can show a non-intrusive banner.
+
+B) “MARKET CLOSED” vs “NO DATA” UX
+4) apps/server/src/market/session.ts
+   - export function isRthOpen(nowUtc=Date.now()): { open:boolean; session:'premarket'|'rth'|'after'|'closed' }
+     * Use US equities hours (09:30–16:00 ET) and day-of-week; treat holidays as closed for now (TODO).
+5) apps/client/src/features/hud/MarketStatus.tsx
+   - Small pill bottom-left:
+     * If MARKET_SOURCE=sim → "SIMULATOR" (amber)
+     * Else show session: PRE, RTH (green), A/H, CLOSED (gray)
+     * If X-Market-Reason present → "DATA UNAVAILABLE" tooltip
+   - Read headers once by hitting `/stream/market?symbols=SPY` with HEAD or first open event.
+
+C) DEV RESTART STABILITY + WS RECONNECT
+6) packages/config/dev.ts (or server index)
+   - Ensure HTTP server uses keepAliveTimeout=75_000, headersTimeout=80_000.
+7) apps/client/src/voice/VoiceClient.ts
+   - Add exponential backoff reconnect for WS: delays [1000,2000,4000,8000] capped 10s with ±20% jitter.
+   - Guard connects: do not start WS until the UI dispatches a user click (power button).
+   - Only attach mic AFTER WS open succeeds (or vice versa) behind a single “connect()” promise to avoid race conditions.
+   - Show "Reconnecting…" state while trying again.
+
+D) iOS/iPadOS MIC UNLOCK + TTS RESUME
+8) apps/client/src/voice/ios.ts
+   - export async function ensureiOSAudioUnlocked(): Promise<void>:
+     * On first user gesture, call:
+       - await navigator.mediaDevices.getUserMedia({ audio:true })
+       - const ctx = getOrCreateAudioContext(); await ctx.resume();
+     * Store a flag in memory `iosUnlocked=true`.
+9) apps/client/src/voice/VoicePresence.tsx
+   - On first click, call ensureiOSAudioUnlocked() before starting mic pipeline.
+   - When speaking, always `await audioContext.resume()` before starting playback.
+   - Do NOT destroy AudioContext on mute; toggle tracks enabled instead.
+
+E) CLEAR USER MESSAGES
+10) apps/client/src/features/toast/useToasts.ts (or existing toaster)
+    - On Polygon fallback: "Polygon not authorized. Running simulator." (warn)
+    - On rate-limit or 429: "Data provider rate-limited. Retrying…"
+    - On WS reconnect: transient "Reconnecting voice…"
+
+F) WATCHER NOISE / DEV SCRIPT
+11) apps/server/package.json
+    - Set dev script to reduce restarts:
+      "dev": "tsx --clear-screen=false --watch --ignore 'apps/client/**' apps/server/src/index.ts"
+12) apps/client/vite.config.ts
+    - Ensure server.hmr.overlay = true and allowedHosts includes '.replit.dev' (already done).
+
+TESTS
+13) Add quick tests:
+    - polygon/health.test.ts: returns fatal on 401; ok on 200; warn on 429.
+    - ios.test.ts: ensureiOSAudioUnlocked sets flag and resumes ctx (mock).
+    - Voice WS: reconnect delays grow up to 10s.
+
+Commit: "fix(reliability): polygon auth fallback, stable dev/reconnect, iOS mic unlock, clear UX"

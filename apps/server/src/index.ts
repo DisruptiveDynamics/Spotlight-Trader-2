@@ -25,10 +25,15 @@ import { rateLimit } from './middleware/rateLimit';
 import { startEodScheduler } from './journals/eod';
 import { initializeLearningLoop } from './learning/loop';
 import { loadFlags } from './flags/store';
+import { initializeMarketSource } from './market/bootstrap';
 
 const env = validateEnv(process.env);
 const app = express();
 const server = createServer(app);
+
+// Configure server timeouts for better dev restart stability
+server.keepAliveTimeout = 75000;  // 75 seconds
+server.headersTimeout = 80000;    // 80 seconds
 
 app.use(express.json());
 app.use(cookieParser());
@@ -65,6 +70,9 @@ startEodScheduler();
 loadFlags();
 
 const PORT = 8000;
+
+// Initialize market source (Polygon auth check with simulator fallback)
+await initializeMarketSource();
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server running on http://0.0.0.0:${PORT}`);

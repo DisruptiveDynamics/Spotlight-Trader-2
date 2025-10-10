@@ -33,7 +33,7 @@ export class EnhancedVoiceClient {
   private permissionListeners = new Set<PermissionListener>();
   private reconnectTimeout: number | null = null;
   private reconnectAttempts = 0;
-  private reconnectDelays = [200, 400, 800, 1600, 3200, 5000];
+  private reconnectDelays = [1000, 2000, 4000, 8000, 10000]; // Exponential backoff capped at 10s
   private maxReconnectAttempts = 10;
   private isMuted = false;
   private audioProcessor: ScriptProcessorNode | null = null;
@@ -483,7 +483,11 @@ export class EnhancedVoiceClient {
     }
 
     const delayIndex = Math.min(this.reconnectAttempts, this.reconnectDelays.length - 1);
-    const delay = this.reconnectDelays[delayIndex] || 5000;
+    const baseDelay = this.reconnectDelays[delayIndex] || 10000;
+    
+    // Add ±20% jitter
+    const jitter = baseDelay * 0.2 * (Math.random() * 2 - 1);
+    const delay = Math.max(100, baseDelay + jitter); // Minimum 100ms
 
     this.reconnectAttempts++;
 

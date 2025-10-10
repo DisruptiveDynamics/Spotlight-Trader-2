@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { EnhancedVoiceClient } from '../../voice/EnhancedVoiceClient';
 import { VoiceFallback } from './VoiceFallback';
+import { ensureiOSAudioUnlocked } from '../../voice/ios';
 
 type CoachState = 'listening' | 'thinking' | 'speaking' | 'idle' | 'muted';
 type ConnectionState =
@@ -315,6 +316,9 @@ export function PresenceBubble() {
       connectionState === 'offline'
     ) {
       try {
+        // Unlock iOS audio on first user gesture
+        await ensureiOSAudioUnlocked();
+        
         const token = await fetchToken();
         tokenRef.current = token;
         await client.connect(token);

@@ -8,6 +8,8 @@ import { ringBuffer } from '@server/cache/ring';
 import { rulesEngineService } from '@server/rules/service';
 import { signalsService } from '@server/signals/service';
 import { coachAdvisor } from '@server/coach/advisor';
+import { getMarketSource, getMarketReason } from '@server/market/bootstrap';
+import { isRthOpen } from '@server/market/session';
 
 const DEFAULT_FAVORITES = ['SPY', 'QQQ'];
 
@@ -65,6 +67,24 @@ export function initializeMarketPipeline(app: Express) {
   });
 
   app.get('/stream/market', sseMarketStream);
+
+  app.get('/api/market/status', (_req, res) => {
+    const source = getMarketSource();
+    const reason = getMarketReason();
+    const sessionStatus = isRthOpen();
+    
+    res.setHeader('X-Market-Source', source);
+    res.setHeader('X-Market-Reason', reason);
+    res.setHeader('X-Market-Session', sessionStatus.session);
+    res.setHeader('X-Market-Open', String(sessionStatus.open));
+    
+    res.json({ 
+      source, 
+      reason,
+      session: sessionStatus.session,
+      open: sessionStatus.open
+    });
+  });
 
   app.get('/ready', (_req, res) => {
     const isReady = true;

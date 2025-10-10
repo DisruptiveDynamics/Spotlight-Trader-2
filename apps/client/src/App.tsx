@@ -9,6 +9,7 @@ import { Toolbar } from './features/chart/Toolbar';
 import { focusManager } from './services/FocusManager';
 import { startFlagSync, stopFlagSync } from './state/flags';
 import type { InsightContext } from '@spotlight/shared';
+import { MarketStatus } from './features/hud/MarketStatus';
 
 // Lazy load heavy components for code-splitting
 const MultiChart = lazy(() =>
@@ -210,6 +211,7 @@ function App() {
             context={explainContext}
           />
         </Suspense>
+        <MarketStatus />
         {showAdminConsole && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
             <div className="relative w-full max-w-7xl max-h-[90vh] overflow-auto">

@@ -194,7 +194,7 @@ export class EnhancedVoiceClient {
       return;
     }
 
-    const wsUrl = `ws://${window.location.hostname}:4000/ws/realtime?t=${token}`;
+    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/realtime?t=${token}`;
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {

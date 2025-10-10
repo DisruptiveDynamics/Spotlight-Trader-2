@@ -3,7 +3,13 @@ import { EnhancedVoiceClient } from '../../voice/EnhancedVoiceClient';
 import { VoiceFallback } from './VoiceFallback';
 
 type CoachState = 'listening' | 'thinking' | 'speaking' | 'idle' | 'muted';
-type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error' | 'offline';
+type ConnectionState =
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'error'
+  | 'offline';
 type PermissionState = 'pending' | 'granted' | 'denied';
 
 interface WaveProps {
@@ -53,20 +59,34 @@ function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
 
       if (currentState === 'idle') {
         const breathRadius = baseRadius + Math.sin(timeRef.current * 0.5) * 5;
-        
+
         // Outer glow
-        const outerGlow = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, breathRadius + 40);
+        const outerGlow = ctx.createRadialGradient(
+          centerX,
+          centerY,
+          0,
+          centerX,
+          centerY,
+          breathRadius + 40
+        );
         outerGlow.addColorStop(0, 'rgba(59, 130, 246, 0.9)');
         outerGlow.addColorStop(0.5, 'rgba(59, 130, 246, 0.5)');
         outerGlow.addColorStop(1, 'rgba(59, 130, 246, 0)');
-        
+
         ctx.beginPath();
         ctx.arc(centerX, centerY, breathRadius + 40, 0, Math.PI * 2);
         ctx.fillStyle = outerGlow;
         ctx.fill();
-        
+
         // Inner core
-        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, breathRadius);
+        const gradient = ctx.createRadialGradient(
+          centerX,
+          centerY,
+          0,
+          centerX,
+          centerY,
+          breathRadius
+        );
         gradient.addColorStop(0, 'rgba(59, 130, 246, 1)');
         gradient.addColorStop(0.7, 'rgba(59, 130, 246, 0.9)');
         gradient.addColorStop(1, 'rgba(59, 130, 246, 0.4)');
@@ -223,7 +243,7 @@ export function PresenceBubble() {
     const unsubscribeLatency = client.onLatencyChange(setLatency);
     const unsubscribePermission = client.onPermissionChange((state) => {
       setPermissionState(state);
-      
+
       // Show status message for permission changes
       if (state === 'granted') {
         showStatusMessage('Mic activated ✅');
@@ -256,11 +276,11 @@ export function PresenceBubble() {
 
   const showStatusMessage = (message: string, duration = 2000) => {
     setStatusMessage(message);
-    
+
     if (statusTimerRef.current) {
       clearTimeout(statusTimerRef.current);
     }
-    
+
     statusTimerRef.current = window.setTimeout(() => {
       setStatusMessage('');
     }, duration);
@@ -289,7 +309,11 @@ export function PresenceBubble() {
     const client = voiceClientRef.current;
     if (!client) return;
 
-    if (connectionState === 'disconnected' || connectionState === 'error' || connectionState === 'offline') {
+    if (
+      connectionState === 'disconnected' ||
+      connectionState === 'error' ||
+      connectionState === 'offline'
+    ) {
       try {
         const token = await fetchToken();
         tokenRef.current = token;

@@ -1,6 +1,12 @@
 import { VoiceActivityDetector } from './VAD';
 
-type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error' | 'offline';
+type ConnectionState =
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'error'
+  | 'offline';
 type CoachState = 'listening' | 'thinking' | 'speaking' | 'idle' | 'muted';
 type PermissionState = 'pending' | 'granted' | 'denied';
 type VoiceClientListener = (state: ConnectionState) => void;
@@ -42,7 +48,7 @@ export class EnhancedVoiceClient {
     this.vad = new VoiceActivityDetector();
     this.vad.on('start', () => this.handleSpeechStart());
     this.vad.on('stop', () => this.handleSpeechStop());
-    
+
     // Monitor tab visibility for mobile optimization
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
@@ -69,7 +75,7 @@ export class EnhancedVoiceClient {
         clearTimeout(this.reconnectTimeout);
         this.reconnectTimeout = null;
       }
-      
+
       // Close existing WebSocket if present (clear handlers first to prevent duplicate reconnects)
       if (this.ws) {
         this.ws.onclose = null;
@@ -78,14 +84,18 @@ export class EnhancedVoiceClient {
         this.ws.close();
         this.ws = null;
       }
-      
+
       this.reconnectAttempts = 0;
       this.connectWebSocket(this.currentToken);
     }
   }
 
   private handleOffline(): void {
-    if (this.state === 'connected' || this.state === 'connecting' || this.state === 'reconnecting') {
+    if (
+      this.state === 'connected' ||
+      this.state === 'connecting' ||
+      this.state === 'reconnecting'
+    ) {
       this.setState('offline');
     }
   }

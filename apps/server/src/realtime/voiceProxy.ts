@@ -29,7 +29,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
     if (request.url?.startsWith('/ws/realtime')) {
       const origin = request.headers.origin || '';
       const allowedOrigins = [env.APP_ORIGIN, env.ADMIN_ORIGIN];
-      
+
       // Allow Replit preview domains when REPL_ID is present
       const isReplitDev = process.env.REPL_ID && origin.endsWith('.replit.dev');
       const isAllowed = allowedOrigins.includes(origin) || isReplitDev;

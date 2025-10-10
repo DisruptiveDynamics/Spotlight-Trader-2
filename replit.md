@@ -14,7 +14,12 @@ Preferred communication style: Simple, everyday language.
 The application uses pnpm workspaces to organize `apps/client` (React 18, Vite, Tailwind CSS), `apps/server` (Node.js 20 Express backend), `packages/shared` (TypeScript types, Zod schemas), and `packages/config`.
 
 ### Real-Time Data Pipeline
-A deterministic and lossless data pipeline processes live market data, including a Polygon WebSocket Client, an Event Bus, a Bar Builder for microbars and immutable 1-minute bars, a Ring Buffer Cache, and a History Service for intelligent backfill.
+A deterministic and lossless data pipeline processes live market data with DST-safe exchange timezone handling:
+- **Bar Builder**: Uses `date-fns-tz` to bucket bars in America/New_York timezone with DST-safe `floorToExchangeMinute()`, ensuring correct bar boundaries across DST transitions
+- **RAF-Based Chart Rendering**: Coalesces bar and microbar updates into batched 60fps renders with `document.hidden` throttling for efficient background behavior
+- **SSE Reconnect Logic**: Implements state progression (degraded_ws → replaying_gap → live) with promise queue serialization to prevent race conditions, ensuring monotonic sequence ordering during gap backfills
+- **Polygon WebSocket**: Heartbeat timer resets on any inbound message (not just pong), detects stale connections after 60s silence
+- **Dependencies**: date-fns 4.1.0 (upgraded from 2.30.0), date-fns-tz 3.2.0 for timezone support
 
 ### Communication Protocols
 - **Server-Sent Events (SSE)**: For streaming market data (1-minute bars, microbars, trading alerts), supporting lossless resume.
@@ -90,7 +95,15 @@ Focuses on professional ergonomics with zero-lag interactions:
 - **Upstash (Redis)**: Optional serverless Redis for caching and sessions.
 
 ### Key Libraries
-- **Data Processing**: `@polygon.io/client-js`, `drizzle-orm`, `zod`.
+- **Data Processing**: `@polygon.io/client-js`, `drizzle-orm`, `zod`, `date-fns@4.1.0`, `date-fns-tz@3.2.0`.
 - **Communication**: `ws`, `express`.
 - **Frontend**: `react`, `react-dom`, `lightweight-charts`, `tailwindcss`.
 - **Journaling & Memory**: `nanoid`, `node-cron`, `pgvector` extension.
+
+## Recent Changes (October 2025)
+
+### Market Data Pipeline Improvements
+- **DST-Safe Bucketing**: Implemented exchange timezone-aware bar bucketing using `date-fns-tz` to handle DST transitions correctly
+- **RAF Rendering**: Added RAF-based coalesced chart updates with batching for smooth 60fps performance
+- **Reconnect Logic**: Enhanced SSE reconnect with proper state progression and serialized gap backfilling using promise queues
+- **Heartbeat Fix**: Updated Polygon WebSocket heartbeat to reset on any inbound message for reliable connection monitoring

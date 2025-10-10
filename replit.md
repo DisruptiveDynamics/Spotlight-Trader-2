@@ -73,6 +73,16 @@ A voice interface with modern animations, robust audio handling, and complete pe
 - **Performance & Accessibility**: Stable rAF loops, reduced motion support, efficient canvas rendering, graceful degradation.
 - **iOS/iPadOS Compatibility**: Lazy AudioContext initialization, smart permission flow, network resilience with exponential backoff, mobile UX optimizations, and clean lifecycle management.
 
+**Voice Assistant v2 Optimizations (October 2025):**
+- **AudioWorklet Migration**: Replaced deprecated ScriptProcessorNode with AudioWorklet for 10-20ms latency improvement and Safari stability
+- **Enhanced Barge-In**: Instant audio interruption with gain ducking to zero before stopping playback, sends `response.cancel` to OpenAI
+- **Audio Frame Batching**: 20-40ms frame coalescing with backpressure control, max 8-frame queue with oldest-drop when WebSocket congested (bufferedAmount > 32KB)
+- **Idle Detection**: Auto-disconnect after 30min inactivity to save tokens (~$0.10-0.30/hour), monitors mouse/keyboard/touch/scroll activity
+- **Safari/iOS AudioContext Unlock**: Gesture-based unlock via AudioManager for iOS compliance, lazy initialization on first user interaction
+- **Tab Visibility Optimization**: Pauses VAD and amplitude monitoring when `document.hidden` to save CPU/battery on mobile
+- **Services**: AudioManager, AudioCapture (AudioWorklet), VoiceCoach (barge-in/batching), IdleDetector (auto-sleep)
+- **Implementation**: EnhancedVoiceClient.v2 integrates all optimizations with proper audio node cleanup and WebSocket backpressure control
+
 ### Trader UX Pack
 Focuses on professional ergonomics with zero-lag interactions:
 - **Hotkey System**: Keyboard-first control with core hotkeys and a Command Palette.

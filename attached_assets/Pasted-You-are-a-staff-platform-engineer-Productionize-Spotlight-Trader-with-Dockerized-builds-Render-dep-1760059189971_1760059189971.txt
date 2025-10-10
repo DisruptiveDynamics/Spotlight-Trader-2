@@ -1,0 +1,270 @@
+You are a staff platform engineer. Productionize Spotlight Trader with Dockerized builds, Render deploy presets (default) and AWS ECS/Fargate manifests (optional). Add health/readiness, Redis rate limiting, Neon connection pooling, SSE/WS hardening, structured logs, metrics, and CI/CD. Keep TypeScript strict and commits small.
+
+GOALS
+- Dockerfiles for server and client; one multi-stage build each
+- Render deploy: Static site (client) + Web Service (server) + Background worker (EOD)
+- Optional AWS: ECS task defs + ALB target groups + CloudFront/S3 for client
+- Neon pooling (@neondatabase/serverless + undici), proper timeouts & keepalive
+- Redis (Upstash) for rate limit + ephemeral pub/sub
+- Health (/health) & Readiness (/ready) endpoints
+- Structured logs (pino), Prometheus /metrics, OpenTelemetry stubs
+- CI/CD via GitHub Actions: build → test → docker buildx → deploy
+
+───────────────────────────────────────────────────────────────────────────────
+1) Dockerfiles
+
+Create apps/server/Dockerfile:
+# --- server (multi-stage)
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY packages ./packages
+COPY apps/server/package.json ./apps/server/
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+RUN pnpm -w i --frozen-lockfile
+
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY --from=deps /app .
+RUN pnpm -w -r build
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=build /app/apps/server/dist ./apps/server/dist
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages ./packages
+EXPOSE 8000
+CMD ["node","apps/server/dist/index.js"]
+
+Create apps/client/Dockerfile:
+# --- client (multi-stage)
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY packages ./packages
+COPY apps/client/package.json ./apps/client/
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+RUN pnpm -w i --frozen-lockfile
+
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY --from=deps /app .
+RUN pnpm --filter @spotlight/client build
+
+FROM nginx:alpine AS runner
+WORKDIR /usr/share/nginx/html
+COPY --from=build /app/apps/client/dist ./
+# basic security & SPA fallback
+COPY <<'NGINX' /etc/nginx/conf.d/default.conf
+server {
+  listen 8080;
+  server_name _;
+  add_header X-Content-Type-Options nosniff;
+  add_header X-Frame-Options SAMEORIGIN;
+  add_header X-XSS-Protection "1; mode=block";
+  root /usr/share/nginx/html;
+  location / {
+    try_files $uri /index.html;
+  }
+  location ~* \.(?:js|css|png|svg|ico|woff2)$ {
+    expires 30d;
+    access_log off;
+  }
+}
+NGINX
+EXPOSE 8080
+CMD ["nginx","-g","daemon off;"]
+
+───────────────────────────────────────────────────────────────────────────────
+2) Render presets (default deployment path)
+
+Add render.yaml at repo root:
+
+services:
+  - type: web
+    name: spotlight-server
+    env: node
+    plan: starter
+    region: oregon
+    buildCommand: |
+      corepack enable && corepack prepare pnpm@9.0.0 --activate
+      pnpm i --frozen-lockfile
+      pnpm -w -r build
+    startCommand: node apps/server/dist/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8000
+      - key: APP_ORIGIN
+        sync: false
+      - key: ADMIN_ORIGIN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: POLYGON_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: AUTH_JWT_SECRET
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: LOG_LEVEL
+        value: info
+    healthCheckPath: /health
+    autoDeploy: true
+
+  - type: worker
+    name: spotlight-eod
+    env: node
+    plan: starter
+    buildCommand: |
+      corepack enable && corepack prepare pnpm@9.0.0 --activate
+      pnpm i --frozen-lockfile
+      pnpm -w -r build
+    startCommand: node apps/server/dist/jobs/eod.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: AUTH_JWT_SECRET
+        sync: false
+
+  - type: static
+    name: spotlight-client
+    buildCommand: |
+      corepack enable && corepack prepare pnpm@9.0.0 --activate
+      pnpm i --frozen-lockfile
+      pnpm --filter @spotlight/client build
+    staticPublishPath: apps/client/dist
+    headers:
+      - path: /*.js
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+
+notes:
+  - Set APP_ORIGIN to the Render URL for the client (https://spotlight-client.onrender.com)
+  - Set ADMIN_ORIGIN to the same domain unless you host admin separately
+
+Add apps/server/src/jobs/eod.ts → re-export startEodScheduler() runner compiled to dist/jobs/eod.js.
+
+───────────────────────────────────────────────────────────────────────────────
+3) AWS ECS/Fargate (optional)
+
+Create deploy/aws/ecs-task-server.json
+- container: server, image: <ECR_URI>:server-latest
+- cpu: 512, memory: 1024, portMappings: 8000:8000
+- environment: pass the same envs as Render
+- healthCheck: path /ready, interval 15, timeout 5, retries 3
+
+Create deploy/aws/ecs-task-client.json
+- container: client, image: <ECR_URI>:client-latest, port 8080
+
+Create deploy/aws/terraform or cloudformation placeholders (commented) with ALB → ECS services. (No need to fully implement; document variables.)
+
+───────────────────────────────────────────────────────────────────────────────
+4) Env validation + CORS allowlist
+
+packages/shared/src/env.ts
+- Add APP_ORIGIN and ADMIN_ORIGIN as required URLs.
+- Add ORIGIN_ALLOWLIST: comma-separated list of origins; default includes APP_ORIGIN and ADMIN_ORIGIN.
+
+apps/server/src/config/cors.ts
+- Read allowlist, include Render client URL and local dev (http://localhost:5173)
+- Allow credentials true, methods GET,POST,PUT,DELETE,OPTIONS, headers common + Authorization
+- Preflight maxAge 600
+
+───────────────────────────────────────────────────────────────────────────────
+5) Neon connection pooling & timeouts
+
+apps/server/src/db/pool.ts
+- Use @neondatabase/serverless with undici:
+  import { Pool } from '@neondatabase/serverless';
+  export const pool = new Pool({ connectionString: process.env.DATABASE_URL!, max: 10, idleTimeout: 10_000 });
+- Ensure graceful shutdown: pool.end() on SIGTERM/SIGINT
+- Use prepared statements for hot queries (rules, signals recent)
+
+───────────────────────────────────────────────────────────────────────────────
+6) Redis rate limiting + pub/sub
+
+apps/server/src/platform/rateLimit.ts
+- If REDIS_URL, implement sliding window (key: `rl:${userId}:${route}`) with 10s bucket
+- Else in-memory LRU fallback with quick-lru
+
+apps/server/src/platform/pubsub.ts
+- Lightweight pub/sub wrapper; in prod uses Redis PSUBSCRIBE for future fanout
+
+Wire into routes: /api/insight/explain, /api/backtest/run, /api/memory
+
+───────────────────────────────────────────────────────────────────────────────
+7) SSE & WebSocket hardening
+
+- Add server timeouts:
+  - HTTP keepAliveTimeout: 75_000
+  - headersTimeout: 80_000
+- For SSE responses: set `Connection: keep-alive`, `Cache-Control: no-cache`, `X-Accel-Buffering: no`
+- Send heartbeat every 20s (`event: ping\n\n`)
+- On Render, set Idle Timeout to at least 90s (doc it in README)
+- WebSocket: verify HS256 token, origin check, limit 3 connections/user
+
+───────────────────────────────────────────────────────────────────────────────
+8) Health, Readiness, Metrics, Logs
+
+apps/server/src/routes/health.ts
+- GET /health → { ok: true }
+- GET /ready → checks DB `SELECT 1`, Redis PING (if present), returns 200 only when warm
+- GET /metrics → Prometheus text via in-memory registry (tick_to_wick_ms, voice_interrupt_ms, sse_reconnects_total, history_gap_fill_ms)
+
+Logging:
+- Use pino with level from LOG_LEVEL; log request IDs (x-request-id); include seq on market events; JSON lines
+
+OpenTelemetry:
+- Add otel stubs (commented) for later (OTLP exporter)
+
+───────────────────────────────────────────────────────────────────────────────
+9) CI/CD (GitHub Actions)
+
+.github/workflows/deploy.yml:
+- on: push to main
+- jobs:
+  - build_and_test:
+      runs-on: ubuntu-latest
+      steps:
+        - checkout
+        - setup node + pnpm
+        - pnpm i --frozen-lockfile
+        - pnpm -w run check
+        - pnpm -w run lint
+        - pnpm -w run build
+        - pnpm golden:test
+  - docker_build_push (optional for AWS/ECR):
+      needs: build_and_test
+      uses: docker/build-push-action@v5
+      with: matrix for apps/server and apps/client
+  - render_deploy:
+      needs: build_and_test
+      uses: render-examples/deploy-action@v1
+      with:
+        serviceId: ${{ secrets.RENDER_SERVICE_ID }}
+        apiKey: ${{ secrets.RENDER_API_KEY }}
+
+───────────────────────────────────────────────────────────────────────────────
+10) README – Deployment
+
+Add a "Deployment" section:
+- Render quickstart:
+  1) Create three services from render.yaml (server web, client static, eod worker)
+  2) Set ENV vars: APP_ORIGIN (client URL), ADMIN_ORIGIN, OPENAI_API_KEY, POLYGON_API_KEY, DATABASE_URL (Neon), REDIS_URL (Upstash), AUTH_JWT_SECRET, SESSION_SECRET, LOG_LEVEL=info
+  3) Deploy; ensure /ready returns 200 before switching traffic
+- AWS notes:
+  - Push Docker images to ECR; apply ECS task defs; map ALB listeners (443) to services; CloudFront + S3 for client static
+- Timeouts and heartbeat notes for SSE/WS on both platforms
+
+Keep commits tight and TypeScript strict throughout.

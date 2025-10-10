@@ -1,0 +1,52 @@
+You are a senior full-stack engineer optimizing Spotlight Trader for local Replit testing in “production-like” conditions.  
+Do NOT deploy to Render or AWS yet — just add local stability, security, and performance features while keeping full functionality inside Replit.
+
+GOALS
+- Keep existing monorepo intact (client/server/shared)
+- Add environment validation, heartbeat, and metrics endpoints
+- Harden SSE & WebSocket handling for long sessions
+- Add structured logging (pino) with pretty output in dev
+- Add Redis + Neon connection pooling hooks (but optional)
+- Leave Dockerfiles, render.yaml, etc. as dormant (commented) templates only
+- Keep TypeScript strict, fix all tsconfig and lint errors
+- Preserve compatibility with POC_MODE=true / SIMULATED_DATA=true
+- After build, verify /health, /ready, /metrics, and /stream/market all work locally
+
+TASKS
+1. Add local “production mode” middleware in server:
+   • Helmet, compression, pino-http logging
+   • CORS allowlist: include localhost, 127.0.0.1, and *.replit.dev
+   • Graceful shutdown on SIGTERM/SIGINT
+
+2. SSE/WS Hardening
+   • Heartbeat every 20 s
+   • Keep-alive timeout 75 s
+   • Limit 3 concurrent connections/user
+   • Log reconnects and latency metrics
+
+3. Add routes
+   • GET /health → {ok:true,ts:Date.now()}
+   • GET /ready → checks DB (if enabled) and Redis (if enabled)
+   • GET /metrics → basic counters for SSE reconnects, WS joins, and voice latency
+
+4. Structured logs
+   • Add pino + pino-pretty for local readability
+   • Include requestId and eventType for market events
+
+5. Env validation
+   • Keep APP_ORIGIN / ADMIN_ORIGIN required
+   • AUTH_JWT_SECRET ≥ 32 chars
+   • Allow SIMULATED_DATA=true for no-API mode
+
+6. Skip Deploy
+   • Comment out render.yaml and Docker sections
+   • Keep local scripts intact: pnpm run dev → ports 8000 (server) + 5000 (client)
+
+7. Final test checklist
+   • pnpm run check ✔️ (no ts errors)
+   • pnpm run lint ✔️ (no lint errors)
+   • pnpm run dev → both servers boot
+   • /health, /ready, /metrics respond 200
+   • Chart + Voice AI load normally
+
+Commit: “feat(local-prod): hardened SSE + health/metrics endpoints for Replit testing”

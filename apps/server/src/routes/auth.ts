@@ -93,7 +93,7 @@ router.get('/callback', async (req, res) => {
 });
 
 router.post('/demo', async (req, res) => {
-  if (env.NODE_ENV === 'production') {
+  if (env.NODE_ENV === 'production' && !process.env.REPL_ID) {
     return res.status(403).json({ error: 'Demo login only available in development' });
   }
 

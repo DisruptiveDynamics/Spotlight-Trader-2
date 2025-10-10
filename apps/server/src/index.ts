@@ -14,6 +14,7 @@ import { flagsRouter } from './routes/flags';
 import { feedbackRouter } from './routes/feedback';
 import { backtestRouter } from './routes/backtest';
 import { signalsRouter } from './routes/signals';
+import { metricsRouter } from './routes/metrics';
 import authRouter from './routes/auth';
 import exportRouter from './routes/export';
 import importRouter from './routes/import';
@@ -39,6 +40,7 @@ app.use('/api/auth', authRouter);
 app.use('/auth', authRouter);
 
 app.use('/api/flags', flagsRouter);
+app.use('/api/metrics', metricsRouter);
 
 initializeMarketPipeline(app);
 setupVoiceTokenRoute(app);

@@ -56,22 +56,22 @@ app.use('/auth', authRouter);
 
 app.use('/api/flags', flagsRouter);
 app.use('/api/metrics', metricsRouter);
-app.use('/api/admin', requireUser, adminRouter);
+app.use('/api/admin', adminRouter);
 
 initializeMarketPipeline(app);
 setupVoiceTokenRoute(app);
 setupVoiceProxy(app, server);
 
-app.use('/api', requireUser, rulesRouter);
-app.use('/api/journals', requireUser, journalsRouter);
-app.use('/api/memory', requireUser, rateLimit(), memoryRouter);
-app.use('/api/insight', requireUser, rateLimit(), insightRouter);
-app.use('/api/feedback', requireUser, feedbackRouter);
-app.use('/api/backtest', requireUser, rateLimit(), backtestRouter);
-app.use('/api/signals', requireUser, signalsRouter);
-app.use('/api/export', requireUser, exportRouter);
-app.use('/api/import', requireUser, importRouter);
-app.use('/api/coach', requireUser, coachSettingsRouter);
+app.use('/api', rulesRouter);
+app.use('/api/journals', journalsRouter);
+app.use('/api/memory', rateLimit(), memoryRouter);
+app.use('/api/insight', rateLimit(), insightRouter);
+app.use('/api/feedback', feedbackRouter);
+app.use('/api/backtest', rateLimit(), backtestRouter);
+app.use('/api/signals', signalsRouter);
+app.use('/api/export', exportRouter);
+app.use('/api/import', importRouter);
+app.use('/api/coach', coachSettingsRouter);
 
 initializeLearningLoop();
 startEodScheduler();

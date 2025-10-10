@@ -23,6 +23,7 @@ export class BarBuilder {
   private states = new Map<string, SymbolState>();
   private microbarInterval = 250;
   private microbarTimers = new Map<string, NodeJS.Timeout>();
+  private barFinalizeTimers = new Map<string, NodeJS.Timeout>();
 
   private floorToExchangeMinute(tsMs: number, barMinutes: number = 1): number {
     const d = toZonedTime(new Date(tsMs), ET);
@@ -56,14 +57,20 @@ export class BarBuilder {
 
     eventBus.on(`tick:${symbol}` as const, (tick) => this.handleTick(symbol, tick));
     this.startMicrobarTimer(symbol);
+    this.startBarFinalizeTimer(symbol);
   }
 
   unsubscribe(symbol: string) {
     this.states.delete(symbol);
-    const timer = this.microbarTimers.get(symbol);
-    if (timer) {
-      clearInterval(timer);
+    const microTimer = this.microbarTimers.get(symbol);
+    if (microTimer) {
+      clearInterval(microTimer);
       this.microbarTimers.delete(symbol);
+    }
+    const finalizeTimer = this.barFinalizeTimers.get(symbol);
+    if (finalizeTimer) {
+      clearInterval(finalizeTimer);
+      this.barFinalizeTimers.delete(symbol);
     }
   }
 
@@ -73,6 +80,7 @@ export class BarBuilder {
 
     state.lastTickTs = tick.ts;
 
+    // Check if we crossed minute boundary
     if (tick.ts >= state.bar_end) {
       this.finalizeBar(symbol, state);
 
@@ -116,6 +124,9 @@ export class BarBuilder {
       volume: state.currentBar.volume,
     };
 
+    // Clear microbars to prevent memory leak
+    state.microbars = [];
+
     eventBus.emit(`bar:new:${symbol}:1m` as const, finalizedBar);
   }
 
@@ -139,6 +150,29 @@ export class BarBuilder {
     }, this.microbarInterval);
 
     this.microbarTimers.set(symbol, timer);
+  }
+
+  private startBarFinalizeTimer(symbol: string) {
+    // Check every second if the current bar needs to be finalized
+    const timer = setInterval(() => {
+      const state = this.states.get(symbol);
+      if (!state) return;
+
+      const now = Date.now();
+      
+      // If current time has crossed bar_end, finalize even without new ticks
+      if (now >= state.bar_end && state.currentBar) {
+        this.finalizeBar(symbol, state);
+
+        // Start new bar at the next minute boundary
+        const tickMinute = this.floorToExchangeMinute(now);
+        state.bar_start = tickMinute;
+        state.bar_end = tickMinute + 60000;
+        state.currentBar = null;
+      }
+    }, 1000);
+
+    this.barFinalizeTimers.set(symbol, timer);
   }
 
   getState(symbol: string): SymbolState | undefined {

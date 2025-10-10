@@ -1,0 +1,168 @@
+You’re right to pause and reset. Let’s knock this out in two parts:
+
+---
+
+# 1) Do-this-now triage (fast)
+
+Run these in your Replit shell to surface the root causes quickly:
+
+```bash
+# A. Which ports are actually listening?
+ss -ltnp | grep -E ':(8080|3000|5173)' || true
+
+# B. Is the API alive?
+curl -sfv http://localhost:8080/health || curl -sfv http://127.0.0.1:8080/health
+
+# C. Are the live data endpoints failing?
+curl -sv http://localhost:8080/api/history?symbol=QQQ\&limit=50 | head
+curl -sv http://localhost:8080/api/live/status | head || true
+
+# D. Any runtime exceptions?
+npm start  # or npm run dev — keep this tailing and reproduce the issue
+```
+
+If `ss` doesn’t show `0.0.0.0:8080`, fix the server binding (below). If `history`/`status` 500s, we’ll add error middleware and config checks.
+
+---
+
+# 2) Minimal patches that fix both problems
+
+### A) Server must bind for Replit & be robust
+
+```ts
+// server/index.ts
+import express from "express";
+import helmet from "helmet";
+import morgan from "morgan";
+
+const app = express();
+app.use(express.json({ limit: "1mb" }));
+app.use(helmet());
+app.use(morgan("tiny"));
+
+app.get("/health", (_, res) => res.json({ ok: true, ts: Date.now() }));
+
+// … your routes …
+
+// Error middleware (prevents 502 from upstream when a route throws)
+app.use((err:any, req:any, res:any, _next:any) => {
+  console.error("API_ERR:", err);
+  res.status(500).json({ error: "internal_error" });
+});
+
+const port = Number(process.env.PORT ?? 8080);
+const host = "0.0.0.0";
+app.listen(port, host, () => console.log(`API on http://${host}:${port}`));
+```
+
+### B) Voice WS: treat **binary** audio ≠ JSON, add backpressure + heartbeat
+
+```ts
+// client/voice/wsClient.ts
+const ws = new WebSocket(WS_URL);
+ws.binaryType = "arraybuffer";
+
+let lastPong = Date.now();
+setInterval(() => {
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }));
+  if (Date.now() - lastPong > 10_000) ws.close(); // force reconnect
+}, 5_000);
+
+ws.onmessage = async (e) => {
+  const d = e.data;
+  if (d instanceof ArrayBuffer || d instanceof Blob) {
+    const buf = d instanceof Blob ? await d.arrayBuffer() : d;
+    playTtsChunk(new Uint8Array(buf)); // DO NOT JSON.parse
+    return;
+  }
+  if (typeof d === "string") {
+    let msg; try { msg = JSON.parse(d); } catch { return; }
+    if (msg.type === "pong") lastPong = Date.now();
+    if (msg.type === "partialTranscript") onPartial(msg.text);
+    if (msg.type === "finalTranscript")   onFinal(msg.text);
+    // …tool results etc…
+  }
+};
+
+// mic sender (mono 16kHz PCM16, ~20–40ms frames)
+async function sendPcm(ws: WebSocket, frame: Uint8Array) {
+  while (ws.bufferedAmount > 256 * 1024) await new Promise(r => setTimeout(r, 20)); // backpressure
+  if (ws.readyState === WebSocket.OPEN) ws.send(frame);
+}
+```
+
+*Server echoes ping/pong and treats non-JSON as audio input.*
+
+### C) Polygon tick engine + reconciliation (thinkorswim feel)
+
+* Subscribe **`T.SYMBOL`** (trade ticks) and **`AM.SYMBOL`** (official minute).
+* Maintain a rolling ET-aligned minute `{o,h,l,c,v}` and **emit “intraBarUpdated” ~2–3x/sec**; **emit “minuteClosed”** on boundary.
+* When `AM` arrives for the closed minute, **overwrite** your rolled bar if drift > 1 tick or big volume delta.
+* Client chart only consumes JSON events: `intraBarUpdated` and `minuteClosed` (no binary on this socket).
+
+(You already have the scaffolds from earlier; the key is enabling both T. + AM., throttling UI, and reconciling.)
+
+### D) CSP must allow sockets
+
+Your CSP `connect-src` needs your WS origin **and** `wss://socket.polygon.io`. Otherwise sockets flap and both voice+chart loop.
+
+---
+
+# 3) Paste-ready **Replit Agent troubleshooting** prompt (does all of the above)
+
+**SPOTLIGHT TRADER — FIX LIVE TICKS + VOICE LOOP, MAKE WS ROCK-SOLID**
+
+Act as a senior real-time engineer. Our app fails to show live/tick data like thinkorswim and the **AI voice loops** between listening ↔ reconnecting. Diagnose and permanently fix:
+
+## Guardrails
+
+* Read secrets from Replit **Secrets** only.
+* Small, auditable commits.
+* If unsure, pick a sensible default and continue.
+
+## Tasks
+
+1. **Baseline & Plan (≤10 lines)**: print server port/host, client API base, WS endpoints (voice + chart), CSP `connect-src`, and current Polygon subscriptions (T., AM.).
+2. **Server Runtime**: bind Express to `0.0.0.0:${PORT||8080}`, add `/health`, morgan logs, and error middleware that stops 502s from Replit.
+3. **Polygon Integration**:
+
+   * Ensure REST backfill `/v2/aggs/.../1/minute` with `adjusted=true`, `next_url` paging.
+   * WS subscribe to **`T.SYMBOL`** and **`AM.SYMBOL`**.
+   * Tick engine: roll minute `o/h/l/c/v`, emit `intraBarUpdated` every ~300–400ms, emit `minuteClosed` on boundary, reconcile with `AM`.
+   * Keep **America/New_York** timezone and a single `SESSION=RTH|RTH_EXT` applied to both REST+WS.
+4. **Chart Client**: consume only JSON events from our `/ws` → `intraBarUpdated`/`minuteClosed`; throttle re-renders to 10–15fps; no JSON.parse on binary.
+5. **Voice WS**:
+
+   * Set `ws.binaryType="arraybuffer"`.
+   * On message: if binary → TTS audio sink; if string → JSON control.
+   * Add heartbeat (ping every 5s; close if no `pong` within 10s).
+   * Mic: mono 16k PCM16, 20–40ms frames, backpressure guard (`bufferedAmount` < 256KB).
+   * Barge-in cancels TTS immediately.
+6. **CSP/Helmet**: ensure `connect-src` allows our WS origin and `wss://socket.polygon.io`.
+7. **Verification** (write `VERIFY.md`):
+
+   * Ports: `ss -ltnp | grep -E ':(8080|3000|5173)'`
+   * Health: `curl -sfv http://localhost:8080/health`
+   * History: `curl -sfv http://localhost:8080/api/history?symbol=QQQ&limit=50`
+   * Voice: speak 10s; show no `"[object Blob] is not valid JSON"` or “dropping oldest frame” spam; stable ping/pong.
+   * Charts (market open): forming bar updates ≥2×/sec; minute close equals `AM` within 1 tick (log mismatches=0).
+   * DevTools screenshots: **no 500/502**, **no Blob/JSON parse errors**.
+8. **Acceptance (self-check)**:
+
+   * WS stays connected ≥5 min.
+   * Voice no longer loops; barge-in works.
+   * Chart ticks live smoothly and reconcile on close.
+
+**End of prompt.**
+
+---
+
+# 4) Success checklist (what “done” looks like)
+
+* `/health` returns 200; no 502/500 spam in console.
+* Browser never tries to `JSON.parse` audio (`Blob`/`ArrayBuffer`) again.
+* `ws.bufferedAmount` stays low (rare spikes OK).
+* During RTH, the forming candle **animates 2–3×/sec**; at minute close, your bar = Polygon `AM` (or is corrected).
+* Voice **barge-in** cancels TTS instantly; ping/pong remains steady for minutes.
+
+If you want, I can also hand you an **AudioWorklet** + PCM16 encoder snippet to lower STT latency further and make barge-in feel instant.

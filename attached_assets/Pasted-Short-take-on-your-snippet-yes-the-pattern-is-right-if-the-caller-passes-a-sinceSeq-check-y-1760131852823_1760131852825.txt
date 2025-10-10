@@ -1,0 +1,133 @@
+Short take on your snippet: **yes, the pattern is right**—if the caller passes a `sinceSeq`, check your **ring buffer** first (fast path with the freshest WS data) and only hit REST when you need to **gap-fill**. The devil is in the edge cases, though. Here’s what I’d tighten:
+
+### What to keep / improve in `getHistory`
+
+* ✅ **Fast path**: `ringBuffer.getSinceSeq(symbol, sinceSeq)` is correct.
+* ➕ **Watermarks**: return both `bars` and a **newSeq** (the latest sequence/timestamp you served) so callers can call you again with `sinceSeq=newSeq`.
+* ➕ **Gap detection**: if the ring returns nothing or shows a **hole** (e.g., user was offline), compute a REST range from the **last persisted bar time** (or `sinceSeq`) → **now**, then merge+dedupe with ring data.
+* ➕ **ET minute alignment & session**: keep everything in **America/New_York** and apply a consistent **RTH vs RTH+EXT** filter to both REST and WS bars.
+* ➕ **Adjusted history**: request `adjusted=true` on REST, and don’t mix adjusted/unadjusted sources.
+* ➕ **Pagination**: follow `next_url` until you’ve covered the gap (respect rate limits).
+* ➕ **Monotonic sort** & **dedupe by t**: after merging ring+REST, sort by `t` and drop duplicates (keep the one with higher fidelity—prefer official minute aggregate when present).
+* ➕ **Return shape**: `{ bars: Bar[], newSeq: number, source: 'cache'|'mixed'|'rest' }`.
+
+A minimal completion for your function (TypeScript, **pattern** not a drop-in):
+
+```ts
+export async function getHistory(query: HistoryQuery): Promise<{bars: Bar[], newSeq: number, source: 'cache'|'mixed'|'rest'}> {
+  const { symbol, timeframe = '1m', limit = 1000, before, sinceSeq } = query;
+
+  // 1) Fast path from ring buffer (realtime WS)
+  if (sinceSeq != null) {
+    const cached = ringBuffer.getSinceSeq(symbol, sinceSeq); // [{t,o,h,l,c,v,seq}, ...]
+    if (cached.length > 0) {
+      const slice = cached.slice(0, limit);
+      const newSeq = slice.at(-1)!.seq;
+      return { bars: slice.map(stripSeq), newSeq, source: 'cache' };
+    }
+  }
+
+  // 2) Gap-fill via REST (Polygon aggs) — ET/RTH normalization must match your WS policy
+  const { fromISO, toISO } = computeRange({ symbol, timeframe, limit, before, sinceSeq });
+  const restBars = await polygonAggs1m(symbol, fromISO, toISO); // adjusted=true, next_url paging
+  const restSeq = restBars.length ? restBars.at(-1)!.t : (sinceSeq ?? 0);
+
+  // 3) Merge with any most-recent ring data (to include the still-forming minute)
+  const tail = ringBuffer.getSinceSeq(symbol, restSeq);
+  const merged = dedupeByT([...restBars, ...tail.map(stripSeq)]).slice(-limit);
+
+  return { bars: merged, newSeq: merged.length ? merged.at(-1)!.t : (sinceSeq ?? 0), source: tail.length ? 'mixed' : 'rest' };
+}
+
+function stripSeq(b: any): Bar { const {seq, ...bar} = b; return bar as Bar; }
+function dedupeByT(bars: Bar[]): Bar[] {
+  const m = new Map<number, Bar>();
+  for (const b of bars) m.set(b.t, b); // later wins (letting official minute overwrite tick-rolled bar)
+  return Array.from(m.values()).sort((a,b) => a.t - b.t);
+}
+```
+
+---
+
+## Give this to your Replit agent (Polygon best practices wired in)
+
+**SPOTLIGHT TRADER — POLYGON INTEGRATION (BEST PRACTICES) WITH RING BUFFER + GAP FILL**
+
+Act as a senior real-time engineer. Ensure our app uses Polygon **optimally**:
+
+* **REST backfill** for history (`/v2/aggs/ticker/{sym}/range/1/minute/...` with `adjusted=true`, `next_url` paging).
+* **WebSocket live** for trades (`T.SYMBOL`) and official minute aggregates (`AM.SYMBOL`).
+* **Ring buffer** for the freshest WS data, with `sinceSeq` API.
+* **Gap-fill** logic that merges REST + ring data, normalizes to **America/New_York**, and enforces **RTH / RTH+EXT** consistently.
+
+### Guardrails
+
+* Never expose secrets; read `POLYGON_API_KEY` from Replit Secrets.
+* Small, auditable commits with messages.
+* Prefer TypeScript strict; add types for bars and sequences.
+
+### Do this
+
+1. **Provider folder**
+
+   * `server/providers/polygon/history.ts`
+
+     * `getAggs1m(symbol, fromISO, toISO, { adjusted=true })` with `next_url` paging.
+     * Map results to `{ t,o,h,l,c,v,vwap? }`. Timestamps are **start-of-minute ms**.
+   * `server/providers/polygon/ticks.ts`
+
+     * WS client subscribes to **`T.SYMBOL`** (trades) and **`AM.SYMBOL`** (official minute).
+     * Maintain a **ring buffer** per symbol (capacity ~3–10k bars/trades as needed).
+     * Emit `intraBarUpdated` ~**2–3×/sec** and `minuteClosed` on boundary.
+     * On receiving `AM` for a closed minute, **reconcile** (overwrite if drift > 1 tick or big volume delta).
+
+2. **Time & session discipline**
+
+   * All timestamps in **America/New_York**.
+   * Env `SESSION=RTH|RTH_EXT`; apply the same filter to **REST** and **WS** paths.
+
+3. **History API for the client**
+
+   * `server/routes/history.ts` → `GET /api/history?symbol=SPY&limit=1000&sinceSeq=...`
+   * Implement **your** `getHistory(query)` exactly as:
+
+     * try **ringBuffer.getSinceSeq(symbol, sinceSeq)**; if empty or hole, **gap-fill via REST** from `sinceSeq` (or computed `fromISO`) to now; merge+dedupe; return `{bars, newSeq, source}`.
+   * Always include a **newSeq watermark** (last served `.t` or sequence).
+
+4. **Merging rules**
+
+   * Sort by `t` ascending, **dedupe by `t`**.
+   * When both tick-rolled and official exist for the same `t`, **keep the official**.
+   * Never mix adjusted/unadjusted bars.
+
+5. **Resilience**
+
+   * Reconnect WS with backoff; **gap-fill** on reconnect to cover missing minutes.
+   * Heartbeat: ping/pong to detect dead sockets.
+
+6. **Verification**
+
+   * Unit tests:
+
+     * ringBuffer sinceSeq happy path.
+     * gap-fill from `sinceSeq` with missing minutes.
+     * merge preference: official minute overrides tick-rolled.
+     * session filter removes pre/after-hours when `SESSION=RTH`.
+   * Manual:
+
+     * Start app; call `/api/history` with and without `sinceSeq`; confirm `source` returns `cache`, `rest`, or `mixed` appropriately.
+     * Live session: forming bar updates ≥2×/sec; minute close equals `AM` within 1 tick.
+   * Produce `POLYGON_VERIFY.md` with curl examples and screenshots.
+
+**Acceptance**
+
+* `getHistory` returns `{bars,newSeq,source}`; **no cold starts** when the ring has data.
+* Consistent **ET minute alignment** and **session** across REST + WS.
+* Official minute (`AM`) overwrites rolled bars for the same `t`.
+* Reconnect + gap-fill proven; no duplicated or missing bars.
+
+**End of prompt.**
+
+---
+
+If you want me to tailor the WS/ring buffer size, or add a `sinceTs` variant for arbitrary time windows, say the word and I’ll add it.

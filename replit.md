@@ -131,6 +131,20 @@ Focuses on professional ergonomics with zero-lag interactions:
   - Rule-based alerts engine ✅
   - Session management and auth ✅
 
+### Voice WebSocket Binary Handling Fix (October 10, 2025)
+- **Critical Audio Fix**: Fixed voice assistant audio playback by correctly handling binary WebSocket data
+  - Set `ws.binaryType = 'arraybuffer'` to receive binary audio as ArrayBuffer instead of Blob
+  - Added `handleAudioArrayBuffer()` method to process PCM16 directly without base64 conversion overhead
+  - Updated message handler to check ArrayBuffer → Blob → JSON in priority order
+  - Eliminated Blob parsing errors and AudioBatcher backpressure warnings
+- **Audio Sample Rate Correction**: Fixed chipmunk/slow audio by aligning sample rates end-to-end
+  - AudioContext created at 24kHz (matches OpenAI Realtime API output)
+  - AudioBuffers now created with correct 24000 Hz rate (previously used wrong audioContext.sampleRate)
+  - Browser no longer needs to resample, audio plays at correct speed
+  - Applied fix to both ArrayBuffer and base64 delta paths
+- **Server Improvements**: Added error middleware and VAD/transcription configs to voiceProxy
+- **Result**: Voice assistant now streams audio without errors, correct playback speed, reduced latency
+
 ### Voice Assistant & Market Data Fixes (October 10, 2025)
 - **Server Port Standardization**: Changed server from hardcoded port 8000 to `process.env.PORT || 8080` for consistency with Vite proxy
 - **Vite Proxy Update**: Updated all Vite proxy targets (`/api`, `/stream`, `/ws`) from localhost:8000 to localhost:8080

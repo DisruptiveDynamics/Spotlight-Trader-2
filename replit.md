@@ -33,6 +33,13 @@ A **deterministic and lossless** data pipeline processes live market data. It in
 
 Security features include **Helmet.js**, strict **CORS** allowlisting, short-lived **JWTs**, connection limits, and **Zod** for environment validation.
 
+**CORS Configuration**: Dynamic origin checking allows:
+- Explicitly trusted origins from `APP_ORIGIN` and `ADMIN_ORIGIN` environment variables
+- Any `*.replit.dev` domain when `REPL_ID` is present (Replit preview environment)
+- Proper rejection of unauthorized origins with clear error messages
+
+**Authentication in Replit**: Cookie-based auth with httpOnly session cookies. Demo mode (`/api/auth/demo`) hydrates Zustand store directly with user data from API response to bypass Vite proxy cookie limitations while maintaining security through server-side httpOnly cookies.
+
 ### Frontend Architecture
 
 Built with **React 18 and TypeScript**, using **Lightweight Charts** for financial charting, **Zustand** for state management, and **Tailwind CSS** for styling. **Vite** handles bundling with API proxy configuration for `/api`, `/stream`, and `/ws` routes.

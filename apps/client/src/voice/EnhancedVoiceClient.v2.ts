@@ -252,6 +252,16 @@ export class EnhancedVoiceClient {
 
     this.ws.onmessage = async (event) => {
       try {
+        // Check if message is binary (Blob/ArrayBuffer) or text (JSON)
+        if (event.data instanceof Blob) {
+          // Binary audio data - convert to base64 and handle as audio delta
+          const arrayBuffer = await event.data.arrayBuffer();
+          const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+          await this.handleAudioDelta(base64);
+          return;
+        }
+
+        // Text message - parse as JSON
         const data = JSON.parse(event.data);
 
         if (data.type === 'response.audio.delta' && data.delta) {

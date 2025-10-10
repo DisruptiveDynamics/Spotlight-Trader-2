@@ -1,0 +1,128 @@
+Great catch. The errors mean:
+	•	Missing script: "typecheck" → your package.json doesn’t have a typecheck script.
+	•	tsconfig.json:5:5 File './packages/config' not found → your root tsconfig.json still references a monorepo path that doesn’t exist in this project.
+
+Here’s the clean fix + exact commands.
+
+⸻
+
+1) Quick edits
+
+A) Root tsconfig.json (replace the old monorepo refs)
+
+Use either Option 1 (simple, single-project) or Option 2 (project refs to client/server).
+
+Option 1 — simplest (recommended now)
+
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["client/src", "server"]
+}
+
+Option 2 — project references (only if you want tsc -b)
+
+Root tsconfig.json:
+
+{
+  "files": [],
+  "references": [
+    { "path": "./client" },
+    { "path": "./server" }
+  ]
+}
+
+client/tsconfig.json (make sure it exists):
+
+{
+  "compilerOptions": {
+    "composite": true,
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "resolveJsonModule": true
+  },
+  "include": ["src"]
+}
+
+server/tsconfig.json (make sure it exists):
+
+{
+  "compilerOptions": {
+    "composite": true,
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "strict": true,
+    "skipLibCheck": true,
+    "outDir": "dist"
+  },
+  "include": ["**/*.ts"]
+}
+
+B) Add scripts to package.json
+
+Add (or merge) these:
+
+{
+  "scripts": {
+    "typecheck": "npm run typecheck:client && npm run typecheck:server",
+    "typecheck:client": "tsc -p client --noEmit",
+    "typecheck:server": "tsc -p server --noEmit",
+    "lint": "eslint \"client/src/**/*.{ts,tsx}\" \"server/**/*.ts\"",
+    "build": "npm run build:server && npm run build:client",
+    "build:server": "tsc -p server",
+    "build:client": "vite build --config client/vite.config.ts",
+    "dev": "concurrently -k -n SERVER,CLIENT -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:client": "vite --config client/vite.config.ts"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.6.3",
+    "eslint": "^9.0.0"
+  }
+}
+
+If you don’t have client/vite.config.ts, change those paths to your actual Vite config (or remove the explicit --config to let Vite auto-detect).
+
+⸻
+
+2) Shell commands to run now
+
+# 0) (optional) temporarily disable husky if it still blocks install
+HUSKY=0 true
+
+# 1) clean install
+rm -rf node_modules .vite dist .cache && npm install
+
+# 2) typecheck (now uses per-project tsconfigs)
+npm run typecheck
+
+# 3) lint (OK if you don’t have ESLint yet; we added it above)
+npm run lint
+
+# 4) build
+npm run build
+
+# 5) dev
+npm run dev
+
+If npm run dev already exists in your project with different commands, keep yours; the important part was fixing tsconfig.json and adding typecheck so the previous step won’t fail again.
+
+If anything still barks, paste the first error lines and I’ll give you the exact one-liner to resolve it.

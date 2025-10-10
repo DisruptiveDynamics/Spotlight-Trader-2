@@ -1,0 +1,220 @@
+Perfect — here’s a single, copy-paste Replit Agent Work Order that merges the chart optimizations (limit-based instant load + tick-driven streaming) with the voice-coach/bubble cleanup and cross-platform fixes. Drop this into Replit exactly as-is.
+
+⸻
+
+Replit Agent Work Order — SpotLight Trader
+
+TOS-Parallel Real-Time Charts + Voice Coach/Bubble (Cross-Platform)
+
+Objective:
+Make charts load in <1 second with limit-based initial fetch and update tick-by-tick with live wicks via WebSocket aggregation; add resilient reconnect/backfill.
+Clean up the AI voice coach and bubble UI for reliable mic/playback on iOS/Safari/desktop, low-latency barge-in, and predictable sleep/wake.
+
+⸻
+
+PART A — Charts (Instant + Tick-by-Tick like TOS)
+
+1) Backend: historical endpoint with ?limit
+
+File: server/routes.ts (or equivalent router)
+	•	Add limit support and an “until” anchor at last closed ET minute:
+
+// GET /api/hist/:symbol?timeframe=1m&limit=100&session=RTH&until=<ms>
+app.get('/api/hist/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  const { timeframe, limit, session = 'RTH', until } = req.query as any;
+
+  const untilMs = Number(until) || exchangeLastClosedMinuteMs('America/New_York');
+  const cacheKey = `hist:${symbol}:${timeframe}:${session}:${untilMs}:${limit||'full'}`;
+
+  const cached = await lruOrRedisGet(cacheKey);
+  if (cached) return res.json(cached);
+
+  let bars;
+  if (limit) {
+    bars = await polygon.getBars({ symbol, timeframe, limit: Number(limit), until: untilMs });
+  } else {
+    bars = await polygon.getBarsByRange({ symbol, timeframe, from: untilMs - rangeFor(timeframe), to: untilMs });
+  }
+
+  const payload = {
+    meta: { symbol, timeframe, session, lastClosedBarTime: untilMs, cursor: bars?.nextPageToken || null },
+    bars: bars.items.map(compactifyBar) // {t,o,h,l,c,v}
+  };
+
+  await lruOrRedisSet(cacheKey, payload, /* ttl */ 60);
+  res.json(payload);
+});
+
+	•	Caching:
+	•	In-memory LRU (hottest symbols) → Redis fallback → provider last.
+	•	Enable stale-while-revalidate (serve cached immediately, refresh in background).
+	•	Helper policy:
+	•	Compact bar: { t:number(ms UTC), o,h,l,c,v }.
+	•	Cache key includes corp adjustments & schema version if you track them:
+{symbol,timeframe,session,corpAdjVersion,schemaVersion,untilMs,limit}.
+
+2) Frontend: limit-first bootstrap + background fill
+
+File: client/src/market/ChartOrchestrator.ts
+	•	Compute timeframe-aware limit (viewport-based):
+
+const pxPerBar = 6; // tune per theme
+const safety = 40;
+const limit = Math.min(Math.ceil(chartWidth / pxPerBar) + safety,
+  timeframe === '1m' ? 240 :
+  timeframe === '5m' ? 150 :
+  timeframe === '10m' ? 120 : 200);
+
+	•	Initial fetch (instant paint):
+
+const initial = await fetchJSON(`/api/hist/${symbol}?timeframe=${tf}&limit=${limit}&session=${session}`);
+series.setData(initial.bars.map(b => ({ time: Math.floor(b.t/1000), open:b.o, high:b.h, low:b.l, close:b.c })));
+pinRightEdge();
+
+	•	Background older-bars paging (non-blocking):
+
+let cursor = initial.meta.cursor;
+while (cursor) {
+  const page = await fetchJSON(`/api/hist/${symbol}?timeframe=${tf}&cursor=${cursor}&direction=older`);
+  mergeByTKey(page.bars);       // stable O(n) union by t
+  cursor = page.meta.cursor;
+}
+// Don't re-fit repeatedly; fit once after initial paint if needed.
+
+3) Realtime WebSocket + aggregator (live wick)
+
+Files: client/src/market/ws/MarketSocket.ts, client/src/market/agg/Aggregator.ts, client/src/hooks/useRealtimeChart.ts
+	•	Subscribe to trade ticks, not quotes.
+	•	In Aggregator:
+	•	First tick in bucket → o
+	•	Running max/min → h/l
+	•	Last tick before boundary → c
+	•	Sum sizes → v
+	•	On each tick → series.update(activeBar) (coalesced via requestAnimationFrame).
+	•	Minute bucketing (DST-safe ET): replace the floor with ET wall-time logic (use date-fns-tz) so bar boundaries match exchange time even on DST days.
+	•	On boundary cross: close bar, persist to cache, start new bar.
+
+4) Reconnect & gap fill
+	•	Heartbeat every 5s; mark degraded on timeout.
+	•	On reconnect: subscribe → backfill [lastCached+1ms, now] → resume ticks.
+	•	Reconcile last N=10 bars if server disagrees; emit only changed keys.
+
+5) Performance guardrails
+	•	Coalesce UI updates: one requestAnimationFrame flush per frame (30 FPS in background).
+	•	Put IndexedDB heavy I/O in a worker.
+	•	Cap per-key cached bars (~50k) → LRU prune.
+
+⸻
+
+PART B — Voice Coach & Bubble (cross-platform, low-latency)
+
+1) Realtime session init (fix session.type error)
+
+File: client/src/services/RealtimeClient.ts
+	•	After WS open, immediately send session update before any messages/tools:
+
+this.ws.send(JSON.stringify({
+  type: 'session.update',
+  session: {
+    type: 'default',                 // or 'conversation' per your backend
+    modalities: ['audio','text'],
+    input_audio_format: 'pcm16',
+    output_audio_format: 'pcm16',
+    voice: settings.voiceId || 'alloy',
+  }
+}));
+
+	•	Don’t send function calls until you receive the server’s session ack.
+
+2) Mic capture & playback (iOS/Safari friendly)
+
+Files: client/src/services/AudioCapture.ts, client/src/services/AudioPlayback.ts, client/src/components/coach/VoiceBubble.tsx
+	•	Start both mic and AudioContext inside a user gesture (tap/click on bubble).
+	•	Mic constraints (mobile-friendly):
+
+await navigator.mediaDevices.getUserMedia({
+  audio: {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+    channelCount: 1,
+    sampleRate: 16000, // or model native
+  }
+});
+
+	•	When starting playback on Safari, call audioContext.resume() in the same gesture block.
+
+3) VAD & barge-in (snappy)
+	•	VAD thresholds:
+	•	End-of-utterance silence: 350–450 ms
+	•	Start gate above noise floor: 50–100 ms
+	•	On user speech while TTS playing: call realtime.interrupt() and immediately duck/stop playback (set gain → 0).
+
+4) Audio format & backpressure
+	•	Normalize outbound mic stream to mono Int16 PCM at 16k or model rate.
+	•	Batch frames into 20–40 ms chunks; if outbound queue grows past N frames, drop oldest to keep latency low.
+
+5) Sleep/Wake policy (token saver)
+
+File: client/src/app/idleDetector.ts and bubble
+	•	Sleep after 30 minutes of no user input or no active chart subscription:
+	•	Stop mic capture
+	•	Close Realtime WS
+	•	Wake on:
+	•	Bubble click / PTT key
+	•	Tier-1 alert (explicit wake allowed by settings)
+
+6) Bubble UI UX
+
+File: client/src/components/coach/VoiceBubble.tsx
+	•	State badges: connected, listening, speaking, sleep, error.
+	•	Hotkeys:
+	•	Space = Press-to-Talk (keydown: start listening; keyup: stop + send)
+	•	Esc = interrupt + mute
+	•	Coalesce bubble re-renders (single state update per frame).
+	•	Optional: show last one-liner caption of assistant speech under the bubble.
+
+7) Tool call throttling
+	•	In RealtimeClient, debounce tool/function calls (chart intel, alerts) to max 4–10/sec to avoid over-talking during market bursts.
+
+⸻
+
+Acceptance Criteria
+
+Charts
+	•	Initial paint in ≤ 800 ms (cached limit bars).
+	•	The active candle moves with every trade (true tick-by-tick live wick).
+	•	On minute boundary, bar closes at the exact ET bucket, next bar opens seamlessly.
+	•	Pull network mid-bar → chart remains; after reconnect, gap is filled and previous bar matches server OHLC.
+	•	DST Sunday test: ET boundaries correct; RTH starts 09:30 ET.
+	•	Split/div overnight: once-off rescale; no mixed scales.
+
+Voice Coach / Bubble
+	•	iOS/Safari: mic + playback work after a single tap; no “context suspended” errors.
+	•	Barge-in: speaking cancels TTS immediately; coach listens with ≤ 250 ms perceived latency.
+	•	Sleep engages after 30 minutes idle; tokens stop; one click wakes cleanly.
+	•	No session.type / session-init errors in logs.
+
+⸻
+
+Notes / Guardrails
+	•	Keep all new code backwards-compatible and behind flags where appropriate:
+	•	realtimeCharts.enabled
+	•	voiceCoach.enabled
+	•	Do not break existing routes or UI contracts.
+	•	Prefer workers for heavy merges and IndexedDB I/O.
+	•	Add light telemetry: socket lifecycle, backfill duration, paint latency, VAD transitions, barge-in count.
+
+⸻
+
+Done = Mergeable PR Includes
+	•	Server route diff for /api/hist/:symbol with limit support + LRU/Redis.
+	•	Frontend changes to bootstrap with limit endpoint + background paging.
+	•	Aggregator ET bucketing fix (DST-safe) + coalesced RAF updates.
+	•	Realtime session.update addition + mic/playback gesture gating + VAD/interrupt wiring.
+	•	Updated docs: README – Real-Time Charts & Voice Coach (usage, config, troubleshooting).
+
+⸻
+
+That’s it — implement exactly as above and the app will feel indistinguishable from TOS, with a voice coach that’s responsive and solid across platforms.

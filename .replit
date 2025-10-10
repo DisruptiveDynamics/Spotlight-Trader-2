@@ -63,6 +63,10 @@ localPort = 34501
 externalPort = 3001
 
 [[ports]]
+localPort = 34529
+externalPort = 8081
+
+[[ports]]
 localPort = 35941
 externalPort = 5000
 
@@ -96,3 +100,4 @@ externalPort = 8008
 
 [nix]
 channel = "stable-25_05"
+packages = ["typescript"]

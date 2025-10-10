@@ -60,8 +60,10 @@ export function SignIn({ sessionExpired = false }: SignInProps) {
           createdAt: new Date().toISOString(),
         });
       }
-    } catch {
+    } catch (err) {
+      console.error('Demo login error:', err);
       setError('Demo login failed. Please try again.');
+    } finally {
       setLoading(false);
     }
   };

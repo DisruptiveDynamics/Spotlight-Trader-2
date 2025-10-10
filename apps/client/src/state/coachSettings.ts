@@ -31,7 +31,7 @@ async function saveSettingsToAPI(settings: CoachSettings): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings),
     });
-    
+
     if (!response.ok) {
       console.error('Failed to save settings:', response.statusText);
     }
@@ -43,11 +43,11 @@ async function saveSettingsToAPI(settings: CoachSettings): Promise<void> {
 async function loadSettingsFromAPI(): Promise<CoachSettings> {
   try {
     const response = await fetch('/api/coach/settings');
-    
+
     if (!response.ok) {
       return defaultSettings;
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error('Failed to load settings:', error);

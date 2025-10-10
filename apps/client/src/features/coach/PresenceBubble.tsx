@@ -35,27 +35,41 @@ function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = 200 * dpr;
-    canvas.height = 200 * dpr;
+    canvas.width = 300 * dpr;
+    canvas.height = 300 * dpr;
     ctx.scale(dpr, dpr);
 
-    const centerX = 100;
-    const centerY = 100;
-    const baseRadius = 40;
+    const centerX = 150;
+    const centerY = 150;
+    const baseRadius = 60;
 
     const draw = () => {
-      ctx.clearRect(0, 0, 200, 200);
+      ctx.clearRect(0, 0, 300, 300);
       timeRef.current += 0.02;
 
       const currentState = stateRef.current;
       const currentAmplitude = amplitudeRef.current;
 
       if (currentState === 'idle') {
-        const breathRadius = baseRadius + Math.sin(timeRef.current * 0.5) * 3;
-        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, breathRadius);
-        gradient.addColorStop(0, 'rgba(59, 130, 246, 0.6)');
-        gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
+        const breathRadius = baseRadius + Math.sin(timeRef.current * 0.5) * 8;
         
+        // Outer glow
+        const outerGlow = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, breathRadius + 60);
+        outerGlow.addColorStop(0, 'rgba(59, 130, 246, 0.9)');
+        outerGlow.addColorStop(0.5, 'rgba(59, 130, 246, 0.5)');
+        outerGlow.addColorStop(1, 'rgba(59, 130, 246, 0)');
+        
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, breathRadius + 60, 0, Math.PI * 2);
+        ctx.fillStyle = outerGlow;
+        ctx.fill();
+        
+        // Inner core
+        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, breathRadius);
+        gradient.addColorStop(0, 'rgba(59, 130, 246, 1)');
+        gradient.addColorStop(0.7, 'rgba(59, 130, 246, 0.9)');
+        gradient.addColorStop(1, 'rgba(59, 130, 246, 0.4)');
+
         ctx.beginPath();
         ctx.arc(centerX, centerY, breathRadius, 0, Math.PI * 2);
         ctx.fillStyle = gradient;
@@ -63,7 +77,7 @@ function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
       } else if (currentState === 'listening') {
         const points = 64;
         const variance = currentAmplitude * 15;
-        
+
         ctx.beginPath();
         for (let i = 0; i <= points; i++) {
           const angle = (i / points) * Math.PI * 2;
@@ -71,7 +85,7 @@ function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
           const radius = baseRadius + noise + currentAmplitude * 10;
           const x = centerX + Math.cos(angle) * radius;
           const y = centerY + Math.sin(angle) * radius;
-          
+
           if (i === 0) {
             ctx.moveTo(x, y);
           } else {
@@ -79,8 +93,15 @@ function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
           }
         }
         ctx.closePath();
-        
-        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, baseRadius + 20);
+
+        const gradient = ctx.createRadialGradient(
+          centerX,
+          centerY,
+          0,
+          centerX,
+          centerY,
+          baseRadius + 20
+        );
         gradient.addColorStop(0, 'rgba(34, 197, 94, 0.8)');
         gradient.addColorStop(1, 'rgba(34, 197, 94, 0)');
         ctx.fillStyle = gradient;
@@ -93,12 +114,12 @@ function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
           centerX + shimmerRadius,
           centerY + shimmerRadius
         );
-        
+
         const offset = (timeRef.current * 0.5) % 1;
         gradient.addColorStop(Math.max(0, offset - 0.3), 'rgba(168, 85, 247, 0)');
         gradient.addColorStop(offset, 'rgba(168, 85, 247, 0.8)');
         gradient.addColorStop(Math.min(1, offset + 0.3), 'rgba(168, 85, 247, 0)');
-        
+
         ctx.beginPath();
         ctx.arc(centerX, centerY, shimmerRadius, 0, Math.PI * 2);
         ctx.fillStyle = gradient;
@@ -109,18 +130,25 @@ function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
           const progress = (timeRef.current * 0.5 + i * 0.33) % 1;
           const rippleRadius = baseRadius + progress * 40;
           const opacity = 1 - progress;
-          
-          const gradient = ctx.createRadialGradient(centerX, centerY, rippleRadius - 5, centerX, centerY, rippleRadius);
+
+          const gradient = ctx.createRadialGradient(
+            centerX,
+            centerY,
+            rippleRadius - 5,
+            centerX,
+            centerY,
+            rippleRadius
+          );
           gradient.addColorStop(0, `rgba(59, 130, 246, 0)`);
           gradient.addColorStop(1, `rgba(59, 130, 246, ${opacity * 0.4})`);
-          
+
           ctx.beginPath();
           ctx.arc(centerX, centerY, rippleRadius, 0, Math.PI * 2);
           ctx.strokeStyle = gradient;
           ctx.lineWidth = 3;
           ctx.stroke();
         }
-        
+
         ctx.beginPath();
         ctx.arc(centerX, centerY, baseRadius, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(59, 130, 246, 0.6)';
@@ -150,7 +178,7 @@ function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
     <canvas
       ref={canvasRef}
       className="absolute inset-0 w-full h-full"
-      style={{ width: '200px', height: '200px' }}
+      style={{ width: '300px', height: '300px' }}
     />
   );
 }
@@ -213,11 +241,11 @@ export function PresenceBubble() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
-    
+
     if (!response.ok) {
       throw new Error(`Failed to fetch token: ${response.statusText}`);
     }
-    
+
     const data = await response.json();
     return data.token;
   };
@@ -236,13 +264,13 @@ export function PresenceBubble() {
         const token = await fetchToken();
         tokenRef.current = token;
         await client.connect(token);
-        
+
         if (client.isMicPermissionDenied()) {
           setShowFallback(true);
         }
       } catch (error) {
         console.error('Failed to connect:', error);
-        
+
         if (client.isMicPermissionDenied()) {
           setShowFallback(true);
         }
@@ -263,7 +291,7 @@ export function PresenceBubble() {
 
   const handleSendMessage = async (message: string) => {
     console.log('Text message:', message);
-    
+
     // TODO: Implement text-based API endpoint for coach
     // For now, just log the message
   };
@@ -309,12 +337,7 @@ export function PresenceBubble() {
   const showThinkingOverlay = latency > 1500 && coachState === 'thinking';
 
   if (showFallback) {
-    return (
-      <VoiceFallback
-        onSendMessage={handleSendMessage}
-        onClose={handleCloseFallback}
-      />
-    );
+    return <VoiceFallback onSendMessage={handleSendMessage} onClose={handleCloseFallback} />;
   }
 
   return (
@@ -322,16 +345,12 @@ export function PresenceBubble() {
       <div className="relative">
         <button
           onClick={handleBubbleClick}
-          className="relative w-[200px] h-[200px] rounded-full focus:outline-none focus:ring-4 focus:ring-blue-500/50 transition-transform hover:scale-105"
+          className="relative w-[300px] h-[300px] rounded-full focus:outline-none focus:ring-4 focus:ring-blue-500/50 transition-transform hover:scale-105"
           aria-label={getStateLabel()}
           aria-pressed={connectionState === 'connected'}
           role="button"
         >
-          <WaveAnimation
-            amplitude={amplitude}
-            state={coachState}
-            reducedMotion={reducedMotion}
-          />
+          <WaveAnimation amplitude={amplitude} state={coachState} reducedMotion={reducedMotion} />
 
           {connectionState === 'connected' && (
             <button
@@ -339,11 +358,21 @@ export function PresenceBubble() {
                 e.stopPropagation();
                 handleDisconnect();
               }}
-              className="absolute top-2 right-2 w-8 h-8 bg-gray-800/80 hover:bg-gray-700 rounded-full flex items-center justify-center transition-colors z-10"
+              className="absolute top-4 right-4 w-12 h-12 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center transition-all shadow-lg hover:shadow-xl z-10 border-2 border-white/30"
               aria-label="Disconnect Coach"
             >
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg
+                className="w-6 h-6 text-white"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={3}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           )}
@@ -362,23 +391,17 @@ export function PresenceBubble() {
           <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
             {getStateLabel()}
           </div>
-          
+
           {connectionState === 'connected' && latency > 0 && (
-            <div className={`text-xs font-mono ${getLatencyColor()}`}>
-              {latency}ms
-            </div>
+            <div className={`text-xs font-mono ${getLatencyColor()}`}>{latency}ms</div>
           )}
 
-          <div className="text-xs text-gray-500 dark:text-gray-400">
-            T: toggle • Esc: exit
-          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">T: toggle • Esc: exit</div>
         </div>
 
         {showTooltip && (
           <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 bg-gray-900 text-white text-sm p-3 rounded-lg shadow-xl animate-fadeIn">
-            <div className="text-center">
-              Click to talk. Tap again to mute. X to exit.
-            </div>
+            <div className="text-center">Click to talk. Tap again to mute. X to exit.</div>
             <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-3 h-3 bg-gray-900" />
           </div>
         )}

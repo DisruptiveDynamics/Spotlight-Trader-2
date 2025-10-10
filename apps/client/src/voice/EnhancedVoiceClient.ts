@@ -54,7 +54,7 @@ export class EnhancedVoiceClient {
     } catch (error) {
       console.error('Connection failed:', error);
       this.setState('error');
-      
+
       if (error instanceof Error && error.message.includes('Permission denied')) {
         this.micPermissionDenied = true;
       }
@@ -99,11 +99,11 @@ export class EnhancedVoiceClient {
       await this.vad.start();
 
       this.audioSource = this.audioContext.createMediaStreamSource(this.mediaStream);
-      
+
       this.analyserNode = this.audioContext.createAnalyser();
       this.analyserNode.fftSize = 256;
       this.analyserNode.smoothingTimeConstant = 0.8;
-      
+
       this.audioProcessor = this.audioContext.createScriptProcessor(2048, 1, 1);
 
       this.audioProcessor.onaudioprocess = (e) => {
@@ -149,11 +149,11 @@ export class EnhancedVoiceClient {
     this.ws.onmessage = async (event) => {
       try {
         const data = JSON.parse(event.data);
-        
+
         if (data.type === 'response.audio.delta' && data.delta) {
           await this.handleAudioDelta(data.delta);
         }
-        
+
         if (data.type === 'response.done' && this.lastRequestTime > 0) {
           const responseTime = Date.now() - this.lastRequestTime;
           this.notifyLatency(responseTime);
@@ -272,13 +272,13 @@ export class EnhancedVoiceClient {
       }
 
       this.analyserNode.getByteTimeDomainData(dataArray);
-      
+
       let sum = 0;
       for (let i = 0; i < dataArray.length; i++) {
         const normalized = (dataArray[i]! - 128) / 128;
         sum += normalized * normalized;
       }
-      
+
       const rms = Math.sqrt(sum / dataArray.length);
       this.notifyAmplitude(Math.min(1, rms * 5));
     }, 50);

@@ -71,10 +71,7 @@ router.put('/settings', requireUser, async (req: AuthRequest, res) => {
       await db.insert(coachProfiles).values(profileData);
     } else {
       // Update existing profile
-      await db
-        .update(coachProfiles)
-        .set(profileData)
-        .where(eq(coachProfiles.userId, userId));
+      await db.update(coachProfiles).set(profileData).where(eq(coachProfiles.userId, userId));
     }
 
     res.json({ success: true });

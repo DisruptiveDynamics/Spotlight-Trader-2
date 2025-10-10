@@ -152,6 +152,7 @@ This system enables strategy automation with AI explanations:
 A legendary, state-of-the-art voice interface featuring modern animations, robust audio handling, and complete personalization:
 
 **Core Audio Infrastructure** (`EnhancedVoiceClient.ts`):
+
 - Persistent AudioContext/MediaStream for stable connections
 - Mute via `track.enabled` (preserves stream, prevents audio capture)
 - AnalyserNode for real-time amplitude tracking (VAD/visualization)
@@ -159,6 +160,7 @@ A legendary, state-of-the-art voice interface featuring modern animations, robus
 - VoiceTokenManager for secure JWT token fetching and refresh
 
 **Modern UI Components**:
+
 - **PresenceBubble**: Canvas-based wave animations for all states (idle breathing glow, listening waveform, thinking shimmer, speaking ripple)
   - Latency badges with color-coded thresholds (green <150ms, amber <300ms, red ≥300ms)
   - Thinking overlay for slow responses
@@ -168,6 +170,7 @@ A legendary, state-of-the-art voice interface featuring modern animations, robus
 - **WaveAnimation**: Stable 60fps requestAnimationFrame loop, reduced motion support, state-driven animation styles
 
 **Personalization System**:
+
 - **Client**: Zustand store with localStorage persistence
   - SettingsPanel: Voice selection (6 OpenAI voices with preview), tone presets (balanced/friendly/tough/mentor)
   - Jargon slider (0-100): Technical terminology density
@@ -178,16 +181,19 @@ A legendary, state-of-the-art voice interface featuring modern animations, robus
   - Maps client format (0-100) to server format (0-1) for instructions
 
 **State Management**:
+
 - `voiceState.ts`: Connection/mic/error state with eventBus integration
 - `coachSettings.ts`: Settings with async save/load to API, syncs between localStorage and database
 
 **Interaction Model**:
+
 - Click bubble → fetch token → connect to voice session
 - Click again or press T → toggle microphone (mute/unmute)
 - Press Esc or click X → disconnect
 - Fallback to text input if microphone denied
 
 **Performance & Accessibility**:
+
 - Stable rAF loops using refs to avoid recreation
 - Reduced motion support via `prefers-reduced-motion` media query
 - Efficient canvas rendering with state-driven animations

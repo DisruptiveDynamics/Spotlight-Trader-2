@@ -1,0 +1,199 @@
+Got it. Here’s a tougher, no-nonsense **“red team”** prompt you can paste into your **Replit agent**. It rips out the guesswork, **instruments everything**, and fixes both the **AI voice loop** and the **live chart API** by building a reproducible harness, hard WS contracts, and ET-aligned Polygon wiring. It ends with automated proofs so we’re not trusting vibes.
+
+---
+
+## SPOTLIGHT TRADER — HARD FIX (VOICE LOOP + LIVE CHART TICKS) WITH PROBES, CONTRACTS, AND PROOFS
+
+Act as a senior real-time engineer. Previous fixes didn’t stick. We need a **deterministic diagnosis** and **permanent fixes** for:
+
+1. **Voice**: client flips **listening ↔ reconnecting**; audio/control frames mixed; backpressure not handled.
+2. **Charts**: no **current/tick** data; minute bars not updating like ToS.
+
+### Guardrails
+
+* **No secrets** in logs or code. Read from Replit **Secrets** only.
+* Small, auditable commits with messages.
+* If ambiguous, pick a sensible default and continue.
+* Do not remove features; **feature-flag** them.
+
+---
+
+## Phase 0 — Preconditions & Feature Flags (single commit)
+
+* Add `.env.example` with placeholders: `POLYGON_API_KEY`, `SESSION=RTH`, `SYMBOLS=SPY,QQQ`, `TICK_THROTTLE_MS=333`.
+* Create `config/index.ts` using **Zod** to validate envs at boot; on missing keys, app boots with **mock mode** and logs a red banner.
+* Add **feature flags** (env):
+
+  * `FF_VOICE=on|off` (default on)
+  * `FF_TICKS=on|off` (default on)
+  * `FF_MOCK=on|off` (default off; when on, simulates Polygon and voice so we can test the pipeline)
+
+Deliverable: `CONFIG_NOTES.md`.
+
+---
+
+## Phase 1 — Observability (can’t fix what we can’t see)
+
+Add a tiny **/metrics** JSON and **/health**:
+
+* `/health` → `{ ok:true, ts, voice:{wsState,lastPong,reconnects}, chart:{wsState,lastBarTs,amDriftCount}, polygon:{wsState,lastTradeTs,lastAMts}, build:{commit} }`
+* `/metrics` increments counters: `ws_reconnects_voice`, `ws_reconnects_chart`, `stt_first_partial_ms`, `tts_first_audio_ms`, `chart_intra_updates_per_min`, `am_reconcile_drift`.
+* Add **morgan** logs and **error middleware** (never crash → never 502).
+
+Deliverable: endpoints live; `OBS_NOTES.md`.
+
+---
+
+## Phase 2 — WebSocket **Contracts** (one page, one schema)
+
+Create `contracts/ws.md` and enforce it:
+
+* **Route A (voice)** `/ws/voice`
+
+  * **Text** frames → JSON control: `{type:"partialTranscript"|"finalTranscript"|"toolResult"|"ping"|"pong"|...}`
+  * **Binary** frames → **audio** (PCM16/Opus). **Never JSON here.**
+* **Route B (feed)** `/ws/feed`
+
+  * **Text** frames only → JSON events: `{evt:"intraBarUpdated"|"minuteClosed"|"minuteOfficial", payload:{...}}`
+  * **No binary** ever.
+* Both sides implement: **ping every 5s**; consider dead if no `pong` in 10s.
+
+Deliverables: `contracts/ws.md`, server guards that reject bad frames with close code **1003** and a log.
+
+---
+
+## Phase 3 — Voice: fix the loop (binary vs text, backpressure, barge-in)
+
+**Client**
+
+* `ws = new WebSocket(VOICE_URL); ws.binaryType = "arraybuffer"`.
+* `onmessage`:
+
+  * if **ArrayBuffer/Blob** → `playTtsChunk(u8)` (DO NOT `JSON.parse`).
+  * if **string** → `JSON.parse` and branch by `type`.
+* **Mic**: mono **16 kHz PCM16**, **20–40 ms** frames.
+
+  * Before send: if `ws.bufferedAmount > 256*1024`, await 20 ms (backpressure).
+  * If `FF_MOCK=on`, generate synthetic frames to exercise pipeline.
+* **Heartbeat**: send `{"type":"ping"}` every 5s; reconnect if no `pong` in 10s.
+* **Barge-in**: when mic detects speech while TTS is playing, **cancel TTS** (client stops audio + sends `{"type":"cancelTTS"}`).
+
+**Server (voice)**
+
+* On message:
+
+  * If JSON: handle `ping` → `pong`, `cancelTTS` → stop encoder, etc.
+  * If **binary**: route to STT; emit partials/finals out as JSON.
+* Stream TTS in **small chunks** to avoid client buffer overflow.
+* Enforce payload size limits; log code **1009** closes (too big).
+
+Deliverables: `VOICE_PIPELINE.md`, latency probes (`stt_first_partial_ms`, `tts_first_audio_ms`).
+
+---
+
+## Phase 4 — Polygon: **ET-aligned ticks + AM reconciliation**
+
+**Server (feed)**
+
+* **REST backfill**: `/v2/aggs/ticker/{sym}/range/1/minute/{from}/{to}?adjusted=true` with `next_url` paging.
+* **WS subscribe**: **`T.SYMBOLS`** (trades) + **`AM.SYMBOLS`** (official minute).
+* Rolling **tick engine** per symbol (ET aligned):
+
+  ```
+  minute window: [start,end)
+  state: {o,h,l,c,v, vnum, vden, lastEmit}
+  on T: update o/h/l/c/v, throttle emit "intraBarUpdated" every 300–400ms
+  on boundary: emit "minuteClosed"
+  on AM for closed minute: if drift > 1 tick or volume delta big → overwrite + increment amReconcileDrift
+  ```
+* **Reconnect** with backoff; after reconnect, **gap-fill** via REST from last closed bar to now.
+* **Session**: `SESSION=RTH|RTH_EXT` filter applied consistently to REST and WS. Timezone fixed to **America/New_York**.
+
+**Client (feed)**
+
+* Connect to `/ws/feed`; **text JSON only**; update chart on `intraBarUpdated` (replace last) & `minuteClosed` (append). Throttle re-render to 10–15 fps.
+* No binary parsing in the feed client.
+
+Deliverables: `POLYGON_NOTES.md` (symbols, session policy, ET handling), logs show steady `intraBarUpdated` (~2–3/sec) and minute closures.
+
+---
+
+## Phase 5 — CSP & Ports sanity
+
+* Express binds **0.0.0.0:(PORT||8080)**.
+* **Helmet** CSP with `connect-src` including our WS origins and `wss://socket.polygon.io`. Remove any stray `meta http-equiv="Content-Security-Policy">`.
+* Vite dev proxy (if applicable) routes `/api` to the Express port.
+
+Deliverable: `SECURITY_NOTES.md`.
+
+---
+
+## Phase 6 — Harnesses (prove it or it didn’t happen)
+
+**Voice harness** `tests/voice/harness.ts`:
+
+* Feeds 10 short wavs (or generated audio) → ASR → LLM stub → TTS; records:
+
+  * `stt_first_partial_ms`, `tts_first_audio_ms`, `reconnects`, dropped frames.
+* Asserts: **no Blob/JSON parse errors**, **no backpressure spam**, **reconnects ≤ 1** over 2 minutes.
+
+**Chart harness** `tests/feed/harness.ts`:
+
+* With `FF_MOCK=on`, simulate Polygon ticks/AM for 2 symbols; expect:
+
+  * `intraBarUpdated` ≥ 2/sec,
+  * `minuteClosed` per minute,
+  * `amReconcileDrift` ≤ 1 across the run,
+  * bars strictly increasing by `t`.
+
+Deliverable: `HARNESS_REPORT.md` (numbers + pass/fail).
+
+---
+
+## Phase 7 — Verification & Report
+
+Write `VERIFY.md` with:
+
+```bash
+# Ports
+ss -ltnp | grep -E ':(8080|3000|5173)' || true
+
+# Health & metrics
+curl -sf http://localhost:8080/health | jq
+curl -sf http://localhost:8080/metrics | jq
+
+# History check
+curl -sf "http://localhost:8080/api/history?symbol=QQQ&limit=50" | jq '.bars[0], .bars[-1]'
+
+# WebSocket (DevTools):
+#  - /ws/feed: text messages only; intraBarUpdated ~ every 300–400ms; minuteClosed on boundary
+#  - /ws/voice: mixed text/binary; NO JSON.parse errors; pings/pongs steady
+
+# Run harnesses
+npm run test:voice-harness
+npm run test:feed-harness
+```
+
+Add two **DevTools screenshots** showing:
+
+* **No 500/502**, **no `"[object Blob] is not valid JSON"`**, steady WS.
+* A forming candle visibly updating multiple times per second and finalizing each minute.
+
+**Final report**: `FIX_REPORT.md` with root causes, diffs, and P0/P1 follow-ups.
+
+---
+
+## Acceptance (self-check)
+
+* `/health` returns 200; `/metrics` shows non-zero pings/pongs and intra-updates.
+* **Voice**: stays connected ≥5 minutes; **no** Blob/JSON parse errors; **barge-in** cancels TTS; backpressure warnings are rare/absent.
+* **Charts** (or mock): `intraBarUpdated` ≥ **2/sec**; `minuteClosed` exactly per minute; `amReconcileDrift` ~ 0; bars monotonic by `t`.
+* CSP blocks nothing we need (sockets OK); no 502/500 spam.
+
+**End of prompt.**
+
+---
+
+### Tip
+
+After it runs, share the generated `VERIFY.md` / `HARNESS_REPORT.md` numbers. If anything still misbehaves, those probes will make the remaining bug obvious (e.g., timestamp unit mismatch, wrong WS origin, or audio chunk size).

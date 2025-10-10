@@ -1,5 +1,4 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { AuthGate } from './features/auth/AuthGate';
 import { LatencyHUD } from './components/LatencyHUD';
 import { SignalDensityControl } from './components/SignalDensityControl';
 import { AccessibilityControls } from './components/AccessibilityControls';
@@ -112,7 +111,7 @@ function App() {
   const opacity = focusManager.getNonPriceOpacity();
 
   return (
-    <AuthGate>
+    <>
       <Splash isVisible={showSplash} />
       <div className="min-h-screen bg-gray-900 text-white flex flex-col">
         <header
@@ -239,7 +238,7 @@ function App() {
           </Suspense>
         )}
       </div>
-    </AuthGate>
+    </>
   );
 }
 

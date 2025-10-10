@@ -35,32 +35,32 @@ function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = 300 * dpr;
-    canvas.height = 300 * dpr;
+    canvas.width = 200 * dpr;
+    canvas.height = 200 * dpr;
     ctx.scale(dpr, dpr);
 
-    const centerX = 150;
-    const centerY = 150;
-    const baseRadius = 60;
+    const centerX = 100;
+    const centerY = 100;
+    const baseRadius = 40;
 
     const draw = () => {
-      ctx.clearRect(0, 0, 300, 300);
+      ctx.clearRect(0, 0, 200, 200);
       timeRef.current += 0.02;
 
       const currentState = stateRef.current;
       const currentAmplitude = amplitudeRef.current;
 
       if (currentState === 'idle') {
-        const breathRadius = baseRadius + Math.sin(timeRef.current * 0.5) * 8;
+        const breathRadius = baseRadius + Math.sin(timeRef.current * 0.5) * 5;
         
         // Outer glow
-        const outerGlow = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, breathRadius + 60);
+        const outerGlow = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, breathRadius + 40);
         outerGlow.addColorStop(0, 'rgba(59, 130, 246, 0.9)');
         outerGlow.addColorStop(0.5, 'rgba(59, 130, 246, 0.5)');
         outerGlow.addColorStop(1, 'rgba(59, 130, 246, 0)');
         
         ctx.beginPath();
-        ctx.arc(centerX, centerY, breathRadius + 60, 0, Math.PI * 2);
+        ctx.arc(centerX, centerY, breathRadius + 40, 0, Math.PI * 2);
         ctx.fillStyle = outerGlow;
         ctx.fill();
         
@@ -178,7 +178,7 @@ function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
     <canvas
       ref={canvasRef}
       className="absolute inset-0 w-full h-full"
-      style={{ width: '300px', height: '300px' }}
+      style={{ width: '200px', height: '200px' }}
     />
   );
 }
@@ -345,7 +345,7 @@ export function PresenceBubble() {
       <div className="relative">
         <button
           onClick={handleBubbleClick}
-          className="relative w-[300px] h-[300px] rounded-full focus:outline-none focus:ring-4 focus:ring-blue-500/50 transition-transform hover:scale-105"
+          className="relative w-[200px] h-[200px] rounded-full focus:outline-none focus:ring-4 focus:ring-blue-500/50 transition-transform hover:scale-105"
           aria-label={getStateLabel()}
           aria-pressed={connectionState === 'connected'}
           role="button"

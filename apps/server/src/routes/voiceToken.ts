@@ -18,6 +18,15 @@ export function setupVoiceTokenRoute(app: Express) {
     res.json({ voices: AVAILABLE_VOICES });
   });
 
+  // GET /api/voice/token - Generate demo voice session token (no auth required)
+  app.get('/api/voice/token', (req, res) => {
+    if (req.query.demo === 'true') {
+      const demoToken = signVoiceToken('demo-user', 60);
+      return res.json({ token: demoToken });
+    }
+    res.status(400).json({ error: 'Demo mode required for GET requests' });
+  });
+
   // POST /api/voice/token - Generate voice session token
   app.post('/api/voice/token', requireUser, (req: AuthRequest, res) => {
     const userId = req.user!.userId;

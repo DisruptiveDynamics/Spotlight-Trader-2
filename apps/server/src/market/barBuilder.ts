@@ -73,11 +73,6 @@ export class BarBuilder {
 
     state.lastTickTs = tick.ts;
 
-    // Debug logging
-    if (symbol === 'SPY' && Math.random() < 0.1) { // Log 10% of SPY ticks
-      console.log(`🔍 DEBUG: tick.ts=${tick.ts} (${new Date(tick.ts).toISOString()}), bar_end=${state.bar_end} (${new Date(state.bar_end).toISOString()}), diff=${tick.ts - state.bar_end}ms`);
-    }
-
     if (tick.ts >= state.bar_end) {
       this.finalizeBar(symbol, state);
 
@@ -121,7 +116,6 @@ export class BarBuilder {
       volume: state.currentBar.volume,
     };
 
-    console.log(`📊 BAR FINALIZED: ${symbol} | O:${finalizedBar.open} H:${finalizedBar.high} L:${finalizedBar.low} C:${finalizedBar.close} V:${finalizedBar.volume} | seq:${seq}`);
     eventBus.emit(`bar:new:${symbol}:1m` as const, finalizedBar);
   }
 

@@ -112,6 +112,25 @@ Focuses on professional ergonomics with zero-lag interactions:
 
 ## Recent Changes (October 2025)
 
+### Production Readiness Complete (October 10, 2025)
+- **✅ Demo Mode Voice Token**: Added GET `/api/voice/token?demo=true` endpoint for unauthenticated voice access
+  - Issues demo tokens without requiring authentication for demo/preview mode
+  - Keeps production POST endpoint with full authentication for regular users
+  - 60-second token expiry with proper scoping
+- **✅ Live Market Data Verified**: Polygon WebSocket streaming thousands of ticks successfully during market hours
+  - Bars finalize correctly at minute boundaries with accurate OHLCV data
+  - DST-safe bucketing working as designed
+  - No data loss or timing issues detected
+- **✅ Debug Logging Cleanup**: Removed all temporary debug logs for production
+  - Eliminated tick timestamp debug sampling
+  - Removed bar finalization console logs
+  - System ready for production deployment
+- **📊 System Status**: All core features operational and verified:
+  - Real-time market data streaming ✅
+  - Voice AI coach with AudioWorklet optimization ✅  
+  - Rule-based alerts engine ✅
+  - Session management and auth ✅
+
 ### Voice Assistant & Market Data Fixes (October 10, 2025)
 - **Server Port Standardization**: Changed server from hardcoded port 8000 to `process.env.PORT || 8080` for consistency with Vite proxy
 - **Vite Proxy Update**: Updated all Vite proxy targets (`/api`, `/stream`, `/ws`) from localhost:8000 to localhost:8080

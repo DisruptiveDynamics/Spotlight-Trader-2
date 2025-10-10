@@ -4,6 +4,7 @@ export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   APP_ORIGIN: z.string().url(),
   ADMIN_ORIGIN: z.string().url(),
+  ADMIN_EMAIL: z.string().email().optional(),
   OPENAI_API_KEY: z.string().min(1),
   POLYGON_API_KEY: z.string().min(1),
   DATABASE_URL: z.string().url(),

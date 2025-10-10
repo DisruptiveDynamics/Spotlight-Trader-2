@@ -21,6 +21,7 @@ import { requireUser } from './middleware/requireUser';
 import { rateLimit } from './middleware/rateLimit';
 import { startEodScheduler } from './journals/eod';
 import { initializeLearningLoop } from './learning/loop';
+import { loadFlags } from './flags/store';
 
 const env = validateEnv(process.env);
 const app = express();
@@ -55,6 +56,7 @@ app.use('/api/import', requireUser, importRouter);
 
 initializeLearningLoop();
 startEodScheduler();
+loadFlags();
 
 const PORT = 8000;
 

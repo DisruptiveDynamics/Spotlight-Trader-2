@@ -12,6 +12,7 @@ import { Splash } from './components/Splash';
 import { MultiChart } from './features/chart/MultiChart';
 import { Toolbar } from './features/chart/Toolbar';
 import { focusManager } from './services/FocusManager';
+import { startFlagSync, stopFlagSync } from './state/flags';
 import type { InsightContext } from '@spotlight/shared';
 
 function App() {
@@ -19,6 +20,12 @@ function App() {
   const [explainPanelOpen, setExplainPanelOpen] = useState(false);
   const [explainContext, setExplainContext] = useState<InsightContext | null>(null);
   const [showSplash, setShowSplash] = useState(true);
+
+  // Initialize feature flag syncing
+  useEffect(() => {
+    startFlagSync();
+    return () => stopFlagSync();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = focusManager.subscribe(setFocusMode);

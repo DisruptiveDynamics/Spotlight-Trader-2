@@ -1,30 +1,21 @@
 /**
  * Feature flags for safe rollouts
  * Toggle features at runtime without code changes
+ * 
+ * @deprecated Use flags/store.ts for new code. This file maintains backward compatibility.
  */
 
-export const flags = {
-  enableRiskGovernorV2: false,
-  enableExplainV2: false,
-  enableTapePeek: false,
-  enableLearningLoop: false,
-  enableBacktest: true,
-  enableGoldenTests: true,
-} as const;
+export { getFlags, updateFlags, loadFlags, resetFlags, isEnabled } from './flags/store';
+export type { Flags } from './flags/store';
 
-export type FeatureFlag = keyof typeof flags;
-
-/**
- * Check if a feature flag is enabled
- */
-export function isEnabled(flag: FeatureFlag): boolean {
-  return flags[flag];
-}
+// Backward compatibility exports
+export type FeatureFlag = keyof import('./flags/store').Flags;
 
 /**
  * Execute a function only if the feature flag is enabled
  */
 export function ifFlag<T>(flag: FeatureFlag, fn: () => T, fallback?: () => T): T | undefined {
+  const { isEnabled } = require('./flags/store');
   if (isEnabled(flag)) {
     return fn();
   }
@@ -33,7 +24,9 @@ export function ifFlag<T>(flag: FeatureFlag, fn: () => T, fallback?: () => T): T
 
 /**
  * Get all feature flags
+ * @deprecated Use getFlags() from flags/store.ts
  */
-export function getAllFlags(): Record<FeatureFlag, boolean> {
-  return { ...flags };
+export function getAllFlags() {
+  const { getFlags } = require('./flags/store');
+  return getFlags();
 }

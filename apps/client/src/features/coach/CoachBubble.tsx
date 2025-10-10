@@ -44,10 +44,14 @@ export function CoachBubble() {
   }, []);
 
   const fetchToken = async (): Promise<string> => {
-    const response = await fetch('http://localhost:4000/api/voice/token', {
+    const response = await fetch('/api/voice/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
     });
+    if (!response.ok) {
+      throw new Error(`Token fetch failed: ${response.status}`);
+    }
     const data = await response.json();
     return data.token;
   };

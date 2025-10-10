@@ -19,6 +19,7 @@ import { adminRouter } from './routes/admin';
 import authRouter from './routes/auth';
 import exportRouter from './routes/export';
 import importRouter from './routes/import';
+import coachSettingsRouter from './routes/coachSettings';
 import { requireUser } from './middleware/requireUser';
 import { rateLimit } from './middleware/rateLimit';
 import { startEodScheduler } from './journals/eod';
@@ -57,6 +58,7 @@ app.use('/api/backtest', requireUser, rateLimit(), backtestRouter);
 app.use('/api/signals', requireUser, signalsRouter);
 app.use('/api/export', requireUser, exportRouter);
 app.use('/api/import', requireUser, importRouter);
+app.use('/api/coach', requireUser, coachSettingsRouter);
 
 initializeLearningLoop();
 startEodScheduler();

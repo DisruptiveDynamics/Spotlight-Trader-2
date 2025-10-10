@@ -12,13 +12,14 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
-  const { settings, updateSettings, resetSettings } = useCoachSettings();
+  const { settings, updateSettings, resetSettings, loadSettings } = useCoachSettings();
   const [voices, setVoices] = useState<Voice[]>([]);
   const [isLoadingVoices, setIsLoadingVoices] = useState(false);
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
 
   useEffect(() => {
     fetchVoices();
+    loadSettings();
   }, []);
 
   const fetchVoices = async () => {

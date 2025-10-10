@@ -11,8 +11,9 @@ export interface CoachSettings {
 
 interface CoachSettingsState {
   settings: CoachSettings;
-  updateSettings: (partial: Partial<CoachSettings>) => void;
-  resetSettings: () => void;
+  updateSettings: (partial: Partial<CoachSettings>) => Promise<void>;
+  resetSettings: () => Promise<void>;
+  loadSettings: () => Promise<void>;
 }
 
 const defaultSettings: CoachSettings = {
@@ -23,16 +24,54 @@ const defaultSettings: CoachSettings = {
   decisiveness: 50,
 };
 
+async function saveSettingsToAPI(settings: CoachSettings): Promise<void> {
+  try {
+    const response = await fetch('/api/coach/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    
+    if (!response.ok) {
+      console.error('Failed to save settings:', response.statusText);
+    }
+  } catch (error) {
+    console.error('Failed to save settings:', error);
+  }
+}
+
+async function loadSettingsFromAPI(): Promise<CoachSettings> {
+  try {
+    const response = await fetch('/api/coach/settings');
+    
+    if (!response.ok) {
+      return defaultSettings;
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to load settings:', error);
+    return defaultSettings;
+  }
+}
+
 export const useCoachSettings = create<CoachSettingsState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       settings: defaultSettings,
-      updateSettings: (partial) =>
-        set((state) => ({
-          settings: { ...state.settings, ...partial },
-        })),
-      resetSettings: () =>
-        set({ settings: defaultSettings }),
+      updateSettings: async (partial) => {
+        const newSettings = { ...get().settings, ...partial };
+        set({ settings: newSettings });
+        await saveSettingsToAPI(newSettings);
+      },
+      resetSettings: async () => {
+        set({ settings: defaultSettings });
+        await saveSettingsToAPI(defaultSettings);
+      },
+      loadSettings: async () => {
+        const settings = await loadSettingsFromAPI();
+        set({ settings });
+      },
     }),
     {
       name: 'coach-settings-storage',

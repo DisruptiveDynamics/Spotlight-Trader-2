@@ -1,0 +1,142 @@
+Here’s a single, focused **troubleshooting + fix-it** prompt you can paste into your **Replit agent**. It will diagnose and **permanently fix**:
+(a) charts not showing live/tick data, and (b) the **AI voice** loop (listening → reconnecting). It enforces robust WebSocket handling, Polygon tick wiring, and voice backpressure/heartbeat—then proves it with logs and screenshots.
+
+---
+
+## SPOTLIGHT TRADER — FIX LIVE CHART TICKS + VOICE RECONNECT LOOP (ONCE AND FOR ALL)
+
+Act as a senior real-time engineer. Our issues:
+
+1. **Charts** don’t show current or tick-by-tick data.
+2. **AI voice** activates once, then loops between **listening ↔ reconnecting**.
+
+### Guardrails
+
+* Do **not** expose secrets; read from Replit **Secrets** only.
+* Small, auditable commits with clear messages.
+* If something’s ambiguous, pick a sensible default and keep moving.
+
+### Deliverables
+
+* `DIAGNOSIS.md` — root causes with evidence.
+* Code fixes (see sections below).
+* `VERIFY.md` — commands + outputs + DevTools screenshots that prove it works.
+* Optional: `SECURITY_NOTES.md` if CSP/connect-src adjusted.
+
+---
+
+## Step 1 — Baseline & Plan (10 lines max)
+
+* Print **PORT/host binding**, client **API base**, WebSocket endpoints used by **voice** and **charts**.
+* Show where we subscribe to Polygon (`T.SYMBOL`, `AM.SYMBOL`) and where we broadcast to the browser (`/ws`).
+* Note any console errors: **Blob parsed as JSON**, **backpressure**, **502/500**, **CSP connect-src**.
+
+---
+
+## Step 2 — Fix server runtime & wiring
+
+1. **Bind correctly for Replit**:
+
+```ts
+// server/index.ts
+const port = Number(process.env.PORT ?? 8080);
+const host = "0.0.0.0";
+app.listen(port, host, () => console.log(`API on http://${host}:${port}`));
+```
+
+2. **Health route**: `GET /health -> { ok:true, ts:Date.now() }`.
+3. **Error middleware** (logs error, returns 500 JSON; does not crash).
+4. **CSP/helmet**: ensure `connect-src` includes **our WS** origin and `wss://socket.polygon.io`.
+
+---
+
+## Step 3 — Polygon real-time: REST backfill + tick engine
+
+* **Backfill**: `/v2/aggs/.../range/1/minute?adjusted=true` with `next_url` paging.
+* **WebSocket** to Polygon: subscribe **`T.SYMBOL`** (trade ticks) AND **`AM.SYMBOL`** (official 1-minute).
+* **BarStore**:
+
+  * Merge REST backfill + ticks (ET timezone).
+  * Emit `intraBarUpdated` **~2–3×/sec** while minute is open; emit `minuteClosed` exactly on boundary.
+  * When `AM` for the closed minute arrives, **reconcile** (overwrite if drift > 1 tick or big volume delta).
+* **RTH vs RTH+EXT**: one env `SESSION=RTH|RTH_EXT`; apply same filter to REST + WS.
+* **Reconnect** with backoff; on reconnect, **gap-fill** missing minutes with REST.
+
+---
+
+## Step 4 — Browser chart socket (stable & JSON-only)
+
+* The browser connects ONLY to **our** WS (`/ws`) and receives **JSON** events:
+
+  * `intraBarUpdated { symbol, bar }`
+  * `minuteClosed { symbol, bar }`
+  * `minuteOfficial { … }` (optional)
+* No binary parsing in chart client. Throttle renders to ~10–15 fps.
+* Client API base: use relative `/api` or `VITE_API_BASE`, never hardcoded localhost.
+
+---
+
+## Step 5 — Voice WebSocket: binary audio vs JSON control (no more loops)
+
+* **Client WS**: `ws.binaryType = "arraybuffer"`.
+* **onmessage** handler **branches by type**:
+
+  * If **ArrayBuffer/Blob** → push to audio sink (TTS chunk). **Do not JSON.parse**.
+  * If **string** → `JSON.parse` into control events (`partialTranscript`, `finalTranscript`, `toolResult`, `pong`, etc.).
+* **Mic streaming**: mono **16 kHz PCM16**, frame **20–40 ms**, backpressure guard:
+
+```ts
+// if ws.bufferedAmount > 256*1024, await 20ms before send
+```
+
+* **Heartbeat**:
+
+  * Client sends `{"type":"ping"}` every 5s; track `lastPong`.
+  * Server responds with `{"type":"pong"}`. If no pong in 10s → close and reconnect.
+* **Barge-in**: when user speaks while TTS is playing, cancel pending TTS chunks immediately.
+
+---
+
+## Step 6 — CSP & ports sanity
+
+* Ensure CSP `connect-src` allows:
+
+  * `wss://socket.polygon.io`
+  * `wss://<your-app-domain>/ws` (and `ws://` for local dev)
+  * your HTTP API origin
+* Verify client → server proxy (if Vite dev) routes `/api/*` to the Express port.
+
+---
+
+## Step 7 — Verification (must automate)
+
+Run and capture outputs into `VERIFY.md`:
+
+```bash
+# Ports
+ss -ltnp | grep -E ':(8080|3000|5173)' || true
+
+# Health & APIs
+curl -sfv http://localhost:8080/health
+curl -sfv http://localhost:8080/api/flags || true
+curl -sfv http://localhost:8080/api/market/status || true
+```
+
+* **Voice**: speak 10s; confirm **no** `"[object Blob] is not valid JSON"` and **no** “dropping oldest frame” spam (rare under load OK). Show pings/pongs stable, reconnects = 0.
+* **Charts** (market open): confirm forming bar **updates ≥2×/sec**; at minute close, our bar equals official `AM` (log mismatches=0). Include DevTools screenshots: **no 500/502**, **no Blob/JSON errors**.
+
+---
+
+## Step 8 — Acceptance (self-check)
+
+* Express listens on **0.0.0.0:PORT** and `/health` is 200.
+* Browser WS stays connected ≥5 min (pings/pongs OK).
+* Voice: first turn works; later turns do **not** loop; barge-in cancels TTS quickly.
+* Charts: steady intra-minute updates and clean minute close reconciliation.
+* Console is free of Blob/JSON parse errors and 500/502s.
+
+**End of prompt.**
+
+---
+
+If you want, I can also give you a tiny AudioWorklet + PCM16 encoder snippet to drop latency even further, but this prompt will get the agent to stabilize both the chart ticks and the voice loop right away.

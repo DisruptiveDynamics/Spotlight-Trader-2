@@ -254,9 +254,15 @@ export class EnhancedVoiceClient {
       try {
         // Check if message is binary (Blob/ArrayBuffer) or text (JSON)
         if (event.data instanceof Blob) {
-          // Binary audio data - convert to base64 and handle as audio delta
+          // Binary audio data - convert to base64 safely for large blobs
           const arrayBuffer = await event.data.arrayBuffer();
-          const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = '';
+          const chunkSize = 0x8000; // 32KB chunks to avoid stack overflow
+          for (let i = 0; i < bytes.length; i += chunkSize) {
+            binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)));
+          }
+          const base64 = btoa(binary);
           await this.handleAudioDelta(base64);
           return;
         }

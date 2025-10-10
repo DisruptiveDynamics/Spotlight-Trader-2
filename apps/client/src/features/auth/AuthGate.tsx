@@ -10,6 +10,11 @@ export function AuthGate({ children }: AuthGateProps) {
   const { user, loading, setUser, setLoading } = useAuthStore();
 
   useEffect(() => {
+    if (user) {
+      setLoading(false);
+      return;
+    }
+
     const checkAuth = async () => {
       try {
         const res = await fetch('/api/auth/me', {
@@ -29,7 +34,7 @@ export function AuthGate({ children }: AuthGateProps) {
     };
 
     checkAuth();
-  }, [setUser]);
+  }, [user, setUser, setLoading]);
 
   if (loading) {
     return (

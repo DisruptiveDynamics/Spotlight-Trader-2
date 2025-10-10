@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { useAuthStore } from '../../stores/authStore';
 
 export function SignIn() {
+  const { setUser } = useAuthStore();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -45,7 +47,15 @@ export function SignIn() {
         throw new Error('Demo login failed');
       }
 
-      window.location.reload();
+      const data = await res.json();
+      
+      if (data.user) {
+        setUser({
+          userId: data.user.id,
+          email: data.user.email,
+          createdAt: new Date().toISOString(),
+        });
+      }
     } catch (err) {
       setError('Demo login failed. Please try again.');
       setLoading(false);

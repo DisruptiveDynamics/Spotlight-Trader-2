@@ -1,0 +1,128 @@
+You are a staff performance + reliability engineer. Optimize Spotlight Trader for low latency, high FPS, and safe rollouts. Keep TypeScript strict, small commits.
+
+GOALS
+- Feature flags with kill-switches and simple experiments
+- Client performance: code-splitting, prefetch, rAF scheduling, backpressure
+- Server performance: SSE/WS backpressure + retry/backoff; pooling hooks
+- Real telemetry: web vitals, FPS, Tick→Wick p95, SSE reconnects
+- Admin Ops Console (user-scoped access) with live metrics & flags toggles
+- No vendor lock; works fully in Replit
+
+───────────────────────────────────────────────────────────────────────────────
+1) Feature Flags (server + client)
+
+SERVER  apps/server/src/flags/store.ts
+- export interface Flags { enableExplainV2:boolean; enableTapePeek:boolean; governorTight:boolean; chartMaxFps:number; }
+- In-memory store with defaults:
+  const defaults: Flags = { enableExplainV2:false, enableTapePeek:false, governorTight:false, chartMaxFps:60 };
+- Optional persistence: if DATABASE_URL present, store a small `feature_flags` table (key text pk, value jsonb).
+- export getFlags(userId?:string): Flags (global for now); export updateFlags(patch:Partial<Flags>).
+
+ROUTES  apps/server/src/routes/flags.ts
+- GET /api/flags -> Flags
+- POST /api/flags (admin only) body: Partial<Flags> -> updateFlags()
+- Middleware `requireAdmin` (see #5) protects POST.
+
+CLIENT  apps/client/src/state/flags.ts
+- zustand store for flags; `syncFlags()` fetches /api/flags on boot and every 30s.
+- Use `chartMaxFps` to clamp UI rAF loop in ChartView/MultiChart.
+
+───────────────────────────────────────────────────────────────────────────────
+2) Client Performance Pack
+
+apps/client/src/perf/scheduler.ts
+- export schedule(fn) that coalesces DOM writes to `requestAnimationFrame`.
+- export limitFps(maxFps:number) -> returns wrapper that ensures ≤ max updates/sec.
+
+Wire into ChartView/MultiChart:
+- All `series.update` calls go through `schedule(limitFps(flags.chartMaxFps)(update))`.
+- Debounce indicator recompute to 1/frame; never run indicators multiple times per frame.
+
+Code-splitting:
+- Lazy-load heavy panes: Chart, Journal editor, Backtest panel, TapePeek.
+- Prefetch routes when links come into viewport (use `requestIdleCallback`).
+
+Resource hints:
+- Add `<link rel="preconnect">` for Polygon and OpenAI hosts.
+- Add `<meta http-equiv="origin-trial">` placeholder comments (no changes).
+
+Web Vitals:
+- apps/client/src/perf/vitals.ts → capture CLS, LCP, FID, INP via `web-vitals` and POST to `/api/metrics/web-vitals`.
+
+FPS Probe:
+- apps/client/src/perf/fps.ts → lightweight rolling FPS (1s window) and expose `useFPS()` hook for HUD.
+
+───────────────────────────────────────────────────────────────────────────────
+3) Server Runtime Tuning
+
+Backpressure-safe SSE:
+- In SSE stream handler, buffer outbound messages per client up to N=500; if overflow → drop oldest microbars (not final bars), increment metric `sse_dropped_events_total`.
+- Heartbeat every 20s; exponential backoff hint header: `X-Reconnect-After: 1000|2000|4000…`.
+
+WS proxy:
+- Limit 3 concurrent per user; disconnect LRU when 4th arrives.
+- Per-message size cap (e.g., 256kb); log and drop larger ones.
+
+Pooling:
+- If DATABASE_URL present, ensure Neon Pool is used (existing pool.ts); set `idleTimeout=10s`, `max=10`.
+
+───────────────────────────────────────────────────────────────────────────────
+4) Metrics & Logs (extend existing)
+
+apps/server/src/metrics/registry.ts
+- Add counters/histograms:
+  - sse_reconnects_total
+  - sse_dropped_events_total
+  - tick_to_wick_ms (histogram)
+  - web_vitals_inp_ms / cls / lcp (gauges)
+  - fps_client_avg (gauge)
+- GET /metrics already exists; extend output.
+
+apps/server/src/routes/metrics.ts
+- POST /api/metrics/vitals → { inp, lcp, cls } (per user)
+- POST /api/metrics/fps → { fps } (rolling avg)
+
+Logging:
+- Ensure pino logger includes `req.id` and `userId` when available; tag market events with `seq` and `symbol`.
+
+───────────────────────────────────────────────────────────────────────────────
+5) Admin Ops Console (protected)
+
+Access rule:
+- Add env `ADMIN_EMAIL` (single email allowed) or `ADMIN_USER_ID`.
+- middleware/requireAdmin.ts checks `req.user.email === ADMIN_EMAIL` (or ID).
+
+ROUTES
+- GET /api/admin/snapshot → { uptime, mem, cpu(loadavg 1m), connections:{ sse, ws }, flags, slo:{ tickToWickP95, rttP95 } }
+- POST /api/flags (from #1) → toggle flags and return updated set.
+
+CLIENT  apps/client/src/features/admin/AdminConsole.tsx
+- Route `/admin` (hide link unless `me.email === ADMIN_EMAIL`).
+- Panels:
+  - Flags toggles (enableExplainV2, enableTapePeek, governorTight) + slider for `chartMaxFps`.
+  - Live metrics: SSE reconnects, dropped events, Tick→Wick p95, client FPS.
+  - Buttons:
+    • “Flush SSE buffers”
+    • “Kill all WS” (server route to disconnect all, admin-only)
+- Poll snapshot every 5s.
+
+───────────────────────────────────────────────────────────────────────────────
+6) Resilience / Recovery
+
+SSE reconnect strategy (client):
+- Initial delay 1000ms; exponential backoff to max 10s; jitter ±20%.
+- If backfill gap detected on reconnect (seq jump), call `/api/history?since=<lastBarEnd>` to patch candles.
+
+Error boundaries:
+- Add React error boundary around Chart panes; render a “Reload chart” button that re-mounts the pane.
+
+───────────────────────────────────────────────────────────────────────────────
+7) Tests
+
+- flags.test.ts: POST /api/flags toggles & persists.
+- perf/scheduler.test.ts: limitFps clamps to <= max.
+- admin/guard.test.ts: non-admin gets 403 on /api/admin/*.
+- metrics.test.ts: posting vitals/fps updates gauges.
+
+Docs:
+- README “Performance & Flags”: how to use Admin Console, what each flag does, perf knobs (FPS, governorTight).

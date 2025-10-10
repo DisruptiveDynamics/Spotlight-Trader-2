@@ -124,9 +124,10 @@ router.post('/demo', async (req, res) => {
 
     res.cookie('sid', jwt, {
       httpOnly: true,
-      secure: false,
+      secure: env.NODE_ENV === 'production',
       sameSite: 'lax',
       maxAge: sessionTtl * 1000,
+      path: '/',
     });
 
     res.json({ success: true, user: { id: user.id, email: user.email } });

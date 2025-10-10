@@ -34,13 +34,13 @@ outputType = "webview"
 name = "Server"
 author = "agent"
 
-[workflows.workflow.metadata]
-outputType = "console"
-
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "pnpm --filter @spotlight/server dev"
 waitForPort = 8000
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [[ports]]
 localPort = 5000
@@ -49,10 +49,6 @@ externalPort = 80
 [[ports]]
 localPort = 8000
 externalPort = 8000
-
-[[ports]]
-localPort = 33617
-externalPort = 6000
 
 [[ports]]
 localPort = 33959
@@ -73,6 +69,10 @@ externalPort = 5000
 [[ports]]
 localPort = 37123
 externalPort = 3002
+
+[[ports]]
+localPort = 41191
+externalPort = 6000
 
 [[ports]]
 localPort = 41875

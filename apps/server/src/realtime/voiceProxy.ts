@@ -50,18 +50,16 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
     const url = new URL(request.url || '', `http://${request.headers.host}`);
     const token = url.searchParams.get('t') || request.headers['x-user-token'];
 
-    let userId: string;
+    let userId: string = 'demo-user'; // Default for POC
 
-    try {
-      if (!token || typeof token !== 'string') {
-        throw new Error('Missing token');
+    // Try to verify token if present, but don't reject if missing
+    if (token && typeof token === 'string') {
+      try {
+        const payload = verifyVoiceToken(token);
+        userId = payload.userId;
+      } catch {
+        // Use default demo-user if token invalid
       }
-
-      const payload = verifyVoiceToken(token);
-      userId = payload.userId;
-    } catch {
-      clientWs.close(1008, 'Unauthorized');
-      return;
     }
 
     if (!activeConnections.has(userId)) {

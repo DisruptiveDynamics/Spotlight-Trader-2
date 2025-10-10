@@ -15,7 +15,13 @@ export type Micro = {
   ohlcv: Ohlcv;
 };
 
-export type SSEStatus = 'connecting' | 'connected' | 'reconnecting' | 'error';
+export type SSEStatus = 
+  | 'connecting' 
+  | 'connected' 
+  | 'degraded_ws'
+  | 'replaying_gap'
+  | 'live'
+  | 'error';
 
 interface MarketSSEOptions {
   sinceSeq?: number;
@@ -28,6 +34,8 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
   let reconnectAttempts = 0;
   let lastSeq = opts?.sinceSeq || 0;
   let isManualClose = false;
+  let currentState: SSEStatus = 'connecting';
+  let processingPromise = Promise.resolve();
 
   const maxReconnectDelay = opts?.maxReconnectDelay || 30000;
 
@@ -39,7 +47,40 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
   };
 
   const emitStatus = (status: SSEStatus) => {
+    currentState = status;
     listeners.status.forEach((fn) => fn(status));
+  };
+
+  const backfillGap = async (fromSeq: number, toSeq: number, previousLastSeq: number) => {
+    try {
+      emitStatus('replaying_gap');
+      
+      const symbol = symbols[0] || 'SPY';
+      const limit = Math.min(toSeq - fromSeq + 1, 100);
+      
+      const params = new URLSearchParams({
+        symbol,
+        timeframe: '1m',
+        limit: String(limit),
+      });
+
+      const res = await fetch(`/api/history?${params.toString()}`);
+      if (!res.ok) throw new Error('Gap backfill failed');
+
+      const bars = (await res.json()) as Bar[];
+      
+      bars
+        .filter(bar => bar.seq > previousLastSeq && bar.seq <= toSeq)
+        .sort((a, b) => a.seq - b.seq)
+        .forEach(bar => {
+          lastSeq = bar.seq;
+          listeners.bar.forEach((fn) => fn(bar));
+        });
+
+    } catch (error) {
+      console.error('Gap backfill error:', error);
+      emitStatus('error');
+    }
   };
 
   const connect = () => {
@@ -50,7 +91,7 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
       params.append('sinceSeq', String(lastSeq));
     }
 
-    emitStatus(reconnectAttempts === 0 ? 'connecting' : 'reconnecting');
+    emitStatus(reconnectAttempts === 0 ? 'connecting' : 'degraded_ws');
 
     es = new EventSource(`/stream/market?${params.toString()}`);
 
@@ -61,21 +102,30 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
     });
 
     es.addEventListener('bar', (e) => {
-      const b = JSON.parse((e as MessageEvent).data) as Bar;
+      processingPromise = processingPromise.then(async () => {
+        const b = JSON.parse((e as MessageEvent).data) as Bar;
 
-      if (b.seq <= lastSeq) {
-        console.warn(`Duplicate bar detected: seq=${b.seq}, lastSeq=${lastSeq}`);
-        return;
-      }
+        if (b.seq <= lastSeq) {
+          console.warn(`Duplicate bar detected: seq=${b.seq}, lastSeq=${lastSeq}`);
+          return;
+        }
 
-      if (b.seq > lastSeq + 1 && lastSeq > 0) {
-        const gap = { expected: lastSeq + 1, received: b.seq };
-        console.warn(`Gap detected: expected seq=${gap.expected}, got ${gap.received}`);
-        listeners.gap.forEach((fn) => fn(gap));
-      }
+        if (b.seq > lastSeq + 1 && lastSeq > 0) {
+          const gap = { expected: lastSeq + 1, received: b.seq };
+          const previousLastSeq = lastSeq;
+          console.warn(`Gap detected: expected seq=${gap.expected}, got ${gap.received}`);
+          listeners.gap.forEach((fn) => fn(gap));
+          
+          await backfillGap(previousLastSeq + 1, b.seq - 1, previousLastSeq);
+        }
 
-      lastSeq = b.seq;
-      listeners.bar.forEach((fn) => fn(b));
+        lastSeq = b.seq;
+        listeners.bar.forEach((fn) => fn(b));
+
+        if (currentState === 'connected' || currentState === 'replaying_gap') {
+          emitStatus('live');
+        }
+      });
     });
 
     es.addEventListener('microbar', (e) => {
@@ -124,6 +174,9 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
     },
     getLastSeq() {
       return lastSeq;
+    },
+    getState() {
+      return currentState;
     },
     close() {
       isManualClose = true;

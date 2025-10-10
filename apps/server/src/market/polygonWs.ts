@@ -11,6 +11,7 @@ export class PolygonWebSocket {
   private maxReconnectAttempts = 10;
   private baseBackoffMs = 1000;
   private heartbeatInterval: NodeJS.Timeout | null = null;
+  private lastMessageTime = 0;
   private isConnected = false;
 
   async connect() {
@@ -27,11 +28,14 @@ export class PolygonWebSocket {
           console.log('✅ Polygon WebSocket connected');
           this.isConnected = true;
           this.reconnectAttempts = 0;
+          this.lastMessageTime = Date.now();
           this.startHeartbeat();
           this.resubscribe();
         };
 
         ws.onmessage = (event: any) => {
+          this.lastMessageTime = Date.now();
+          
           try {
             const response = event.data || event.response;
             if (!response) return;
@@ -129,7 +133,16 @@ export class PolygonWebSocket {
   private startHeartbeat() {
     this.heartbeatInterval = setInterval(() => {
       if (this.isConnected) {
-        console.log('🫀 Polygon heartbeat');
+        const timeSinceLastMessage = Date.now() - this.lastMessageTime;
+        
+        if (timeSinceLastMessage > 60000) {
+          console.warn('No message received in 60s, reconnecting...');
+          if (this.ws) {
+            (this.ws as any).close();
+          }
+        } else {
+          console.log('🫀 Polygon heartbeat');
+        }
       }
     }, 30000);
   }

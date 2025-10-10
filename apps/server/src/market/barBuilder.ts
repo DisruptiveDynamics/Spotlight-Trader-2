@@ -1,4 +1,7 @@
 import { eventBus, type Tick, type Microbar, type Bar } from './eventBus';
+import { toZonedTime, fromZonedTime } from 'date-fns-tz';
+
+const ET = 'America/New_York';
 
 interface BarState {
   open: number;
@@ -21,11 +24,26 @@ export class BarBuilder {
   private microbarInterval = 250;
   private microbarTimers = new Map<string, NodeJS.Timeout>();
 
+  private floorToExchangeMinute(tsMs: number, barMinutes: number = 1): number {
+    const d = toZonedTime(new Date(tsMs), ET);
+    const flooredMin = Math.floor(d.getMinutes() / barMinutes) * barMinutes;
+    const wall = new Date(
+      d.getFullYear(),
+      d.getMonth(),
+      d.getDate(),
+      d.getHours(),
+      flooredMin,
+      0,
+      0
+    );
+    return fromZonedTime(wall, ET).getTime();
+  }
+
   subscribe(symbol: string) {
     if (this.states.has(symbol)) return;
 
     const now = Date.now();
-    const bar_start = Math.floor(now / 60000) * 60000;
+    const bar_start = this.floorToExchangeMinute(now);
     const bar_end = bar_start + 60000;
 
     this.states.set(symbol, {
@@ -55,11 +73,10 @@ export class BarBuilder {
 
     state.lastTickTs = tick.ts;
 
-    const tickMinute = Math.floor(tick.ts / 60000) * 60000;
-
     if (tick.ts >= state.bar_end) {
       this.finalizeBar(symbol, state);
 
+      const tickMinute = this.floorToExchangeMinute(tick.ts);
       state.bar_start = tickMinute;
       state.bar_end = tickMinute + 60000;
       state.currentBar = null;

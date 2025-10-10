@@ -11,6 +11,8 @@ export function ChartView() {
   const isPausedRef = useRef(false);
   const [, forceUpdate] = useState({});
   const [lastSeq, setLastSeq] = useLastSeq('SPY', '1m');
+  
+  const barUpdateQueueRef = useRef<Bar[]>([]);
   const microbarQueueRef = useRef<Micro[]>([]);
   const rafIdRef = useRef<number | null>(null);
   const currentMinuteRef = useRef<number>(0);
@@ -103,17 +105,11 @@ export function ChartView() {
 
           setLastSeq(bar.seq);
 
-          const time = Math.floor(bar.bar_end / 1000) as UTCTimestamp;
-          seriesRef.current.update({
-            time,
-            open: bar.ohlcv.o,
-            high: bar.ohlcv.h,
-            low: bar.ohlcv.l,
-            close: bar.ohlcv.c,
-          });
+          barUpdateQueueRef.current.push(bar);
 
-          currentMinuteRef.current = Math.floor(bar.bar_end / 60000) * 60000;
-          currentBarTimeRef.current = time;
+          if (rafIdRef.current === null) {
+            rafIdRef.current = requestAnimationFrame(processUpdates);
+          }
         });
 
         sseConnection.onMicro((micro: Micro) => {
@@ -122,7 +118,7 @@ export function ChartView() {
           microbarQueueRef.current.push(micro);
 
           if (rafIdRef.current === null) {
-            rafIdRef.current = requestAnimationFrame(processMicrobars);
+            rafIdRef.current = requestAnimationFrame(processUpdates);
           }
         });
 
@@ -140,26 +136,51 @@ export function ChartView() {
       }
     };
 
-    const processMicrobars = () => {
+    const processUpdates = () => {
       rafIdRef.current = null;
 
-      if (!seriesRef.current || microbarQueueRef.current.length === 0) return;
+      if (!seriesRef.current) return;
 
-      const micro = microbarQueueRef.current[microbarQueueRef.current.length - 1];
-      microbarQueueRef.current = [];
+      if (barUpdateQueueRef.current.length > 0) {
+        const bars = barUpdateQueueRef.current;
+        barUpdateQueueRef.current = [];
 
-      if (!micro) return;
+        bars.forEach((bar) => {
+          const time = Math.floor(bar.bar_end / 1000) as UTCTimestamp;
+          seriesRef.current?.update({
+            time,
+            open: bar.ohlcv.o,
+            high: bar.ohlcv.h,
+            low: bar.ohlcv.l,
+            close: bar.ohlcv.c,
+          });
 
-      const microMinute = Math.floor(micro.ts / 60000) * 60000;
-
-      if (microMinute === currentMinuteRef.current && currentBarTimeRef.current > 0) {
-        seriesRef.current.update({
-          time: currentBarTimeRef.current as UTCTimestamp,
-          open: micro.ohlcv.o,
-          high: micro.ohlcv.h,
-          low: micro.ohlcv.l,
-          close: micro.ohlcv.c,
+          currentMinuteRef.current = Math.floor(bar.bar_end / 60000) * 60000;
+          currentBarTimeRef.current = time;
         });
+      }
+
+      if (microbarQueueRef.current.length > 0) {
+        const micro = microbarQueueRef.current[microbarQueueRef.current.length - 1];
+        microbarQueueRef.current = [];
+
+        if (!micro) return;
+
+        const microMinute = Math.floor(micro.ts / 60000) * 60000;
+
+        if (microMinute === currentMinuteRef.current && currentBarTimeRef.current > 0) {
+          seriesRef.current.update({
+            time: currentBarTimeRef.current as UTCTimestamp,
+            open: micro.ohlcv.o,
+            high: micro.ohlcv.h,
+            low: micro.ohlcv.l,
+            close: micro.ohlcv.c,
+          });
+        }
+      }
+
+      if (document.hidden && (barUpdateQueueRef.current.length > 0 || microbarQueueRef.current.length > 0)) {
+        rafIdRef.current = requestAnimationFrame(processUpdates);
       }
     };
 

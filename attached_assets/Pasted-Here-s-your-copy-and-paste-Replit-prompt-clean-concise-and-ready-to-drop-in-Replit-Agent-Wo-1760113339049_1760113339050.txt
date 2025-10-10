@@ -1,0 +1,65 @@
+Here’s your copy-and-paste Replit prompt — clean, concise, and ready to drop in:
+
+⸻
+
+Replit Agent Work Order — Step 3
+
+ET Bucketing (DST-Safe) + RAF Rendering + Reconnect Logic
+
+Goal:
+Make SpotLight Trader’s candles close exactly on ET (America/New_York) boundaries (even on DST days), smooth real-time updates via requestAnimationFrame, and ensure reconnects always follow the correct order (subscribe → backfill → resume).
+
+⸻
+
+Tasks
+
+1 · DST-Safe Exchange Bucketing
+
+File: client/src/market/agg/Aggregator.ts
+
+import { toZonedTime, zonedTimeToUtc } from 'date-fns-tz';
+const ET = 'America/New_York';
+
+private floorToExchangeMinute(tsMs: number): number {
+  const d = toZonedTime(new Date(tsMs), ET);
+  const barMinutes = this.timeframeMs / 60000;
+  const flooredMin = Math.floor(d.getMinutes() / barMinutes) * barMinutes;
+  const wall = new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), flooredMin, 0, 0);
+  return zonedTimeToUtc(wall, ET).getTime();
+}
+
+Use this for all bar keys and session checks so bar rollovers align with NYSE time even on DST flips.
+
+⸻
+
+2 · Coalesced Chart Updates
+
+Files: client/src/hooks/useRealtimeChart.ts, client/src/market/ChartOrchestrator.ts
+	•	Buffer tick/bar updates.
+	•	Flush once per requestAnimationFrame (≈ 60 FPS desktop / 30 FPS mobile).
+	•	When document.hidden, throttle to ~30 FPS or less.
+
+⸻
+
+3 · Reconnect Order and State
+
+Files: client/src/market/ChartOrchestrator.ts, client/src/market/ws/MarketSocket.ts, client/src/workers/backfill.worker.ts
+	1.	On reconnect → subscribe → backfill [lastCached + 1 ms → now] → resume ticks.
+	2.	Emit UI states: degraded_ws → replaying_gap → live.
+	3.	Reconcile last N = 10 bars if server differs (emit only changed bars).
+
+⸻
+
+4 · Small Fixes
+	•	On RTH/EXT toggle → reset active bar (prevent wick bleed).
+	•	Reset heartbeat timer on any inbound frame (not only pong).
+
+⸻
+
+5 · Tests / Checks
+	•	Unit: DST bucketing, out-of-order tick handling, reconciliation.
+	•	Manual: 09:30 ET open aligns; minute rollovers exact; disconnect mid-bar → gap fills correctly.
+
+⸻
+
+When this prompt finishes running cleanly, proceed with the provided shell steps (npm ci, npm run typecheck, npm run lint, npm run build, etc.) and paste back their results so we can verify everything before moving to the Auth Gate & Voice Coach Safari stability phase.

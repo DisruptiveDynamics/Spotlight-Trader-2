@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { AuthGate } from './features/auth/AuthGate';
 import { CoachBubble } from './features/coach/CoachBubble';
 import { ExplainPanel } from './features/coach/ExplainPanel';
 import { CommandPalette } from './components/CommandPalette';
@@ -73,7 +74,7 @@ function App() {
   const opacity = focusManager.getNonPriceOpacity();
 
   return (
-    <>
+    <AuthGate>
       <Splash isVisible={showSplash} />
       <div className="min-h-screen bg-gray-900 text-white flex flex-col">
         <header
@@ -137,7 +138,7 @@ function App() {
           context={explainContext}
         />
       </div>
-    </>
+    </AuthGate>
   );
 }
 

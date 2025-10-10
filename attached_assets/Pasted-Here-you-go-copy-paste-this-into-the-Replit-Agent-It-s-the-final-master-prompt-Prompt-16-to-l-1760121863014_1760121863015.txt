@@ -1,0 +1,178 @@
+Here you go — copy-paste this into the Replit Agent. It’s the final master prompt (“Prompt 16”) to land the Voice Coach low-latency pipeline and UX polish.
+
+⸻
+
+Replit Agent Work Order — Prompt 16 (Final)
+
+Safari/iOS Audio Unlock • AudioWorklet Low-Latency Mic • Fast Barge-In • Mic Backpressure • VAD Pause on Hidden
+
+Goal: Make the Voice Coach production-ready across desktop + iOS Safari with 1-tap audio unlock, sub-100ms capture latency, instant barge-in, sane CPU/battery use, and clean session UX.
+
+⸻
+
+1) One-tap AudioContext unlock (Safari/iOS)
+
+File: client/src/services/AudioManager.ts (new)
+
+export async function ensureAudioUnlocked(): Promise<AudioContext | null> {
+  try {
+    const Ctx: any = window.AudioContext || (window as any).webkitAudioContext;
+    const ctx: AudioContext = new Ctx();
+    if (ctx.state === 'suspended') await ctx.resume();
+    // Tiny silent buffer to satisfy Safari gesture policy
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource(); src.buffer = buffer; src.connect(ctx.destination); src.start(0);
+    return ctx;
+  } catch (e) { console.warn('Audio unlock failed', e); return null; }
+}
+
+File: client/src/components/coach/VoiceBubble.tsx
+	•	On first click/tap, call ensureAudioUnlocked() before starting mic/playback.
+	•	Keep this call inside the same gesture handler.
+
+⸻
+
+2) Replace ScriptProcessorNode with AudioWorklet
+
+File: public/worklets/micProcessor.js (new)
+
+class MicProcessor extends AudioWorkletProcessor {
+  process(inputs) {
+    const ch = inputs?.[0]?.[0]; if (!ch) return true;
+    const pcm = new Int16Array(ch.length);
+    for (let i = 0; i < ch.length; i++) pcm[i] = Math.max(-1, Math.min(1, ch[i])) * 0x7fff;
+    this.port.postMessage({ pcm: pcm.buffer }, [pcm.buffer]);
+    return true;
+  }
+}
+registerProcessor('mic-processor', MicProcessor);
+
+File: client/src/services/AudioCapture.ts
+
+export async function startMicWorklet(
+  ctx: AudioContext,
+  onFrame: (pcm: Int16Array) => void
+) {
+  await ctx.audioWorklet.addModule('/worklets/micProcessor.js');
+  const node = new AudioWorkletNode(ctx, 'mic-processor');
+  node.port.onmessage = (e) => e.data?.pcm && onFrame(new Int16Array(e.data.pcm));
+
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: 16000 }
+  });
+  const src = ctx.createMediaStreamSource(stream);
+  // Do NOT route to speakers; keep the node unconnected or to a muted GainNode
+  src.connect(node);
+  return { node, stream };
+}
+
+	•	Remove/stop any existing ScriptProcessorNode usage.
+
+⸻
+
+3) Instant barge-in (gain duck + cancel)
+
+File: client/src/services/VoiceClient.ts (or your playback controller)
+
+private handleSpeechStart() {
+  // 1) Mute NOW (no click)
+  if (this.gainNode?.gain) this.gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+  // 2) Stop current TTS buffer and clear queue
+  if (this.currentSource) this.currentSource.stop();
+  this.clearPlaybackQueue();
+  // 3) Cancel model response to free tokens
+  if (this.ws?.readyState === WebSocket.OPEN) {
+    this.ws.send(JSON.stringify({ type: 'response.cancel' }));
+  }
+  this.setCoachState('listening');
+}
+
+
+⸻
+
+4) Mic backpressure (20–40ms frames + oldest-drop)
+
+File: client/src/services/RealtimeClient.ts (or wherever mic frames are sent)
+
+const FRAME_MS = 20;           // 20–40 recommended
+const MAX_QUEUE = 8;           // ~160ms at 20ms frames
+let q: Int16Array[] = [];
+let draining = false;
+
+function enqueueMicFrame(frame: Int16Array) {
+  if (q.length >= MAX_QUEUE) q.shift(); // drop oldest to keep latency tight
+  q.push(frame);
+  if (!draining) drain();
+}
+async function drain() {
+  draining = true;
+  while (q.length) {
+    const f = q.shift()!;
+    // send as base64 or binary depending on your protocol
+    this.ws?.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: base64Encode(f) }));
+    await new Promise(r => setTimeout(r, FRAME_MS));
+  }
+  draining = false;
+}
+
+Wire enqueueMicFrame to the onFrame callback from startMicWorklet.
+
+⸻
+
+5) Pause VAD & capture when tab is hidden (battery-safe)
+
+File: client/src/voice/vad.ts (or the owner hook)
+
+let rafId: number | null = null;
+function loop() {
+  if (document.hidden) return; // pause VAD when hidden
+  // ... RMS / threshold logic, emit start/stop ...
+  rafId = requestAnimationFrame(loop);
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && !rafId) rafId = requestAnimationFrame(loop);
+});
+
+Additionally, when hidden: stop/park the mic worklet if you’re not actively recording; resume on visibility.
+
+⸻
+
+6) Session expiry UX (if not merged yet)
+
+File: client/src/lib/api.ts
+
+api.interceptors.response.use(r => r, (err) => {
+  if (err?.response?.status === 401) {
+    authStorage.clear();
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+  }
+  return Promise.reject(err);
+});
+
+File: client/src/App.tsx (one-time listener)
+
+useEffect(() => {
+  const h = () => { toast({ title:'Session expired', description:'Please log in again.' }); navigate('/login', { replace:true }); };
+  window.addEventListener('auth:expired', h);
+  return () => window.removeEventListener('auth:expired', h);
+}, []);
+
+
+⸻
+
+7) Config / paths
+	•	Ensure the app serves /public/worklets/micProcessor.js at /worklets/micProcessor.js.
+	•	Keep unlock + mic start in the same user gesture on the bubble.
+
+⸻
+
+Definition of Done
+	•	Single tap on bubble unlocks audio on Safari/iOS; no “AudioContext suspended” warnings.
+	•	AudioWorklet in use (no ScriptProcessor deprecation); capture latency sub-100ms.
+	•	Barge-in is instantaneous (<250ms to silence); coach state flips to “listening”.
+	•	When the tab is hidden, VAD and mic capture pause; CPU drops; resume cleanly on return.
+	•	401s trigger toast + redirect; no zombie sessions.
+
+⸻
+
+Implement exactly as above and keep existing public APIs intact.

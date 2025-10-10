@@ -112,6 +112,13 @@ Focuses on professional ergonomics with zero-lag interactions:
 
 ## Recent Changes (October 2025)
 
+### Voice Assistant Port Configuration Fix (October 10, 2025)
+- **Server Port Standardization**: Changed server from hardcoded port 8000 to `process.env.PORT || 8080` for consistency with Vite proxy
+- **Vite Proxy Update**: Updated all Vite proxy targets (`/api`, `/stream`, `/ws`) from localhost:8000 to localhost:8080
+- **Health Endpoint**: Added `/api/voice/health` endpoint for voice assistant health checks
+- **URL Fix**: Fixed hardcoded `localhost:4000` URL in CoachBubble.tsx to use relative path `/api/voice/token` with proper credentials and error handling
+- **Integration Status**: All voice optimizations (AudioWorklet, barge-in, backpressure, idle detection) integrated and ready for testing
+
 ### Market Data Pipeline Improvements
 - **DST-Safe Bucketing**: Implemented exchange timezone-aware bar bucketing using `date-fns-tz` to handle DST transitions correctly
 - **RAF Rendering**: Added RAF-based coalesced chart updates with batching for smooth 60fps performance

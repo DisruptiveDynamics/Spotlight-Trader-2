@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { EnhancedVoiceClient } from '../../voice/EnhancedVoiceClient.v2';
 import { VoiceFallback } from './VoiceFallback';
 import { ensureiOSAudioUnlocked } from '../../voice/ios';
+import { AudioCapture } from '../../services/AudioCapture';
 
 type CoachState = 'listening' | 'thinking' | 'speaking' | 'idle' | 'muted';
 type ConnectionState =
@@ -327,18 +328,27 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
         // Step 1: Unlock iOS audio on first user gesture (critical for Safari/iOS)
         await ensureiOSAudioUnlocked();
         
-        // Step 2: Fetch token
+        // Step 2: Request microphone permission BEFORE connecting
+        // This ensures the browser shows the permission dialog immediately
+        try {
+          await AudioCapture.requestMicPermission({ sampleRate: 24000 });
+          showStatusMessage('Mic permission granted ✅', 1500);
+        } catch (micError) {
+          console.error('Microphone permission denied:', micError);
+          showStatusMessage('Microphone blocked. Please enable mic access.', 4000);
+          setShowFallback(true);
+          return;
+        }
+        
+        // Step 3: Fetch token
         const token = await fetchToken();
         tokenRef.current = token;
         
-        // Step 3: Connect client (this will set up audio internally)
+        // Step 4: Connect client (mic permission already granted)
         await client.connect(token);
 
-        // Step 4: Check permission state and show fallback if needed
-        if (client.getPermissionState() === 'denied') {
-          showStatusMessage('Microphone permission denied', 3000);
-          setShowFallback(true);
-        } else if (client.getState() === 'connected') {
+        // Step 5: Check final connection state
+        if (client.getState() === 'connected') {
           showStatusMessage('Voice coach connected ✅', 2000);
         }
       } catch (error) {

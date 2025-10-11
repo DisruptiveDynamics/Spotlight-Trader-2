@@ -12,21 +12,6 @@ interface CoachProfile {
   tone: string;
 }
 
-interface SessionUpdate {
-  type: 'session.update';
-  session: {
-    type?: 'realtime';
-    instructions?: string;
-    voice?: string;
-    turn_detection?: {
-      type: string;
-      threshold?: number;
-      prefix_padding_ms?: number;
-      silence_duration_ms?: number;
-    };
-  };
-}
-
 export async function buildSessionContext(userId: string): Promise<string> {
   const profileResults = await db
     .select()
@@ -78,7 +63,7 @@ export async function buildSessionContext(userId: string): Promise<string> {
   return lines.join('\n');
 }
 
-export async function getInitialSessionUpdate(userId: string): Promise<SessionUpdate> {
+export async function getInitialSessionUpdate(userId: string) {
   const profileResults = await db
     .select()
     .from(coachProfiles)
@@ -93,19 +78,25 @@ export async function getInitialSessionUpdate(userId: string): Promise<SessionUp
   const fullInstructions = `${VOICE_COACH_SYSTEM}\n\n${contextBlock}`;
 
   const tokenEstimate = Math.ceil(fullInstructions.length / 4);
-  const truncated = tokenEstimate > 1200 ? fullInstructions.slice(0, 4800) : fullInstructions;
+  const instructions = tokenEstimate > 1200 ? fullInstructions.slice(0, 4800) : fullInstructions;
 
   return {
     type: 'session.update',
     session: {
-      instructions: truncated,
-      voice: voiceId,
+      instructions,
+      modalities: ['audio', 'text'],
+      input_audio_format: 'pcm16',
+      output_audio_format: 'pcm16',
       turn_detection: {
         type: 'server_vad',
         threshold: 0.5,
         prefix_padding_ms: 300,
         silence_duration_ms: 500,
       },
+      input_audio_transcription: { 
+        model: 'whisper-1' 
+      },
+      voice: voiceId,
     },
   };
 }

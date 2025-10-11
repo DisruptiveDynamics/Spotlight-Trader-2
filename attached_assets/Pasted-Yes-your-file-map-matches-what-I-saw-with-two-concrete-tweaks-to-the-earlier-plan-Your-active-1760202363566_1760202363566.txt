@@ -1,0 +1,357 @@
+Yes—your file map matches what I saw, with two concrete tweaks to the earlier plan:
+
+* Your active client is **`apps/client/src/voice/EnhancedVoiceClient.v2.ts`** (not `VoiceClient.ts`). I’m targeting **this** file below.
+* Your token flow currently uses **`GET /api/voice/token?demo=true`**. I’ll keep that (while also accepting `POST /api/voice/token` if you later switch).
+
+Below is a **single, repo-specific patch set** for the exact files you listed. It incorporates the mic-permission preflight, exact PCM16 framing (no odd bytes), bounded batching (no backpressure floods), voice-only cooldown (no text fallback), correct WS URL + fresh token per reconnect, and the minimal, on-spec `session.update`. Your chart fixes from earlier (SSE gap-fill on `open` + `focus`) don’t change.
+
+---
+
+# ✅ Apply these edits exactly
+
+## 1) `apps/server/src/coach/sessionContext.ts`
+
+Make the `session.update` minimal and canonical (no duplicate/contradictory fields; no `session.type` here since the session is already created by the proxy).
+
+```ts
+export function getInitialSessionUpdate({
+  voiceId,
+  instructions,
+}: { voiceId: string; instructions: string }) {
+  return {
+    type: 'session.update',
+    session: {
+      // session already exists; do not set session.type here
+      instructions,
+      modalities: ['audio', 'text'], // we allow transcripts; UI stays voice-first
+      input_audio_format: 'pcm16',
+      output_audio_format: 'pcm16',
+      turn_detection: {
+        type: 'server_vad',
+        threshold: 0.5,
+        prefix_padding_ms: 300,
+        silence_duration_ms: 500,
+      },
+      input_audio_transcription: { enabled: true, model: 'whisper-1' },
+      voice: voiceId,
+    },
+  };
+}
+```
+
+---
+
+## 2) `apps/server/src/realtime/voiceProxy.ts`
+
+Keep the “**wait for `session.created` → then send `session.update`**” sequencing and harden telemetry. Add compact, support-ready logging for upstream errors (no behavior change beyond logs).
+
+```ts
+// inside upstream (OpenAI) ws handlers
+let upstreamSessionId: string | null = null;
+
+upstream.on('message', (data) => {
+  let msg: any;
+  try { msg = typeof data === 'string' ? JSON.parse(data) : data; } catch { return; }
+
+  if (msg.type === 'session.created' && msg.session?.id) {
+    upstreamSessionId = msg.session.id;
+    // now send your session.update:
+    upstream.send(JSON.stringify(getInitialSessionUpdate({ voiceId, instructions })));
+  }
+
+  if (msg.type === 'error' || msg.type === 'server_error') {
+    console.error('[Realtime][UpstreamError]', {
+      sessionId: upstreamSessionId,
+      eventType: msg.type,
+      error: msg.error || msg,  // capture full payload
+    });
+  }
+
+  // ...keep your existing proxying to the browser ws...
+});
+```
+
+*(Do not duplicate turn_detection elsewhere; keep it only in `sessionContext`.)*
+
+---
+
+## 3) `apps/client/src/voice/EnhancedVoiceClient.v2.ts`
+
+A. **Correct WS URL** (HTTPS → `wss`), **fresh token** every (re)connect, and **voice-only cooldown** to stop infinite loops without text fallback.
+
+```ts
+// helpers
+private async freshToken(): Promise<string> {
+  // keep your demo flow; optionally fall back to POST if you swap later
+  const r = await fetch('/api/voice/token?demo=true', { method: 'GET', credentials: 'include' });
+  if (!r.ok) throw new Error(`Token fetch failed: ${r.status}`);
+  return (await r.json()).token as string;
+}
+
+private buildWsUrl(token: string) {
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${window.location.host}/ws/realtime?t=${encodeURIComponent(token)}`;
+}
+
+// voice-only cooldown (no text fallback)
+private serverErrorTimestamps: number[] = [];
+private cooldownUntil = 0;
+private readonly COOLDOWN_MS = 120_000; // 2m
+
+private recordServerError() {
+  const now = Date.now();
+  this.serverErrorTimestamps.push(now);
+  this.serverErrorTimestamps = this.serverErrorTimestamps.filter(t => now - t <= 60_000);
+  return this.serverErrorTimestamps.length;
+}
+private inCooldown() { return Date.now() < this.cooldownUntil; }
+private enterCooldown() {
+  this.cooldownUntil = Date.now() + this.COOLDOWN_MS;
+  this.emitStatus?.({ mode: 'voice-degraded', retryAt: this.cooldownUntil });
+}
+public async manualRetry() {
+  this.cooldownUntil = 0;
+  this.serverErrorTimestamps = [];
+  const t = await this.freshToken();
+  await this.connect(t);
+}
+
+// main connect
+public async connect(token?: string) {
+  if (this.inCooldown()) {
+    this.emitStatus?.({ mode: 'voice-degraded', retryAt: this.cooldownUntil });
+    return;
+  }
+  const t = token ?? await this.freshToken();
+  const ws = new WebSocket(this.buildWsUrl(t));
+  this.ws = ws;
+
+  ws.onopen = () => {
+    this.reconnectAttempts = 0;
+    this.emitStatus?.({ mode: 'connected' });
+    // proxy will wait for session.created before sending session.update
+  };
+
+  ws.onmessage = (evt) => {
+    const msg = JSON.parse(evt.data);
+    if (msg.type === 'error' || msg.type === 'server_error') {
+      if (this.recordServerError() >= 3) {
+        this.enterCooldown();
+        try { this.ws?.close(); } catch {}
+        return;
+      }
+    }
+    this.handleRealtimeEvent(msg); // keep your existing dispatcher
+  };
+
+  ws.onerror = () => {
+    this.setState('error');
+    try { ws.close(); } catch {}
+  };
+
+  ws.onclose = () => {
+    this.setState('disconnected');
+    this.stopAudioCapture();
+    this.scheduleReconnect();
+  };
+}
+
+private scheduleReconnect(delay = 1000) {
+  if (this.inCooldown()) {
+    this.emitStatus?.({ mode: 'voice-degraded', retryAt: this.cooldownUntil });
+    return;
+  }
+  const d = Math.min(1000 * Math.pow(this.reconnectAttempts++, 2) + Math.random() * 1000, 30_000);
+  clearTimeout(this.reconnectTimeout);
+  this.reconnectTimeout = window.setTimeout(async () => {
+    if (this.inCooldown()) {
+      this.emitStatus?.({ mode: 'voice-degraded', retryAt: this.cooldownUntil });
+      return;
+    }
+    try {
+      const fresh = await this.freshToken();
+      await this.connect(fresh);
+    } catch {
+      this.scheduleReconnect(Math.min(d * 2, 30_000));
+    }
+  }, delay || d);
+}
+```
+
+B. **Bounded batching** to stop “dropping oldest frame due to backpressure” spam and guarantee consistent `commit` cadence.
+
+```ts
+// batching members
+private pendingFrames: Uint8Array[] = [];
+private maxFramesInQueue = 30; // ~600ms at 20ms frames
+private batchTimer: number | null = null;
+private dropWarned = false;
+
+public enqueueFrame(frame: Uint8Array) {
+  if (this.pendingFrames.length >= this.maxFramesInQueue) {
+    // drop newest to keep recency
+    this.pendingFrames.shift();
+    if (!this.dropWarned) {
+      console.warn('[AudioBatcher] dropping newest frame due to backpressure');
+      this.dropWarned = true; setTimeout(() => (this.dropWarned = false), 2000);
+    }
+  }
+  this.pendingFrames.push(frame);
+  if (!this.batchTimer) this.batchTimer = window.setTimeout(() => this.flushBatch(), 120);
+}
+
+private flushBatch() {
+  this.batchTimer = null;
+  if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+  if (!this.pendingFrames.length) return;
+
+  const frames = this.pendingFrames.splice(0, this.pendingFrames.length);
+  // Your proxy expects an append + binary; keep your envelope
+  for (const f of frames) {
+    this.ws.send(JSON.stringify({ type: 'input_audio_buffer.append' }));
+    this.ws.send(f);
+  }
+  this.ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+}
+
+// visibility/iOS unlock nicety
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && this.audioCtx?.state === 'suspended') {
+    await this.audioCtx.resume();
+  }
+});
+```
+
+---
+
+## 4) `apps/client/src/services/AudioCapture.ts`
+
+Make the mic prompt reliable, log permission state, and prep exact 16k/PCM16 frame sizing so we **never** emit odd byte counts.
+
+```ts
+// constraints
+const MIC_CONSTRAINTS: MediaStreamConstraints = {
+  audio: {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  },
+};
+
+export async function requestMicPermission(): Promise<'granted'|'prompt'|'denied'> {
+  try {
+    const p = await (navigator.permissions as any).query({ name: 'microphone' });
+    return p.state as 'granted'|'prompt'|'denied';
+  } catch {
+    return 'prompt'; // older browsers
+  }
+}
+
+// Call this from a user gesture (Power button) BEFORE connect()
+export async function startAudioCapture(ctx: AudioContext) {
+  try {
+    if (ctx.state === 'suspended') await ctx.resume(); // iOS unlock
+    const state = await requestMicPermission();
+    console.log('[AudioCapture] mic permission:', state);
+    const stream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+    console.log('[AudioCapture] mic device:', stream.getAudioTracks()[0]?.label ?? '(no label)');
+    return stream;
+  } catch (err) {
+    console.error('[AudioCapture] getUserMedia failed:', err);
+    throw err; // surface to UI
+  }
+}
+
+// === Exact PCM16 / 16k framing helpers (20ms => 640 bytes) ===
+export const SAMPLE_RATE_OUT = 16_000;
+export const FRAME_MS = 20;
+export const SAMPLES_PER_FRAME = Math.round(SAMPLE_RATE_OUT * FRAME_MS / 1000); // 320
+export const BYTES_PER_FRAME = SAMPLES_PER_FRAME * 2;
+
+export function floatToPcm16Mono(fr: Float32Array): Int16Array {
+  const out = new Int16Array(fr.length);
+  for (let i = 0; i < fr.length; i++) {
+    const s = Math.max(-1, Math.min(1, fr[i]));
+    out[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return out;
+}
+
+export function* frameIterator(int16: Int16Array) {
+  const totalBytes = int16.byteLength & ~1; // even only
+  const frames = Math.floor(totalBytes / BYTES_PER_FRAME);
+  for (let i = 0; i < frames; i++) {
+    yield new Uint8Array(int16.buffer, i * BYTES_PER_FRAME, BYTES_PER_FRAME);
+  }
+}
+```
+
+> Integrate these helpers where you currently emit frames to `EnhancedVoiceClient.v2.enqueueFrame(frame)`. Remove any “truncate odd byte” workaround—frames must already be exact.
+
+(If your TS error around line ~74 is about `permissions` or `webkitAudioContext`, add the tiny typings below.)
+
+---
+
+## 5) `apps/client/src/features/coach/PresenceBubble.tsx`
+
+Ensure your **Power** click unlocks audio and gets the mic **before** calling `connect()`. If mic fails, show a visible banner instead of silently failing.
+
+```tsx
+const onPowerClick = async () => {
+  try {
+    await audio.ensureUnlocked();                 // your helper if present
+    await startAudioCapture(voiceClient.audioCtx); // from AudioCapture.ts
+    const token = await voiceClient.freshToken?.(); // optional; connect() can fetch
+    await voiceClient.connect(token);
+    setPowered(true);
+  } catch (e) {
+    setBanner({ kind: 'warn', text: 'Microphone blocked. Click the lock icon in the address bar → allow mic, then Retry.' });
+  }
+};
+```
+
+---
+
+## 6) Typings (fix minor TS at AudioCapture ~line 74)
+
+Create (or extend) `apps/client/src/global.d.ts`:
+
+```ts
+interface Window { webkitAudioContext?: typeof AudioContext; }
+declare namespace Navigator { interface Permissions { query(q: any): Promise<any>; } }
+```
+
+---
+
+# 🧪 What you should see after this
+
+* First power click **always** triggers a mic prompt (or a clear, visible “mic blocked” banner).
+* **No odd-byte logs**: audio frames are exact 640 bytes (20ms @ 16k mono PCM16).
+* Far fewer (ideally zero) “dropping oldest frame due to backpressure” messages; batching/commit every ~120ms.
+* Barge-in remains instant (your existing `response.cancel` + player flush).
+* If OpenAI throws repeated `server_error`, the client **pauses reconnects for 2 minutes** (voice-only cooldown), shows a small banner, and **Retry** reconnects with a fresh token.
+* Your charts behavior from earlier (history + microbars + gap-fill on `open` + `focus`) stays as-is.
+
+---
+
+# ▶️ Run after patch
+
+```bash
+corepack enable && corepack prepare pnpm@9 --activate
+pnpm -w install
+pnpm -w build
+pnpm dev
+```
+
+Quick checks (replace URL):
+
+```bash
+APP="https://<your-replit-url>"
+curl -s "$APP/api/history?symbol=SPY&timeframe=1m&limit=5" | head -c 800; echo
+curl -N "$APP/stream/market?symbols=SPY" | head -n 10
+curl -s "$APP/api/voice/token?demo=true" | jq .
+```
+
+---
+
+If you paste back any remaining console logs (especially from `AudioCapture` and your worklet), I’ll give you the next one-liner tweaks—but you shouldn’t need to change the overall approach.

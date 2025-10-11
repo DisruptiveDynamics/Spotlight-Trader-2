@@ -62,6 +62,12 @@ export class EnhancedVoiceClient {
   private isBackgroundTab = false;
   private intentionalDisconnect = false;
 
+  // Voice-specific error cooldown (prevents hammering OpenAI servers)
+  private voiceErrorCount = 0;
+  private voiceErrorCooldownUntil = 0;
+  private readonly VOICE_ERROR_THRESHOLD = 3;
+  private readonly VOICE_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes
+
   constructor() {
     this.vad = new VoiceActivityDetector();
     this.vad.on('start', () => this.handleSpeechStart());
@@ -71,7 +77,7 @@ export class EnhancedVoiceClient {
 
     // Monitor tab visibility
     if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', () => {
+      document.addEventListener('visibilitychange', async () => {
         this.isBackgroundTab = document.hidden;
         
         if (this.isBackgroundTab) {
@@ -80,9 +86,21 @@ export class EnhancedVoiceClient {
           if (this.vad) {
             this.vad.stop();
           }
-        } else if (this.audioCapture && !this.isMuted) {
-          this.startAmplitudeMonitoring();
-          this.vad.start();
+        } else {
+          // iOS fix: Resume AudioContext when tab becomes visible
+          const audioContext = getAudioContext();
+          if (audioContext && audioContext.state === 'suspended') {
+            try {
+              await audioContext.resume();
+            } catch (err) {
+              console.warn('[Voice] Failed to resume AudioContext:', err);
+            }
+          }
+          
+          if (this.audioCapture && !this.isMuted) {
+            this.startAmplitudeMonitoring();
+            this.vad.start();
+          }
         }
       });
     }
@@ -144,6 +162,15 @@ export class EnhancedVoiceClient {
       return;
     }
 
+    // Check voice error cooldown
+    const now = Date.now();
+    if (now < this.voiceErrorCooldownUntil) {
+      const remainingMs = this.voiceErrorCooldownUntil - now;
+      const remainingSec = Math.ceil(remainingMs / 1000);
+      console.warn(`[Voice] In cooldown period. ${remainingSec}s remaining. Use manualRetry() to override.`);
+      return;
+    }
+
     this.intentionalDisconnect = false;
     this.currentToken = token;
     this.setState('connecting');
@@ -164,6 +191,20 @@ export class EnhancedVoiceClient {
       if (error instanceof Error && error.message.includes('Permission denied')) {
         this.setPermissionState('denied');
       }
+    }
+  }
+
+  // Manual retry after cooldown - exposed for UI
+  async manualRetry(): Promise<void> {
+    this.voiceErrorCount = 0;
+    this.voiceErrorCooldownUntil = 0;
+    
+    try {
+      const token = await this.freshToken();
+      await this.connect(token);
+    } catch (error) {
+      console.error('[Voice] Manual retry failed:', error);
+      throw error;
     }
   }
 
@@ -264,6 +305,10 @@ export class EnhancedVoiceClient {
       this.setState('connected');
       this.setCoachState('listening');
       this.reconnectAttempts = 0;
+      
+      // Reset voice error count on successful connection
+      this.voiceErrorCount = 0;
+      this.voiceErrorCooldownUntil = 0;
       
       // Flush any pending audio batches from before reconnect
       this.drainAudioQueue();
@@ -369,6 +414,14 @@ export class EnhancedVoiceClient {
             // Error events
             case 'error':
               console.error('[Voice] Server error:', msg.error);
+              
+              // Track voice-specific errors and enter cooldown if threshold reached
+              this.voiceErrorCount++;
+              if (this.voiceErrorCount >= this.VOICE_ERROR_THRESHOLD) {
+                this.voiceErrorCooldownUntil = Date.now() + this.VOICE_COOLDOWN_MS;
+                console.warn(`[Voice] ${this.VOICE_ERROR_THRESHOLD} errors detected. Entering ${this.VOICE_COOLDOWN_MS / 60000}min cooldown.`);
+                this.disconnect();
+              }
               break;
             
             // Heartbeat response
@@ -561,6 +614,17 @@ export class EnhancedVoiceClient {
 
     // Check WebSocket backpressure (bufferedAmount in bytes)
     const MAX_BUFFERED = 32768; // 32KB threshold
+    const MAX_QUEUE_FRAMES = 30; // Bounded queue size to prevent backpressure
+    
+    // Drop oldest frames if queue exceeds max size
+    const pendingCount = this.audioBatcher.getPendingCount();
+    if (pendingCount > MAX_QUEUE_FRAMES) {
+      const dropCount = pendingCount - MAX_QUEUE_FRAMES;
+      console.warn(`[Voice] Audio queue overflow, dropping ${dropCount} oldest frames`);
+      for (let i = 0; i < dropCount; i++) {
+        this.audioBatcher.getNextBatch(); // Discard
+      }
+    }
     
     while (
       this.audioBatcher.getPendingCount() > 0 &&

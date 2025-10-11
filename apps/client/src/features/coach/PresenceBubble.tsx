@@ -289,12 +289,16 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
 
   const fetchEphemeralToken = async (): Promise<string> => {
     const response = await fetch('/api/voice/ephemeral-token', {
-      method: 'GET',
+      method: 'POST',
       credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch ephemeral token: ${response.statusText}`);
+      const error = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(`Failed to fetch ephemeral token: ${error.error || response.statusText}`);
     }
 
     const data = await response.json();

@@ -5,6 +5,28 @@ import { validateEnv } from '@shared/env';
 
 const env = validateEnv(process.env);
 
+// Simple in-memory rate limiter for ephemeral tokens (POC only)
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const MAX_REQUESTS_PER_WINDOW = 10; // 10 tokens per hour per IP
+
+function checkRateLimit(ip: string): { allowed: boolean; remaining: number } {
+  const now = Date.now();
+  const record = rateLimitMap.get(ip);
+
+  if (!record || now > record.resetTime) {
+    rateLimitMap.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+    return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - 1 };
+  }
+
+  if (record.count >= MAX_REQUESTS_PER_WINDOW) {
+    return { allowed: false, remaining: 0 };
+  }
+
+  record.count++;
+  return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - record.count };
+}
+
 // Available OpenAI Realtime API voices
 const AVAILABLE_VOICES = [
   { id: 'alloy', name: 'Alloy', description: 'Neutral and clear' },
@@ -37,9 +59,25 @@ export function setupVoiceTokenRoute(app: Express) {
     res.json({ token });
   });
 
-  // GET /api/voice/ephemeral-token - Generate ephemeral token for WebRTC (demo mode)
-  app.get('/api/voice/ephemeral-token', async (req, res) => {
+  // POST /api/voice/ephemeral-token - Generate ephemeral token for WebRTC (AUTHENTICATED)
+  app.post('/api/voice/ephemeral-token', requireUser, async (req: AuthRequest, res) => {
     try {
+      const userId = req.user!.userId;
+      const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
+
+      // Apply rate limiting per user (secondary defense)
+      const rateLimit = checkRateLimit(`user:${userId}`);
+      if (!rateLimit.allowed) {
+        console.warn(`[VOICE SECURITY] Rate limit exceeded for user: ${userId}`);
+        return res.status(429).json({ 
+          error: 'Rate limit exceeded. Max 10 tokens per hour.',
+          retryAfter: 3600
+        });
+      }
+
+      // Log token requests for audit trail
+      console.log(`[VOICE] Ephemeral token requested by user: ${userId} from IP: ${clientIp} (${rateLimit.remaining} remaining)`);
+
       // Call OpenAI API to generate ephemeral token
       const response = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
         method: 'POST',
@@ -67,6 +105,7 @@ export function setupVoiceTokenRoute(app: Express) {
       res.json({ 
         ephemeralKey: data.value,
         expiresIn: 60, // Token expires in 60 seconds
+        rateLimitRemaining: rateLimit.remaining
       });
     } catch (error) {
       console.error('Error generating ephemeral token:', error);

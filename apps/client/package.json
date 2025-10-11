@@ -12,6 +12,7 @@
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
+    "@openai/agents": "^0.1.9",
     "@spotlight/shared": "workspace:*",
     "@tanstack/react-query": "^5.90.2",
     "@testing-library/jest-dom": "^6.9.1",

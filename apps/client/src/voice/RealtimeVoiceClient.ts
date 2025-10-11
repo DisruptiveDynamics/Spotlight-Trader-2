@@ -43,10 +43,15 @@ export class RealtimeVoiceClient {
 
   async disconnect() {
     try {
-      this.session = null;
+      if (this.session) {
+        // Properly close the WebRTC session to release resources
+        await this.session.disconnect();
+        this.session = null;
+      }
       this.config.onDisconnected?.();
     } catch (error) {
       console.error('Error disconnecting:', error);
+      this.config.onError?.(error as Error);
     }
   }
 

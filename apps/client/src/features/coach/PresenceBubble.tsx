@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { EnhancedVoiceClient } from '../../voice/EnhancedVoiceClient.v2';
+import { RealtimeVoiceClient } from '../../voice/RealtimeVoiceClient';
 import { VoiceFallback } from './VoiceFallback';
 import { ensureiOSAudioUnlocked } from '../../voice/ios';
-import { AudioCapture } from '../../services/AudioCapture';
 
 type CoachState = 'listening' | 'thinking' | 'speaking' | 'idle' | 'muted';
 type ConnectionState =
@@ -223,7 +222,7 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
   const [_permissionState, setPermissionState] = useState<PermissionState>('pending');
   const [statusMessage, setStatusMessage] = useState<string>('');
 
-  const voiceClientRef = useRef<EnhancedVoiceClient | null>(null);
+  const voiceClientRef = useRef<RealtimeVoiceClient | null>(null);
   const tokenRef = useRef<string | null>(null);
   const tooltipTimerRef = useRef<number>();
   const statusTimerRef = useRef<number>();
@@ -241,23 +240,23 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
   }, []);
 
   useEffect(() => {
-    const client = new EnhancedVoiceClient();
-    voiceClientRef.current = client;
-
-    const unsubscribeState = client.onStateChange(setConnectionState);
-    const unsubscribeCoach = client.onCoachStateChange(setCoachState);
-    const unsubscribeAmplitude = client.onAmplitudeChange(setAmplitude);
-    const unsubscribeLatency = client.onLatency(setLatency);
-    const unsubscribePermission = client.onPermissionChange((state) => {
-      setPermissionState(state);
-
-      // Show status message for permission changes
-      if (state === 'granted') {
-        showStatusMessage('Mic activated ✅');
-      } else if (state === 'denied') {
-        showStatusMessage('Mic permission denied');
-      }
+    const client = new RealtimeVoiceClient({
+      instructions: 'You are a world-class intraday trading coach. Your #1 job is to help the user trade THEIR plan on THEIR symbols in real time. Be concise (2 sentences or less unless asked). If no quality setup: say "No edge right now" and stop.',
+      voice: 'alloy',
+      onConnected: () => {
+        setConnectionState('connected');
+        setCoachState('idle');
+      },
+      onDisconnected: () => {
+        setConnectionState('disconnected');
+        setCoachState('idle');
+      },
+      onError: (error) => {
+        console.error('Voice error:', error);
+        setConnectionState('error');
+      },
     });
+    voiceClientRef.current = client;
 
     tooltipTimerRef.current = window.setTimeout(() => {
       if (!hasInteracted) {
@@ -266,11 +265,6 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
     }, 5000);
 
     return () => {
-      unsubscribeState();
-      unsubscribeCoach();
-      unsubscribeAmplitude();
-      unsubscribeLatency();
-      unsubscribePermission();
       client.disconnect();
       if (tooltipTimerRef.current) {
         clearTimeout(tooltipTimerRef.current);
@@ -293,19 +287,18 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
     }, duration);
   };
 
-  const fetchToken = async (): Promise<string> => {
-    // Use demo mode for POC - GET endpoint doesn't require auth
-    const response = await fetch('/api/voice/token?demo=true', {
+  const fetchEphemeralToken = async (): Promise<string> => {
+    const response = await fetch('/api/voice/ephemeral-token', {
       method: 'GET',
       credentials: 'include',
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch token: ${response.statusText}`);
+      throw new Error(`Failed to fetch ephemeral token: ${response.statusText}`);
     }
 
     const data = await response.json();
-    return data.token;
+    return data.ephemeralKey;
   };
 
   const handleBubbleClick = async () => {
@@ -323,50 +316,29 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
       connectionState === 'offline'
     ) {
       try {
+        setConnectionState('connecting');
         showStatusMessage('Connecting...', 3000);
         
-        // Step 1: Unlock iOS audio on first user gesture (critical for Safari/iOS)
+        // Unlock iOS audio on first user gesture (critical for Safari/iOS)
         await ensureiOSAudioUnlocked();
         
-        // Step 2: Request microphone permission BEFORE connecting
-        // This ensures the browser shows the permission dialog immediately
-        try {
-          await AudioCapture.requestMicPermission({ sampleRate: 24000 });
-          showStatusMessage('Mic permission granted ✅', 1500);
-        } catch (micError) {
-          console.error('Microphone permission denied:', micError);
-          showStatusMessage('Microphone blocked. Please enable mic access.', 4000);
-          setShowFallback(true);
-          return;
-        }
+        // Fetch ephemeral token
+        const ephemeralKey = await fetchEphemeralToken();
         
-        // Step 3: Fetch token
-        const token = await fetchToken();
-        tokenRef.current = token;
-        
-        // Step 4: Connect client (mic permission already granted)
-        await client.connect(token);
+        // Connect client (SDK handles mic permissions automatically)
+        await client.connect(ephemeralKey);
 
-        // Step 5: Check final connection state
-        if (client.getState() === 'connected') {
-          showStatusMessage('Voice coach connected ✅', 2000);
-        }
+        showStatusMessage('Voice coach connected ✅', 2000);
       } catch (error) {
         console.error('Failed to connect voice coach:', error);
         showStatusMessage('Connection failed. Please try again.', 3000);
-
-        if (client.getPermissionState() === 'denied') {
-          setShowFallback(true);
-        }
+        setConnectionState('error');
       }
     } else if (connectionState === 'connected') {
-      if (coachState === 'speaking') {
-        client.interrupt();
-        showStatusMessage('Interrupted', 1000);
-      } else {
-        client.toggleMute();
-        showStatusMessage(client.isMicMuted() ? 'Muted' : 'Unmuted', 1000);
-      }
+      // For now, just disconnect when clicking while connected
+      // TODO: Add mute/interrupt functionality once SDK exposes it
+      showStatusMessage('Disconnecting...', 1000);
+      await client.disconnect();
     }
   };
 

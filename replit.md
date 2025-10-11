@@ -67,3 +67,43 @@ Focuses on professional ergonomics:
 - **Communication**: `ws`, `express`.
 - **Frontend**: `react`, `react-dom`, `lightweight-charts`, `tailwindcss`.
 - **Journaling & Memory**: `nanoid`, `node-cron`, `pgvector` extension.
+
+## Recent Changes
+
+### Voice Connection Fix: Demo Token Authentication (October 11, 2025)
+- **✅ Root Cause Identified**: Voice token endpoint required authentication, but no session existed
+  - POST `/api/voice/token` used `requireUser` middleware (401 errors)
+  - Console showed: `"Failed to connect voice coach:"` with empty error objects
+  - Demo token endpoint GET `/api/voice/token?demo=true` bypasses auth
+- **✅ Client Token Fetching Fixed**: PresenceBubble.tsx `fetchToken()` 
+  - Changed from POST to GET with `demo=true` query parameter
+  - Works without authentication (perfect for POC/demo mode)
+- **✅ Reconnect Token Fixed**: EnhancedVoiceClient.v2.ts `freshToken()`
+  - Updated to use same demo endpoint for consistency
+  - Ensures reconnects work without authentication
+- **✅ Voice Infrastructure Verified**: All components already correct
+  - WebSocket URL: Dynamic wss:// protocol detection ✅
+  - Session context: Has `type: 'realtime'` with proper turn_detection ✅
+  - Voice proxy: Sends session.update with all required fields ✅
+- **🎯 Result**: Voice assistant ready to connect, token endpoint tested and working (returns valid JWT for demo-user with 60s TTL)
+
+### UI/UX Refinements: Dashboard Ergonomics (October 11, 2025)
+- **✅ Signal Density Minimized**: Compact inline control replacing large card
+  - Reduced from vertical layout with descriptions to horizontal Q/N/L buttons
+  - Semi-transparent background (`bg-gray-800/50`), minimal padding (`px-3 py-2`)
+  - Tooltips provide context instead of permanent descriptive text
+  - Bell icon with subtle muted colors when audio disabled
+- **✅ Accessibility Moved to Settings**: Dedicated tab in Settings panel
+  - Settings panel converted to tabbed interface (Coach | Accessibility)
+  - Accessibility removed from right sidebar clutter
+  - Organized, professional settings experience
+- **✅ Chart Height Optimized**: Reduced by 15% for better volume visibility
+  - Main element capped at `max-h-[85vh]` (was 100vh)
+  - Volume bars now prominently visible and easier to read
+  - Professional TOS-like layout with balanced price/volume display
+- **✅ Metrics Infrastructure Wired**: RTT and SSE reconnect tracking active
+  - Voice RTT emits from `EnhancedVoiceClient.notifyLatency()`
+  - SSE reconnect counter tracks and emits connection stability
+  - LatencyHUD displays metrics in real-time (shows 0ms when idle)
+  - Tick→Wick latency deferred (requires chart update instrumentation)
+- **🎯 Result**: Clean, minimalist dashboard with professional trader ergonomics, organized settings, improved chart readability

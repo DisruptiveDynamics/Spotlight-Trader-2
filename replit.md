@@ -1,97 +1,59 @@
 # Spotlight Trader
 
 ## Overview
-
-Spotlight Trader is a production-grade real-time trading coach application for high-frequency day traders. Built as a TypeScript monorepo, it delivers real-time market data streaming, AI-powered voice coaching, a rule-based trading alerts system, and comprehensive journaling. The application prioritizes professional trader UX ergonomics, offering zero-lag, keyboard-first control with features like institutional-grade hotkeys, focus modes, latency monitoring, and accessibility. Its core purpose is to provide real-time insights and coaching to enhance trading performance and offers significant market potential for professional trading communities.
+Spotlight Trader is a production-grade, real-time trading coach application designed for high-frequency day traders. It offers real-time market data streaming, AI-powered voice coaching, a rule-based trading alerts system, and comprehensive journaling. The application emphasizes professional trader UX ergonomics, providing zero-lag, keyboard-first control with features like institutional-grade hotkeys, focus modes, latency monitoring, and accessibility. Its primary goal is to deliver real-time insights and coaching to improve trading performance, holding significant market potential for professional trading communities.
 
 ## User Preferences
-
 Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
 ### Monorepo Structure
-The application uses pnpm workspaces to organize `apps/client` (React 18, Vite, Tailwind CSS), `apps/server` (Node.js 20 Express backend), `packages/shared` (TypeScript types, Zod schemas), and `packages/config`.
+The application is organized as a TypeScript monorepo using pnpm workspaces, including `apps/client` (React 18, Vite, Tailwind CSS), `apps/server` (Node.js 20 Express backend), `packages/shared` (TypeScript types, Zod schemas), and `packages/config`.
 
 ### Real-Time Data Pipeline
-A deterministic and lossless data pipeline processes live market data with DST-safe exchange timezone handling:
-- **Bar Builder**: Uses `date-fns-tz` to bucket bars in America/New_York timezone with DST-safe `floorToExchangeMinute()`, ensuring correct bar boundaries across DST transitions
-- **RAF-Based Chart Rendering**: Coalesces bar and microbar updates into batched 60fps renders with `document.hidden` throttling for efficient background behavior
-- **SSE Reconnect Logic**: Implements state progression (degraded_ws → replaying_gap → live) with promise queue serialization to prevent race conditions, ensuring monotonic sequence ordering during gap backfills
-- **Polygon WebSocket**: Heartbeat timer resets on any inbound message (not just pong), detects stale connections after 60s silence
-- **Dependencies**: date-fns 4.1.0 (upgraded from 2.30.0), date-fns-tz 3.2.0 for timezone support
+A deterministic and lossless data pipeline processes live market data, ensuring DST-safe exchange timezone handling. Key components include a Bar Builder using `date-fns-tz` for accurate bar bucketing, RAF-based chart rendering for 60fps updates, and robust SSE reconnect logic with promise queue serialization for monotonic sequence ordering. The Polygon WebSocket connection incorporates a heartbeat timer for reliable connection monitoring.
 
 ### Communication Protocols
-- **Server-Sent Events (SSE)**: For streaming market data (1-minute bars, microbars, trading alerts), supporting lossless resume.
-- **WebSocket**: For the voice coach, proxying bidirectional audio to OpenAI's Realtime API with instant interrupt capability and short-lived HS256 JWTs.
+- **Server-Sent Events (SSE)**: Utilized for streaming market data (1-minute bars, microbars, trading alerts) with lossless resume capabilities.
+- **WebSocket**: Employed for the voice coach, proxying bidirectional audio to OpenAI's Realtime API, supporting instant interruption and secured with short-lived HS256 JWTs.
 
 ### Data Storage Strategy
 - **Neon PostgreSQL with Drizzle ORM**: Stores versioned trading rules, user customizations, signals, and journal entries. Pgvector is planned for semantic memory.
 - **Redis (Upstash)**: Planned for session management, rate limiting, and distributed ring buffer persistence.
-- **In-Memory Structures**: Utilized for the ring buffer and bar builder state for sub-millisecond latency.
+- **In-Memory Structures**: Used for the ring buffer and bar builder state to achieve sub-millisecond latency.
 
 ### Security Model
-Security features include Helmet.js, strict CORS allowlisting, short-lived JWTs, connection limits, and Zod for environment validation. CORS is dynamically configured for trusted origins, Replit preview environments, and rejects unauthorized requests. Cookie-based authentication with httpOnly session cookies is used, with a demo mode for Replit-specific authentication flow.
-
-**Session Validation (October 2025):**
-- Fixed "zombie login" bug where localStorage trusted stale sessions without server validation
-- Created `authStorage` module for centralized localStorage with expiry tracking
-- Added `/api/auth/session` endpoint that validates JWT and returns user + session expiry timestamp
-- `AuthGate` always validates with server on mount, clearing storage if session invalid
-- Session expiry shows amber notification prompting re-login
-- Voice coach and protected features require valid server-backed session
+Security features include Helmet.js, strict CORS allowlisting, short-lived JWTs, connection limits, and Zod for environment validation. Dynamic CORS configuration supports trusted origins and Replit preview environments. Cookie-based authentication with httpOnly session cookies is used, alongside a demo mode for Replit-specific authentication. Session validation is server-backed, clearing stale client-side sessions and prompting re-login upon expiry.
 
 ### Frontend Architecture
-Built with React 18 and TypeScript, using Lightweight Charts, Zustand for state management, and Tailwind CSS. Vite handles bundling and API proxying.
-
-#### Professional Charting System
-Features a Thinkorswim-level charting system with a Zustand store for state management (favorites, symbol, timeframe, layout, overlays), a shared indicators library, a TOS-style toolbar, and a Pane component integrating Lightweight-charts with various overlays and interactions. It supports multi-chart grids and ensures smooth data updates via SSE and microbar coalescing.
+Built with React 18 and TypeScript, using Lightweight Charts, Zustand for state management, and Tailwind CSS. Vite handles bundling and API proxying. A professional charting system features a Zustand store for state management, a shared indicators library, a TOS-style toolbar, and a Pane component integrating Lightweight-charts with various overlays, supporting multi-chart grids and smooth data updates.
 
 ### Rules Engine Architecture
-Enables strategy automation with AI explanations:
-1.  **Expression Evaluation**: Validates and compiles user-defined rules, evaluating them against 1-minute bars to emit `rule:evaluated` events.
+This engine enables strategy automation with AI explanations through a three-stage process:
+1.  **Expression Evaluation**: Validates and compiles user-defined rules against 1-minute bars to emit `rule:evaluated` events.
 2.  **Signal Generation with Risk Governance**: Filters evaluated rules based on throttling, concurrent signal limits, and risk budget, persisting approved signals as `signal:new` events.
-3.  **AI Explanation Generation**: Generates natural language explanations for new signals using OpenAI API (gpt-4o-mini).
-4.  **Real-Time Client Updates**: Streams alerts via SSE to the AlertsPanel, and the RulesBrowser allows dry-run backtesting.
+3.  **AI Explanation Generation**: Generates natural language explanations for new signals using the OpenAI API.
+Real-time client updates are streamed via SSE to the AlertsPanel, and a RulesBrowser allows dry-run backtesting.
 
 ### Journaling & Memory System
-Provides structured trade tracking and automated end-of-day summaries. The Coach Memory System (Pgvector) stores and retrieves `playbook`, `glossary`, and `postmortem` memories with OpenAI embeddings, featuring decay-aware retrieval and diversity filtering for personalized context.
+Provides structured trade tracking and automated end-of-day summaries. The Coach Memory System uses Pgvector to store and retrieve `playbook`, `glossary`, and `postmortem` memories with OpenAI embeddings, featuring decay-aware retrieval and diversity filtering.
 
 ### Continuous Learning Loop & Backtesting
-- **Feature Flags System**: In-memory flags for safe rollouts (`enableBacktest`, `enableLearning`, `enableCoachMemory`).
-- **Feedback & Metrics**: Database schema for user feedback on signals and daily aggregated rule performance metrics (`rule_metrics_daily`).
-- **Learning Loop Service**: Event-driven system computing expectancy scores for rules with exponential decay for historical feedback.
-- **Deterministic Backtest Harness**: Runs backtests with historical data using the same evaluator as live trading, providing metrics like avgHoldBars, triggersPerDay, and regimeBreakdown. Includes a golden test corpus for validation.
-- **Client Feedback UI**: Components for rating signals and running backtests with UI for results.
+An event-driven system with in-memory feature flags for safe rollouts. It includes a database schema for user feedback and aggregated rule performance metrics. A learning loop service computes expectancy scores with exponential decay. A deterministic backtest harness runs historical data against the same evaluator as live trading, providing metrics and validating against a golden test corpus. The client UI supports signal rating and backtest execution.
 
 ### Voice Presence Control System
-A voice interface with modern animations, robust audio handling, and complete personalization:
-- **Core Audio Infrastructure**: Persistent AudioContext/MediaStream, Mute via `track.enabled`, AnalyserNode for amplitude tracking, accurate latency measurement, VoiceTokenManager for secure JWT.
-- **Modern UI Components**: PresenceBubble with canvas-based wave animations, latency badges, thinking overlay, keyboard shortcuts, and ARIA labels. VoiceFallback provides a text input UI for mic permission denials.
-- **Personalization System**: Client-side Zustand store with localStorage persistence for voice selection, tone presets, jargon density, and decisiveness. Server-side `coachProfiles` table stores settings, applied to OpenAI Realtime API.
-- **Interaction Model**: Click-to-activate, toggle mic, and disconnect options.
-- **Performance & Accessibility**: Stable rAF loops, reduced motion support, efficient canvas rendering, graceful degradation.
-- **iOS/iPadOS Compatibility**: Lazy AudioContext initialization, smart permission flow, network resilience with exponential backoff, mobile UX optimizations, and clean lifecycle management.
-
-**Voice Assistant v2 Optimizations (October 2025):**
-- **AudioWorklet Migration**: Replaced deprecated ScriptProcessorNode with AudioWorklet for 10-20ms latency improvement and Safari stability
-- **Enhanced Barge-In**: Instant audio interruption with gain ducking to zero before stopping playback, sends `response.cancel` to OpenAI
-- **Audio Frame Batching**: 20-40ms frame coalescing with backpressure control, max 8-frame queue with oldest-drop when WebSocket congested (bufferedAmount > 32KB)
-- **Idle Detection**: Auto-disconnect after 30min inactivity to save tokens (~$0.10-0.30/hour), monitors mouse/keyboard/touch/scroll activity
-- **Safari/iOS AudioContext Unlock**: Gesture-based unlock via AudioManager for iOS compliance, lazy initialization on first user interaction
-- **Tab Visibility Optimization**: Pauses VAD and amplitude monitoring when `document.hidden` to save CPU/battery on mobile
-- **Services**: AudioManager, AudioCapture (AudioWorklet), VoiceCoach (barge-in/batching), IdleDetector (auto-sleep)
-- **Implementation**: EnhancedVoiceClient.v2 integrates all optimizations with proper audio node cleanup and WebSocket backpressure control
+A voice interface featuring modern animations, robust audio handling, and extensive personalization. It includes a core audio infrastructure with persistent AudioContext/MediaStream, AnalyserNode for amplitude tracking, and secure VoiceTokenManager. UI components like the PresenceBubble, latency badges, and a VoiceFallback provide a rich user experience. Personalization settings (voice selection, tone, jargon, decisiveness) are managed client-side and synchronized with server-side `coachProfiles`. Interaction models include click-to-activate and toggle mic. Performance is optimized with stable rAF loops and reduced motion support, with specific compatibility fixes for iOS/iPadOS. Recent optimizations include AudioWorklet migration for lower latency, enhanced barge-in capabilities, audio frame batching with backpressure control, and idle detection for token savings.
 
 ### Trader UX Pack
 Focuses on professional ergonomics with zero-lag interactions:
 - **Hotkey System**: Keyboard-first control with core hotkeys and a Command Palette.
-- **Focus Modes**: `Trade Mode`, `Review Mode`, and `Normal Mode` to reduce distraction.
+- **Focus Modes**: `Trade Mode`, `Review Mode`, and `Normal Mode` to minimize distraction.
 - **Signal Density Control**: Manages alert noise with `Quiet`, `Normal`, and `Loud` modes.
 - **Anchored VWAP**: Offers `Session`, `Premarket`, and `Custom` options.
 - **Latency & Health HUD**: Displays real-time performance metrics (RTT, Tick→Wick P95, SSE reconnects).
-- **Tape Peek**: Collapsible panel for real-time market metrics (Volume Z-Score, Uptick–Downtick Delta, Spread).
-- **Accessibility**: Color vision presets (Protanopia, Deuteranopia, Tritanopia) and High Contrast Mode.
+- **Tape Peek**: Collapsible panel for real-time market metrics.
+- **Accessibility**: Color vision presets and High Contrast Mode.
 - **Performance Safeguards**: UI debouncing, microbar coalescing, lazy loading, and event throttling.
 
 ## External Dependencies
@@ -109,53 +71,3 @@ Focuses on professional ergonomics with zero-lag interactions:
 - **Communication**: `ws`, `express`.
 - **Frontend**: `react`, `react-dom`, `lightweight-charts`, `tailwindcss`.
 - **Journaling & Memory**: `nanoid`, `node-cron`, `pgvector` extension.
-
-## Recent Changes (October 2025)
-
-### Production Readiness Complete (October 10, 2025)
-- **✅ Demo Mode Voice Token**: Added GET `/api/voice/token?demo=true` endpoint for unauthenticated voice access
-  - Issues demo tokens without requiring authentication for demo/preview mode
-  - Keeps production POST endpoint with full authentication for regular users
-  - 60-second token expiry with proper scoping
-- **✅ Live Market Data Verified**: Polygon WebSocket streaming thousands of ticks successfully during market hours
-  - Bars finalize correctly at minute boundaries with accurate OHLCV data
-  - DST-safe bucketing working as designed
-  - No data loss or timing issues detected
-- **✅ Debug Logging Cleanup**: Removed all temporary debug logs for production
-  - Eliminated tick timestamp debug sampling
-  - Removed bar finalization console logs
-  - System ready for production deployment
-- **📊 System Status**: All core features operational and verified:
-  - Real-time market data streaming ✅
-  - Voice AI coach with AudioWorklet optimization ✅  
-  - Rule-based alerts engine ✅
-  - Session management and auth ✅
-
-### Voice WebSocket Binary Handling Fix (October 10, 2025)
-- **Critical Audio Fix**: Fixed voice assistant audio playback by correctly handling binary WebSocket data
-  - Set `ws.binaryType = 'arraybuffer'` to receive binary audio as ArrayBuffer instead of Blob
-  - Added `handleAudioArrayBuffer()` method to process PCM16 directly without base64 conversion overhead
-  - Updated message handler to check ArrayBuffer → Blob → JSON in priority order
-  - Eliminated Blob parsing errors and AudioBatcher backpressure warnings
-- **Audio Sample Rate Correction**: Fixed chipmunk/slow audio by aligning sample rates end-to-end
-  - AudioContext created at 24kHz (matches OpenAI Realtime API output)
-  - AudioBuffers now created with correct 24000 Hz rate (previously used wrong audioContext.sampleRate)
-  - Browser no longer needs to resample, audio plays at correct speed
-  - Applied fix to both ArrayBuffer and base64 delta paths
-- **Server Improvements**: Added error middleware and VAD/transcription configs to voiceProxy
-- **Result**: Voice assistant now streams audio without errors, correct playback speed, reduced latency
-
-### Voice Assistant & Market Data Fixes (October 10, 2025)
-- **Server Port Standardization**: Changed server from hardcoded port 8000 to `process.env.PORT || 8080` for consistency with Vite proxy
-- **Vite Proxy Update**: Updated all Vite proxy targets (`/api`, `/stream`, `/ws`) from localhost:8000 to localhost:8080
-- **Health Endpoint**: Added `/api/voice/health` endpoint for voice assistant health checks
-- **URL Fix**: Fixed hardcoded `localhost:4000` URL in CoachBubble.tsx to use relative path `/api/voice/token` with proper credentials
-- **Voice Token Auth**: Added `credentials: 'include'` to PresenceBubble fetchToken to send session cookies for authentication
-- **Polygon WebSocket Fix**: Fixed `@polygon.io/client-js` library not auto-sending auth message by manually sending `{action: 'auth', params: API_KEY}` on connection. Charts now receive real-time tick data from Polygon Stock Advanced plan.
-- **Integration Status**: Both voice assistant and live market data fully operational. All optimizations (AudioWorklet, barge-in, backpressure, idle detection) integrated.
-
-### Market Data Pipeline Improvements
-- **DST-Safe Bucketing**: Implemented exchange timezone-aware bar bucketing using `date-fns-tz` to handle DST transitions correctly
-- **RAF Rendering**: Added RAF-based coalesced chart updates with batching for smooth 60fps performance
-- **Reconnect Logic**: Enhanced SSE reconnect with proper state progression and serialized gap backfilling using promise queues
-- **Heartbeat Fix**: Updated Polygon WebSocket heartbeat to reset on any inbound message for reliable connection monitoring

@@ -108,6 +108,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
     const clientBuffer: string[] = [];
     let upstreamReady = false;
     let sessionCreatedReceived = false;
+    let upstreamSessionId: string | null = null;
     let clientHeartbeat: NodeJS.Timeout | null = null;
     let upstreamHeartbeat: NodeJS.Timeout | null = null;
 
@@ -120,37 +121,16 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
       // Parse OpenAI messages to handle session.created
       try {
         const message = JSON.parse(data.toString());
-        console.log('[VoiceProxy] Received from OpenAI:', message.type);
-        
-        // Log errors from OpenAI
-        if (message.type === 'error') {
-          console.error('[VoiceProxy] OpenAI error:', JSON.stringify(message, null, 2));
-        }
         
         // Wait for session.created, then send our session.update
         if (message.type === 'session.created' && !sessionCreatedReceived) {
-          console.log('[VoiceProxy] Received session.created from OpenAI');
+          upstreamSessionId = message.session?.id || null;
+          console.log('[VoiceProxy] Received session.created from OpenAI, session ID:', upstreamSessionId);
           sessionCreatedReceived = true;
           
           const sessionUpdate = await getInitialSessionUpdate(userId);
-          const fullUpdate = {
-            type: 'session.update',
-            session: {
-              modalities: ['audio', 'text'],
-              instructions: sessionUpdate.session.instructions,
-              voice: sessionUpdate.session.voice,
-              input_audio_format: 'pcm16',
-              output_audio_format: 'pcm16',
-              input_audio_transcription: {
-                model: 'whisper-1',
-              },
-              turn_detection: sessionUpdate.session.turn_detection,
-              temperature: 0.8,
-            },
-          };
-
-          console.log('[VoiceProxy] Sending session.update:', JSON.stringify(fullUpdate, null, 2));
-          upstreamWs.send(JSON.stringify(fullUpdate));
+          console.log('[VoiceProxy] Sending session.update to OpenAI');
+          upstreamWs.send(JSON.stringify(sessionUpdate));
           upstreamReady = true;
 
           // Flush buffered client messages
@@ -167,6 +147,16 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
               upstreamWs.ping();
             }
           }, HEARTBEAT_INTERVAL);
+        }
+        
+        // Enhanced error logging with session ID
+        if (message.type === 'error' || message.type === 'server_error') {
+          console.error('[VoiceProxy][UpstreamError]', {
+            sessionId: upstreamSessionId,
+            userId,
+            eventType: message.type,
+            error: message.error || message,
+          });
         }
       } catch (err) {
         console.error('[VoiceProxy] Error parsing OpenAI message:', err);

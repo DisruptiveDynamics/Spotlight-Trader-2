@@ -238,7 +238,9 @@ export class EnhancedVoiceClient {
       return;
     }
 
+    // Use correct WebSocket URL - Replit proxies through port 5000
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/realtime?t=${token}`;
+    console.log('[Voice] Connecting to:', wsUrl);
     this.ws = new WebSocket(wsUrl);
     
     // CRITICAL: Set binaryType to receive ArrayBuffer instead of Blob

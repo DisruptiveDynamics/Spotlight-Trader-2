@@ -8,22 +8,19 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5000,
     strictPort: true,
-    allowedHosts: ['.replit.dev'],
+    hmr: {
+      protocol: 'ws',
+      host: '0.0.0.0',
+      port: 5000,
+      clientPort: 5000,
+    },
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://0.0.0.0:8080',
         changeOrigin: true,
-        secure: false,
-        cookieDomainRewrite: '',
-        cookiePathRewrite: '/',
-      },
-      '/stream': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-        secure: false,
       },
       '/ws': {
-        target: 'ws://localhost:8080',
+        target: 'http://0.0.0.0:8080',
         ws: true,
       },
     },

@@ -241,6 +241,13 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
     clientWs.on('message', (data) => {
       updateActivity();
       if (upstreamReady && upstreamWs.readyState === WebSocket.OPEN) {
+        // Defensive: if binary data arrives, wrap it in JSON event with base64 audio
+        if (Buffer.isBuffer(data)) {
+          const audioB64 = (data as Buffer).toString('base64');
+          upstreamWs.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: audioB64 }));
+          return;
+        }
+        // JSON path - send as-is
         upstreamWs.send(data);
       } else {
         clientBuffer.push(data.toString());

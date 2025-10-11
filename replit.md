@@ -70,6 +70,27 @@ Focuses on professional ergonomics:
 
 ## Recent Changes
 
+### Voice Audio Format Fix: 24kHz PCM16 Sample Rate Correction (October 11, 2025)
+- **✅ Root Cause Identified**: OpenAI "Invalid audio" error due to sample rate mismatch
+  - OpenAI Realtime API requires **24kHz PCM16 mono** with **480-sample frames (960 bytes for 20ms)**
+  - AudioCapture was configured for **16kHz with 320-sample frames (640 bytes)**, causing rejection
+  - Every audio frame sent to OpenAI was in the wrong format
+- **✅ AudioCapture.ts Fixed**: Updated to 24kHz throughout the pipeline
+  - Changed default `sampleRate` from 16000 → 24000 (lines 30, 79)
+  - Changed `TARGET_SAMPLES` from 320 → 480 for exact 20ms frames at 24kHz (line 53)
+  - Updated comments to reflect 960-byte frame requirement
+  - All downstream code already expected 24kHz (AudioBatcher, EnhancedVoiceClient)
+- **✅ Session Config Corrected**: Re-added `enabled: true` to `input_audio_transcription`
+  - Confirmed by latest OpenAI Realtime API documentation
+  - Required for OpenAI to accept and transcribe audio input
+- **✅ End-to-End Verification**: Complete audio pipeline validated
+  - Capture: 24kHz PCM16 mono, 480 samples per frame ✅
+  - Convert: Int16Array → Uint8Array with proper byteOffset/byteLength ✅
+  - Encode: Chunked base64 encoding with 32KB chunks ✅
+  - Send: JSON-only transport with `input_audio_buffer.append` ✅
+  - Proxy: Forwards JSON as-is, defensive binary→JSON conversion ✅
+- **🎯 Result**: Audio format now matches OpenAI Realtime API requirements exactly. Voice connection ready for testing.
+
 ### Voice Connection Loop Fix: Message Processing & Reconnect Logic (October 11, 2025)
 - **✅ Root Cause Identified**: Listening→reconnect loop caused by message processing errors
   - Client only handled 4-5 OpenAI message types, unhandled messages caused errors

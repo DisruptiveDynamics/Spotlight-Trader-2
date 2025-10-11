@@ -60,6 +60,7 @@ export class EnhancedVoiceClient {
   private permissionState: PermissionState = 'pending';
   private currentToken: string | null = null;
   private isBackgroundTab = false;
+  private intentionalDisconnect = false;
 
   constructor() {
     this.vad = new VoiceActivityDetector();
@@ -143,6 +144,7 @@ export class EnhancedVoiceClient {
       return;
     }
 
+    this.intentionalDisconnect = false;
     this.currentToken = token;
     this.setState('connecting');
 
@@ -166,6 +168,8 @@ export class EnhancedVoiceClient {
   }
 
   disconnect(): void {
+    this.intentionalDisconnect = true;
+    
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
@@ -292,31 +296,92 @@ export class EnhancedVoiceClient {
         if (typeof data === 'string') {
           const msg = JSON.parse(data);
 
-          if (msg.type === 'response.audio.delta' && msg.delta) {
-            this.handleAudioDelta(msg.delta);
-          }
+          // Handle all OpenAI Realtime API message types
+          switch (msg.type) {
+            // Session events
+            case 'session.created':
+            case 'session.updated':
+              console.log('[Voice] Session ready:', msg.type);
+              break;
 
-          if (msg.type === 'response.audio_transcript.delta' && msg.delta) {
-            console.log('[Voice] Transcript:', msg.delta);
-          }
+            // Conversation events
+            case 'conversation.created':
+            case 'conversation.item.created':
+            case 'conversation.item.truncated':
+            case 'conversation.item.deleted':
+              break;
 
-          if (msg.type === 'response.done' && this.lastRequestTime > 0) {
-            const responseTime = Date.now() - this.lastRequestTime;
-            this.notifyLatency(responseTime);
-            this.lastRequestTime = 0;
-          }
+            // Input audio events
+            case 'input_audio_buffer.committed':
+            case 'input_audio_buffer.cleared':
+              break;
+            
+            case 'input_audio_buffer.speech_started':
+              this.setCoachState('thinking');
+              break;
+            
+            case 'input_audio_buffer.speech_stopped':
+              break;
 
-          if (msg.type === 'error') {
-            console.error('[Voice] Server error:', msg.error);
-          }
-          
-          // Heartbeat response
-          if (msg.type === 'pong') {
-            // Heartbeat acknowledged
+            // Response events
+            case 'response.created':
+            case 'response.output_item.added':
+            case 'response.output_item.done':
+            case 'response.content_part.added':
+              break;
+
+            case 'response.audio.delta':
+              if (msg.delta) {
+                this.handleAudioDelta(msg.delta);
+                this.setCoachState('speaking');
+              }
+              break;
+
+            case 'response.audio.done':
+              this.setCoachState('listening');
+              break;
+
+            case 'response.audio_transcript.delta':
+              if (msg.delta) {
+                console.log('[Voice] Transcript:', msg.delta);
+              }
+              break;
+
+            case 'response.audio_transcript.done':
+            case 'response.text.delta':
+            case 'response.text.done':
+            case 'response.function_call_arguments.delta':
+            case 'response.function_call_arguments.done':
+              break;
+
+            case 'response.done':
+              if (this.lastRequestTime > 0) {
+                const responseTime = Date.now() - this.lastRequestTime;
+                this.notifyLatency(responseTime);
+                this.lastRequestTime = 0;
+              }
+              break;
+
+            // Rate limit events
+            case 'rate_limits.updated':
+              break;
+
+            // Error events
+            case 'error':
+              console.error('[Voice] Server error:', msg.error);
+              break;
+            
+            // Heartbeat response
+            case 'pong':
+              break;
+
+            default:
+              console.log('[Voice] Unhandled message type:', msg.type);
           }
         }
       } catch (error) {
-        console.error('Error processing WebSocket message:', error);
+        // Log error but don't trigger reconnect - parsing errors are not connection issues
+        console.error('[Voice] Error processing message:', error instanceof Error ? error.message : String(error), error);
       }
     };
 
@@ -329,10 +394,22 @@ export class EnhancedVoiceClient {
       }
     };
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (event) => {
+      console.log('[Voice] WebSocket closed:', event.code, event.reason);
+      
+      // Don't reconnect if user intentionally disconnected
+      if (this.intentionalDisconnect) {
+        this.setState('disconnected');
+        this.setCoachState('idle');
+        return;
+      }
+
+      // Auto-reconnect with exponential backoff if not at max attempts
       if (this.reconnectAttempts < this.maxReconnectAttempts) {
+        this.setState('reconnecting');
         this.scheduleReconnect();
       } else {
+        console.log('[Voice] Max reconnect attempts reached');
         this.setState('disconnected');
         this.setCoachState('idle');
       }
@@ -379,25 +456,29 @@ export class EnhancedVoiceClient {
   }
 
   private handleAudioDelta(deltaBase64: string): void {
-    const audioContext = getAudioContext();
-    if (!audioContext) return;
+    try {
+      const audioContext = getAudioContext();
+      if (!audioContext) return;
 
-    const pcm16 = this.base64ToArrayBuffer(deltaBase64);
-    const float32 = this.pcm16ToFloat32(new Int16Array(pcm16));
+      const pcm16 = this.base64ToArrayBuffer(deltaBase64);
+      const float32 = this.pcm16ToFloat32(new Int16Array(pcm16));
 
-    // CRITICAL: OpenAI Realtime API outputs 24kHz PCM16
-    // Create buffer with correct 24kHz rate so browser resamples properly
-    const audioBuffer = audioContext.createBuffer(
-      1,
-      float32.length,
-      24000  // OpenAI output sample rate
-    );
-    audioBuffer.getChannelData(0).set(float32);
+      // CRITICAL: OpenAI Realtime API outputs 24kHz PCM16
+      // Create buffer with correct 24kHz rate so browser resamples properly
+      const audioBuffer = audioContext.createBuffer(
+        1,
+        float32.length,
+        24000  // OpenAI output sample rate
+      );
+      audioBuffer.getChannelData(0).set(float32);
 
-    this.playbackQueue.push(audioBuffer);
+      this.playbackQueue.push(audioBuffer);
 
-    if (!this.isPlaying) {
-      this.playNextBuffer();
+      if (!this.isPlaying) {
+        this.playNextBuffer();
+      }
+    } catch (error) {
+      console.error('[Voice] Failed to decode audio delta:', error instanceof Error ? error.message : String(error), 'Delta length:', deltaBase64?.length);
     }
   }
 

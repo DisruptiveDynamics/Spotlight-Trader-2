@@ -84,7 +84,7 @@ export async function getInitialSessionUpdate(userId: string) {
     type: 'session.update',
     session: {
       instructions,
-      modalities: ['audio', 'text'],
+      modalities: ['text', 'audio'],
       input_audio_format: 'pcm16',
       output_audio_format: 'pcm16',
       turn_detection: {

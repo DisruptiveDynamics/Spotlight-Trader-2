@@ -76,8 +76,10 @@ Focuses on professional ergonomics with zero-lag interactions:
 
 ### Fix Pack v1: Critical Issues Resolved (October 11, 2025)
 - **✅ Voice Reconnect Loop Eliminated**: Fixed critical bug causing infinite reconnect attempts with empty WebSocket payloads
-  - Implemented `freshToken()` method to fetch new JWT on every reconnect (tokens expire after 60s)
-  - Updated `scheduleReconnect()` and `handleOnline()` to use fresh tokens instead of stale ones
+  - Implemented `freshToken()` method in VoiceClient.ts to fetch new JWT on every reconnect (tokens expire after 60s)
+  - Updated `scheduleReconnect()` to use fresh tokens instead of cached stale ones
+  - Changed hard-coded `ws://hostname:4000` to dynamic `${proto}://${window.location.host}/ws/realtime`
+  - Voice WS now correctly uses wss:// for HTTPS and ws:// for HTTP
   - Voice coach now reliably reconnects without error spam
 - **✅ History API Format Alignment**: Unified Bar type across entire codebase to use nested ohlcv structure
   - Server Bar interface now uses `ohlcv: { o, h, l, c, v }` format (matching client expectations)

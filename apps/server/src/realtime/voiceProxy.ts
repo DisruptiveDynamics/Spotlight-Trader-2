@@ -52,6 +52,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
   });
 
   wss.on('connection', (clientWs, request) => {
+    console.log('[VoiceProxy] Client WebSocket connected');
     const url = new URL(request.url || '', `http://${request.headers.host}`);
     const token = url.searchParams.get('t') || request.headers['x-user-token'];
 
@@ -110,6 +111,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
     let upstreamHeartbeat: NodeJS.Timeout | null = null;
 
     upstreamWs.on('open', async () => {
+      console.log('[VoiceProxy] Upstream OpenAI connection opened for user:', userId);
       const sessionUpdate = await getInitialSessionUpdate(userId);
 
       const fullUpdate = {
@@ -132,6 +134,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
         },
       };
 
+      console.log('[VoiceProxy] Sending session update to OpenAI');
       upstreamWs.send(JSON.stringify(fullUpdate));
       upstreamReady = true;
 
@@ -164,7 +167,8 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
       clientWs.close(1011, 'Upstream error');
     });
 
-    upstreamWs.on('close', () => {
+    upstreamWs.on('close', (code, reason) => {
+      console.log('[VoiceProxy] Upstream OpenAI connection closed:', { code, reason: reason.toString(), userId });
       clientWs.close();
       if (upstreamHeartbeat) clearInterval(upstreamHeartbeat);
     });

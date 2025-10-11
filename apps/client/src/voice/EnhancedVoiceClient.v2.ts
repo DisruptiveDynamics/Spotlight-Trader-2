@@ -532,8 +532,9 @@ export class EnhancedVoiceClient {
   }
 
   private async freshToken(): Promise<string> {
-    const res = await fetch('/api/voice/token', { 
-      method: 'POST', 
+    // Use demo mode for POC - GET endpoint doesn't require auth
+    const res = await fetch('/api/voice/token?demo=true', { 
+      method: 'GET', 
       credentials: 'include' 
     });
     if (!res.ok) {

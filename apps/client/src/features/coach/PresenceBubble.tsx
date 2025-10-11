@@ -288,9 +288,9 @@ export function PresenceBubble() {
   };
 
   const fetchToken = async (): Promise<string> => {
-    const response = await fetch('/api/voice/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    // Use demo mode for POC - GET endpoint doesn't require auth
+    const response = await fetch('/api/voice/token?demo=true', {
+      method: 'GET',
       credentials: 'include',
     });
 

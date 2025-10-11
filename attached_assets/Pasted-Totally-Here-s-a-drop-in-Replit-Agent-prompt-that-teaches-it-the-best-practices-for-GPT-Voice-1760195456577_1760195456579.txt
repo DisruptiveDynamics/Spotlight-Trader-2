@@ -1,0 +1,189 @@
+Totally. Here’s a **drop-in Replit Agent prompt** that teaches it the **best practices for GPT Voice** so your coach feels like ChatGPT Voice: low-latency, barge-in, natural prosody, stable reconnects, zero “listen→reconnect” loops. It’s written to both **explain the standards** and **apply them** to your repo (client in `apps/client`, server in `apps/server`).
+
+---
+
+## Replit Agent Prompt — “GPT Voice Gold Standard (Spotlight Trader)”
+
+**Context (Repo layout):**
+
+* Client (Vite): `apps/client`
+* Server (Express): `apps/server`
+* Voice WS proxy: `apps/server/src/realtime/voiceProxy.ts`
+* Voice session init: `apps/server/src/coach/sessionContext.ts`
+* Voice client: `apps/client/src/voice/VoiceClient.ts`
+* Market stream: `apps/client/src/lib/marketStream.ts`
+
+**Goal:** Make the in-app voice feel like ChatGPT Voice: instant, full-duplex, barge-in, clean audio, robust reconnects, and natural phrasing. Fix all known issues (token reuse, hard-coded WS URL, missing `session.type`) and implement the best-practice stack below.
+
+---
+
+### A) Non-negotiable Voice Best Practices (implement exactly)
+
+1. **WebSocket + WSS everywhere**
+
+   * Build WS URL from `window.location` (NOT hard-coded host/port).
+
+     ```ts
+     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+     const wsUrl = `${proto}://${location.host}/ws/realtime?t=${encodeURIComponent(token)}`;
+     ```
+   * Use `wss://` when page is HTTPS.
+
+2. **Short-lived tokens, never reuse**
+
+   * `/api/voice/token` TTL ~60s. On **every reconnect**, fetch a **fresh token**. Do not cache. Exponential backoff with jitter (cap 30s).
+
+3. **Proper OpenAI Realtime session**
+
+   * On upstream connect, send:
+
+     ```json
+     {
+       "type": "session.update",
+       "session": {
+         "type": "realtime",
+         "modalities": ["audio", "text"],
+         "input_audio_format": "pcm16",
+         "output_audio_format": "pcm16",
+         "turn_detection": {
+           "type": "server_vad",
+           "threshold": 0.5,
+           "prefix_padding_ms": 300,
+           "silence_duration_ms": 500
+         }
+       }
+     }
+     ```
+   * Keep your instructions/voice, but **always** include `"type":"realtime"`.
+
+4. **Client capture = clean & consistent**
+
+   * `getUserMedia` audio constraints: `{ echoCancellation:true, noiseSuppression:true, autoGainControl:true }`.
+   * Use **AudioWorklet** to grab **PCM16 mono @ 16kHz**. Resample if needed (hardware often 44.1/48k).
+   * Chunk **20–60ms** frames; send with `input_audio_buffer.append`; call `commit` after a burst.
+   * **Remove any client “chunk deduplication”** that can clip audio. The server/LLM manages state.
+
+5. **Playback that feels human**
+
+   * Stream TTS back as PCM16 into an **AudioWorklet** player with a **jitter buffer ~120–200ms**.
+   * **Barge-in**: on local VAD → immediately send `{"type":"response.cancel"}` to Realtime, stop playback, flush jitter buffer.
+   * **Ducking**: when TTS is speaking, duck app/system sounds ~-12 dB; restore on stop.
+
+6. **Barge-in + push-to-talk**
+
+   * Support open-mic with server VAD **and** a push-to-talk key/button. Either path cancels current speech fast.
+
+7. **Mobile Safari realities**
+
+   * Require a **user gesture** to `resume()` `AudioContext` before first capture or playback.
+   * Detect `window.webkitAudioContext`, fall back accordingly.
+   * Re-unlock audio on page visibility changes.
+
+8. **Latency budgets**
+
+   * Mic→LLM ACK target **<250ms** round-trip on broadband.
+   * Keep capture → WS enqueue ≤ 25ms jitter; playback buffer ≤ 200ms.
+
+9. **Resilience**
+
+   * Heartbeat/health: if no WS traffic for 25–30s, ping; if no pong in 10s, reconnect with fresh token.
+   * On reconnect **always** re-send `session.update`.
+
+10. **UX polish**
+
+* VU meter that reacts to mic energy; speaking indicator; “tap to stop” action.
+* Interrupt words (“stop”, “pause”) should immediately cancel TTS and mark a turn boundary.
+
+11. **Security**
+
+* Origin allow-list on WS upgrade via `APP_ORIGIN`. In dev, allow Replit preview host; prod is strict.
+* Never log raw audio. Do log session IDs and reconnect reasons.
+
+---
+
+### B) Apply to this repo
+
+**1) Server: `apps/server/src/coach/sessionContext.ts`**
+
+* Ensure:
+
+```ts
+return {
+  type: 'session.update',
+  session: {
+    type: 'realtime',
+    modalities: ['audio','text'],
+    input_audio_format: 'pcm16',
+    output_audio_format: 'pcm16',
+    turn_detection: { type:'server_vad', threshold:0.5, prefix_padding_ms:300, silence_duration_ms:500 },
+    // keep existing instructions/voice
+  }
+};
+```
+
+**2) Client: `apps/client/src/voice/VoiceClient.ts`**
+
+* Build URL from location (wss on HTTPS).
+* Add `freshToken()` that POSTs `/api/voice/token`.
+* Reconnect path **always** fetches a fresh token; exponential backoff; cap 30s.
+* On `onerror`/`onclose`: `response.cancel` any TTS, stop playback, schedule reconnect.
+* Ensure **first power click** unlocks audio, then fetch + connect.
+
+**3) Client Audio Worklets**
+
+* Capture worklet: PCM16 mono @ 16k. 20–60ms frames, no dedup, flush with commit.
+* Playback worklet: jitter buffer 120–200ms, stop flush on barge-in.
+* Mic constraints = `{ echoCancellation:true, noiseSuppression:true, autoGainControl:true }`.
+* Add `global.d.ts` for `webkitAudioContext` typing.
+
+**4) Barge-in**
+
+* On VAD or push-to-talk while TTS active: send `{"type":"response.cancel"}` immediately, stop player, flush buffer, start recording new turn.
+
+**5) Health**
+
+* WS heartbeat: if idle 25s → ping; if no response in 10s → reconnect (fresh token).
+* Visibility change: if page returns to foreground and audio context is suspended, `resume()`.
+
+**6) Ports**
+
+* Client dev script uses `$PORT`: `vite --host 0.0.0.0 --port $PORT` (no hard-coded 5000).
+
+---
+
+### C) Definition of Done (acceptance tests the Agent must run)
+
+1. **Cold start (HTTPS):** click Power → mic permission → coach connected in <1s; speak → partial transcript shows within ~300–600ms; reply starts streaming within ~600–1200ms.
+2. **Barge-in:** while the coach is speaking, start talking → TTS stops within <150ms; coach listens and replies to the new utterance.
+3. **Interrupt word:** say “stop” → immediate cancel (no tail audio).
+4. **Reconnect:** disable network 10s then re-enable → client reconnects with a **fresh token**, session re-initialized; speaking works without a page refresh.
+5. **Mobile Safari:** first tap unlocks audio (no blocked playback); push-to-talk works; barge-in works.
+6. **No loop:** logs show **no** “listening→reconnect” oscillation under normal use for 3 minutes.
+7. **Latency budget:** measured mic→first token under 250ms median; stutter-free playback (jitter buffer 120–200ms).
+
+---
+
+### D) Commands to run (once you’ve applied changes)
+
+```bash
+corepack enable && corepack prepare pnpm@9 --activate
+pnpm -w install
+pnpm -w build
+pnpm dev
+```
+
+Quick checks (replace with public URL):
+
+```bash
+APP="https://<your-replit-url>"
+curl -s -X POST "$APP/api/voice/token" | jq .
+```
+
+---
+
+## Why this helps the Agent “get it right”
+
+* It gives **hard requirements** (what “ChatGPT-like” means), **exact code touch points** in your tree, and **objective tests** the Agent must pass.
+* It encodes the three things that kept biting you: **token reuse**, **bad WS URL**, and **missing `session.type`**, plus the **audio UX rules** (barge-in, jitter buffer, unlock) that make GPT Voice feel effortless.
+
+If you want, I can also hand you a **patch-style diff** for the specific files so you can apply them verbatim.

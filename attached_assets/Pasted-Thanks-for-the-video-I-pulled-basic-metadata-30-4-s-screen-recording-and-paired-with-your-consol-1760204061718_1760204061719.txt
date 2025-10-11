@@ -1,0 +1,129 @@
+Thanks for the video—I pulled basic metadata (≈30.4 s screen recording) and, paired with your console notes, I’m confident the last blocker is **how we’re sending audio to OpenAI Realtime**.
+
+### What’s going wrong (net-net)
+
+* Your client is pushing **raw binary** after an `input_audio_buffer.append` signal (and frame sizes aren’t aligned), which the Realtime server **doesn’t accept**. The API expects **JSON events whose `audio` field is base64-encoded PCM bytes**—**not** a separate binary frame on the socket. Sending JSON+binary is exactly the pattern that yields a `server_error` shortly after `session.updated` and a code 1005 close. ([OpenAI Platform][1])
+* Because frames aren’t aligned (e.g., odd byte counts like 1267/1485), your batcher logs backpressure/drops and the server sees malformed audio. With **server VAD** enabled, you also **shouldn’t send `input_audio_buffer.commit`**—the server commits on its own at end-of-speech. ([Microsoft Learn][2])
+
+Below are **surgical edits** to your current files to fix this once and for all (voice-only, no text fallback):
+
+---
+
+## 1) Client — send base64 audio in JSON (no raw binary)
+
+**File:** `apps/client/src/voice/EnhancedVoiceClient.v2.ts`
+
+Replace your batch flush so it **encodes each frame to base64 and sends one JSON event per frame**:
+
+```ts
+// helper
+function u8ToBase64(u8: Uint8Array): string {
+  // fast chunked btoa
+  let s = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < u8.length; i += CHUNK) {
+    s += String.fromCharCode(...u8.subarray(i, i + CHUNK));
+  }
+  return btoa(s);
+}
+
+// in class:
+private flushBatch() {
+  this.batchTimer = null;
+  if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+  if (!this.pendingFrames.length) return;
+
+  const frames = this.pendingFrames.splice(0, this.pendingFrames.length);
+  for (const f of frames) {
+    const audio = u8ToBase64(f);
+    this.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio }));
+  }
+
+  // With server VAD, do NOT commit; server commits automatically
+  // this.ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' })); // ← remove/keep disabled
+}
+```
+
+> Keep the **bounded queue + 120 ms batch cadence** you already added; that’s good for UI smoothness.
+
+**Frame sizing must be exact**: if you’re using 16 kHz PCM16 at 20 ms, **each frame = 320 samples = 640 bytes**. (If you later switch to 24 kHz, use 480 samples = 960 bytes.) The `AudioCapture` helpers I gave you already enforce this.
+
+---
+
+## 2) Server proxy — stop forwarding binary; convert if any arrives
+
+**File:** `apps/server/src/realtime/voiceProxy.ts`
+
+Ensure the browser→proxy handler **never forwards naked binary** to OpenAI. If a binary message somehow arrives, **wrap it into a JSON append event** with base64:
+
+```ts
+browserWs.on('message', (data) => {
+  if (Buffer.isBuffer(data)) {
+    const audioB64 = (data as Buffer).toString('base64');
+    upstream.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: audioB64 }));
+    return;
+  }
+  // JSON path:
+  upstream.send(data.toString());
+});
+```
+
+(Keep your “wait for `session.created` → then send `session.update`” logic as you have now.)
+
+---
+
+## 3) Session config — minimal, on-spec; rely on server VAD
+
+**File:** `apps/server/src/coach/sessionContext.ts`
+
+Keep it tight; **do not set `session.type`** here (the proxy already created the session). Keep `turn_detection: server_vad`, PCM16, and transcription:
+
+```ts
+return {
+  type: 'session.update',
+  session: {
+    instructions,
+    modalities: ['audio','text'],
+    input_audio_format: 'pcm16',
+    output_audio_format: 'pcm16',
+    turn_detection: { type:'server_vad', threshold:0.5, prefix_padding_ms:300, silence_duration_ms:500 },
+    input_audio_transcription: { enabled: true, model: 'whisper-1' },
+    voice: voiceId
+  }
+};
+```
+
+> With **server_vad**, **do not** send `input_audio_buffer.commit`. The server will commit and start a response when it detects end-of-speech. ([Microsoft Learn][2])
+
+---
+
+## 4) Mic permission + framing (you already started this—just keep it)
+
+* First Power click: resume `AudioContext`, call `getUserMedia` with `{ echoCancellation:true, noiseSuppression:true, autoGainControl:true }`.
+* In your worklet: resample to **mono PCM16**, **16 kHz** (or 24 kHz if you choose to switch), **20–40 ms** frames; feed **exact-sized** chunks to the batcher.
+* Remove any “odd-byte truncation” workaround—frames will now be exact length.
+
+(OpenAI Realtime expects the append event’s `audio` to be base64 for the configured input format; that’s what we’re doing now.) ([OpenAI Platform][1])
+
+---
+
+## 5) Quick test checklist (voice-only)
+
+1. **Connect**: `session.created` → your proxy sends `session.update` → `session.updated` → **no immediate `server_error`**.
+2. **Speak**: you see many `input_audio_buffer.append` events (JSON with `audio` base64) and **no binary frames** on the wire.
+3. **End of speech**: with server VAD, the model replies with audio; your player renders it; barge-in cancels immediately.
+4. **Console**: no “odd byte length” warnings; far fewer backpressure messages.
+5. **If upstream flakes**: your voice-only cooldown engages (banner + Retry), **no reconnect storm**.
+
+---
+
+### Why I’m confident this fixes the “still isn’t working”
+
+* It aligns your client/proxy with the **documented event shape** for `input_audio_buffer.append` (**JSON with base64 audio**), which is what the OpenAI/Azure references specify. The JSON+binary pattern is not supported and commonly yields `server_error`. ([OpenAI Platform][1])
+* It removes `commit` under server VAD (per docs), which avoids buffer-state errors on the server. ([Microsoft Learn][2])
+* It enforces **exact frame sizing** so your audio pipeline stops flooding/dropping.
+
+If you want, I’ll generate **precise diffs** for `EnhancedVoiceClient.v2.ts` and `voiceProxy.ts` with the base64 changes so you can paste them verbatim.
+
+[1]: https://platform.openai.com/docs/guides/realtime?utm_source=chatgpt.com "Realtime API"
+[2]: https://learn.microsoft.com/en-us/azure/ai-foundry/openai/realtime-audio-reference?utm_source=chatgpt.com "Audio events reference - Azure OpenAI"

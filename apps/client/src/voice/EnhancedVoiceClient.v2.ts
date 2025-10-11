@@ -633,10 +633,11 @@ export class EnhancedVoiceClient {
       const batch = this.audioBatcher.getNextBatch();
       if (!batch) break;
 
-      const buffer = batch.buffer as ArrayBuffer;
+      // Convert Int16Array to Uint8Array view (correct byte representation for PCM16)
+      const uint8View = new Uint8Array(batch.buffer, batch.byteOffset, batch.byteLength);
       const audioEvent = {
         type: 'input_audio_buffer.append',
-        audio: this.arrayBufferToBase64(buffer),
+        audio: this.uint8ToBase64(uint8View),
       };
       this.ws.send(JSON.stringify(audioEvent));
     }
@@ -796,13 +797,19 @@ export class EnhancedVoiceClient {
   }
 
   // Utility methods
+  private uint8ToBase64(u8: Uint8Array): string {
+    // Fast chunked btoa for large arrays
+    let s = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < u8.length; i += CHUNK) {
+      s += String.fromCharCode(...u8.subarray(i, i + CHUNK));
+    }
+    return btoa(s);
+  }
+
   private arrayBufferToBase64(buffer: ArrayBuffer): string {
     const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]!);
-    }
-    return btoa(binary);
+    return this.uint8ToBase64(bytes);
   }
 
   private base64ToArrayBuffer(base64: string): ArrayBuffer {

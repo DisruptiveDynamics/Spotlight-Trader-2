@@ -1,0 +1,247 @@
+Great news: the “Invalid `audio`” error is almost always one of three things:
+
+1. you’re still sending **binary frames** (or JSON + a raw binary frame) instead of **JSON with base64** in the `audio` field,
+2. your PCM is **not 24 kHz mono little-endian 16-bit**, or
+3. your chunks are **not exact-frame sized** (e.g., 1267/1485 bytes, or a WAV header, or float32).
+
+Below is a repo-specific, final patch pack that fixes all three—**no fallback, voice-only**—and matches the current Realtime API contract:
+
+* **Append** audio with `{"type":"input_audio_buffer.append","audio":"<base64-pcm16-24k>"}` (one event per frame).
+* **Do NOT send binary at all.**
+* **Use 24 kHz** PCM16 mono, **20 ms** frames → **480 samples → 960 bytes** each.
+* With **`server_vad`**, **do not** send `commit`; the server commits automatically when it detects end of speech.
+
+I’m including **copy-paste code** for each file you listed.
+
+---
+
+## 1) `apps/server/src/coach/sessionContext.ts`
+
+Keep the session update minimal & on-spec (no `session.type` here; proxy already created the session).
+
+```ts
+export function getInitialSessionUpdate({
+  voiceId,
+  instructions,
+}: { voiceId: string; instructions: string }) {
+  return {
+    type: 'session.update',
+    session: {
+      instructions,
+      modalities: ['audio', 'text'],
+      input_audio_format: 'pcm16',   // 24 kHz mono LE expected by Realtime
+      output_audio_format: 'pcm16',
+      turn_detection: { type: 'server_vad', threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 500 },
+      input_audio_transcription: { enabled: true, model: 'whisper-1' },
+      voice: voiceId,
+    },
+  };
+}
+```
+
+Why: Realtime expects **base64 PCM16** in `input_audio_buffer.append`. Official docs show **base64 audio in JSON**, not raw binary; Azure/OpenAI guides specify **24 kHz PCM16 mono** for `pcm16`. ([OpenAI Platform][1])
+
+---
+
+## 2) `apps/server/src/realtime/voiceProxy.ts`
+
+Never forward raw binary from the browser; normalize **everything** to JSON with base64.
+
+```ts
+browserWs.on('message', (data) => {
+  // If any client accidentally sends binary, wrap it in base64 JSON for OpenAI
+  if (Buffer.isBuffer(data)) {
+    const audio = (data as Buffer).toString('base64');
+    upstream.send(JSON.stringify({ type: 'input_audio_buffer.append', audio }));
+    return;
+  }
+  // JSON messages pass through
+  upstream.send(data.toString());
+});
+```
+
+(Keep your “wait for `session.created` → then send `session.update`” sequencing and your upstream error logging.)
+
+---
+
+## 3) `apps/client/src/services/AudioCapture.ts`
+
+Make the mic prompt reliable and produce **exact 24 kHz PCM16 20 ms frames**.
+
+```ts
+// constraints (good defaults for desktop mic)
+const MIC_CONSTRAINTS: MediaStreamConstraints = {
+  audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+};
+
+export async function requestMicPermission(): Promise<'granted'|'prompt'|'denied'> {
+  try { const p = await (navigator.permissions as any).query({ name: 'microphone' }); return p.state; }
+  catch { return 'prompt'; }
+}
+
+export async function startAudioCapture(ctx: AudioContext) {
+  if (ctx.state === 'suspended') await ctx.resume();  // iOS unlock
+  console.log('[AudioCapture] mic permission:', await requestMicPermission());
+  const stream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+  console.log('[AudioCapture] mic device:', stream.getAudioTracks()[0]?.label ?? '(no label)');
+  return stream;
+}
+
+// ======== 24 kHz PCM16 framing (20 ms => 480 samples => 960 bytes) ========
+export const SAMPLE_RATE_OUT = 24000;
+export const FRAME_MS = 20;
+export const SAMPLES_PER_FRAME = Math.round(SAMPLE_RATE_OUT * FRAME_MS / 1000); // 480
+export const BYTES_PER_FRAME = SAMPLES_PER_FRAME * 2; // 960
+
+// Mix stereo->mono and resample float32 to 24 kHz using linear interpolation.
+// in: Float32Array at 'inRate', mono (if stereo, average before calling)
+export function resampleFloat32To24k(inData: Float32Array, inRate: number): Float32Array {
+  if (inRate === SAMPLE_RATE_OUT) return inData;
+  const ratio = SAMPLE_RATE_OUT / inRate;
+  const outLen = Math.floor(inData.length * ratio);
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const pos = i / ratio;
+    const i0 = Math.floor(pos);
+    const i1 = Math.min(i0 + 1, inData.length - 1);
+    const t = pos - i0;
+    out[i] = inData[i0] * (1 - t) + inData[i1] * t;
+  }
+  return out;
+}
+
+// Pack float32 mono [-1,1] -> PCM16 little-endian bytes (no odd lengths)
+export function packPCM16LE(floatMono: Float32Array): Uint8Array {
+  const buf = new ArrayBuffer(floatMono.length * 2);
+  const view = new DataView(buf);
+  for (let i = 0; i < floatMono.length; i++) {
+    const s = Math.max(-1, Math.min(1, floatMono[i]));
+    view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, /*littleEndian*/ true);
+  }
+  return new Uint8Array(buf);
+}
+
+// Slice PCM16 bytes into exact 20 ms frames of 960 bytes
+export function* frames960(u8: Uint8Array) {
+  const n = u8.byteLength - (u8.byteLength % BYTES_PER_FRAME);
+  for (let off = 0; off < n; off += BYTES_PER_FRAME) {
+    yield u8.subarray(off, off + BYTES_PER_FRAME);
+  }
+}
+```
+
+**Integration note:** In your capture worklet/adapter, make sure you:
+
+* mix to **mono**,
+* resample to **24 kHz** (`resampleFloat32To24k`),
+* `packPCM16LE`,
+* split into `frames960(...)`, and
+* for each frame call `voiceClient.enqueueFrame(frame)`.
+
+This guarantees **960-byte** frames—no more “odd byte length” logs.
+
+---
+
+## 4) `apps/client/src/voice/EnhancedVoiceClient.v2.ts`
+
+Send **JSON with base64** on flush (no binary; no commit in server-VAD mode). Keep your bounded queue + ~120 ms batch cadence.
+
+```ts
+// helper
+function u8ToBase64(u8: Uint8Array): string {
+  let s = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < u8.length; i += CHUNK) s += String.fromCharCode(...u8.subarray(i, i + CHUNK));
+  return btoa(s);
+}
+
+// batching members
+private pendingFrames: Uint8Array[] = [];
+private maxFramesInQueue = 30;             // ~600 ms at 20 ms frames
+private batchTimer: number | null = null;
+private dropWarned = false;
+
+public enqueueFrame(frame: Uint8Array) {
+  if (this.pendingFrames.length >= this.maxFramesInQueue) {
+    this.pendingFrames.shift(); // drop newest to keep recency
+    if (!this.dropWarned) { console.warn('[AudioBatcher] dropping newest frame due to backpressure'); this.dropWarned = true; setTimeout(()=>this.dropWarned=false, 2000);}
+  }
+  this.pendingFrames.push(frame);
+  if (!this.batchTimer) this.batchTimer = window.setTimeout(() => this.flushBatch(), 120);
+}
+
+private flushBatch() {
+  this.batchTimer = null;
+  if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+  if (!this.pendingFrames.length) return;
+
+  const frames = this.pendingFrames.splice(0, this.pendingFrames.length);
+  for (const f of frames) {
+    const audio = u8ToBase64(f);
+    this.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio }));
+  }
+
+  // With server VAD enabled we do NOT send a manual commit
+  // this.ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+}
+```
+
+Also ensure your URL/token logic is correct (you already pinned the WS URL and fetch a **fresh token** per reconnect). Keep the **voice-only cooldown** you added earlier to avoid reconnect storms.
+
+---
+
+## 5) `apps/client/src/services/AudioPlayer.ts`
+
+Keep your **120–200 ms jitter buffer** and **flush instantly** on barge-in:
+
+```ts
+private jitterMs = 160;
+
+onBargeIn() {
+  try { this.sendCancel?.(); } catch {}
+  this.player.stop();
+  this.buffer.clear();
+}
+```
+
+---
+
+## 6) `apps/client/src/features/coach/PresenceBubble.tsx`
+
+First click should **unlock audio + request mic** before connect; if blocked, show a banner (no silent failures):
+
+```tsx
+const onPowerClick = async () => {
+  try {
+    await audio.ensureUnlocked?.();
+    await startAudioCapture(voiceClient.audioCtx);
+    await voiceClient.connect();  // connect() fetches a fresh token
+    setPowered(true);
+  } catch {
+    setBanner({ kind: 'warn', text: 'Microphone blocked. Click the lock icon in the address bar → allow mic, then Retry.' });
+  }
+};
+```
+
+---
+
+## 7) Quick validation (what to look for)
+
+* **Wire data**: in dev tools → WS frames, you should see **only JSON** client→server with `type:"input_audio_buffer.append"` and a **long base64 string** (no binary frames). The server→OpenAI proxy should forward only JSON.
+* **Frame size**: your logs should show **no odd-byte** warnings; frames are 960 bytes before base64.
+* **Sample rate**: ensure your capture pipeline reports **24 kHz** output (log it once when initializing the resampler).
+* **Commit**: with `server_vad`, **you will not send** `commit`; the server emits `input_audio_buffer.committed` automatically at end-of-speech. ([OpenAI Platform][1])
+* **No `Invalid 'audio'`**: if it still appears, it means the server decoded your base64 into bytes that aren’t 16-bit LE PCM at 24 kHz mono—double-check the resampler and `packPCM16LE` function; also confirm you’re not sending a **WAV header** (we are sending raw PCM, not WAV).
+
+---
+
+## Why this solves it
+
+* The **Realtime API requires base64 PCM16 in JSON** for `input_audio_buffer.append`. Sending JSON + raw binary frames causes `server_error`/`Invalid 'audio'`. ([OpenAI Platform][1])
+* For `pcm16`, the accepted input in Realtime is **24 kHz mono little-endian**; many examples and the Azure/OpenAI guide are explicit. **16 kHz frames get rejected** with this exact error. ([Microsoft Learn][2])
+* Exact **960-byte** frames remove the backpressure & “odd length” problems entirely.
+
+If you want me to produce **unified diffs** for your exact files (so you can paste patches verbatim), say the word and I’ll generate those next.
+
+[1]: https://platform.openai.com/docs/guides/realtime-conversations?utm_source=chatgpt.com "Realtime conversations - OpenAI API"
+[2]: https://learn.microsoft.com/en-us/azure/ai-foundry/openai/realtime-audio-reference?utm_source=chatgpt.com "Audio events reference - Azure OpenAI"

@@ -131,7 +131,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
       }
     );
 
-    const clientBuffer: string[] = [];
+    const clientBuffer: (string | Buffer)[] = [];
     let upstreamReady = false;
     let sessionCreatedReceived = false;
     let upstreamSessionId: string | null = null;
@@ -163,7 +163,14 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
           while (clientBuffer.length > 0) {
             const buffered = clientBuffer.shift();
             if (buffered) {
-              upstreamWs.send(buffered);
+              // If it's a Buffer (binary audio), wrap it in JSON event with base64
+              if (Buffer.isBuffer(buffered)) {
+                const audioB64 = buffered.toString('base64');
+                upstreamWs.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: audioB64 }));
+              } else {
+                // It's a string (JSON) - send as-is
+                upstreamWs.send(buffered);
+              }
             }
           }
 
@@ -238,19 +245,25 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
       if (upstreamHeartbeat) clearInterval(upstreamHeartbeat);
     });
 
-    clientWs.on('message', (data) => {
+    clientWs.on('message', (data, isBinary) => {
       updateActivity();
       if (upstreamReady && upstreamWs.readyState === WebSocket.OPEN) {
         // Defensive: if binary data arrives, wrap it in JSON event with base64 audio
-        if (Buffer.isBuffer(data)) {
+        if (isBinary && Buffer.isBuffer(data)) {
           const audioB64 = (data as Buffer).toString('base64');
           upstreamWs.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: audioB64 }));
           return;
         }
-        // JSON path - send as-is
+        // Text/JSON path - send as-is
         upstreamWs.send(data);
       } else {
-        clientBuffer.push(data.toString());
+        // Buffer messages until upstream is ready
+        // Preserve binary data as Buffer, text data as string
+        if (isBinary && Buffer.isBuffer(data)) {
+          clientBuffer.push(data);
+        } else {
+          clientBuffer.push(data.toString());
+        }
       }
     });
 

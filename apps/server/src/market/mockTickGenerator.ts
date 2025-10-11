@@ -17,6 +17,7 @@ export class MockTickGenerator {
   private intervals = new Map<string, NodeJS.Timeout>();
   private prices = new Map<string, number>();
   private trends = new Map<string, number>(); // trending direction
+  private lastPrices = new Map<string, number>(); // for uptick/downtick detection
 
   start(symbol: string, config?: Partial<SymbolConfig>) {
     if (this.intervals.has(symbol)) {

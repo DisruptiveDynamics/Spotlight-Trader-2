@@ -24,7 +24,7 @@ export class AudioCapture {
    */
   static async requestMicPermission(config: AudioCaptureConfig = {}): Promise<MediaStream> {
     const {
-      sampleRate = 16000,
+      sampleRate = 24000,
       echoCancellation = true,
       noiseSuppression = true,
       autoGainControl = true,
@@ -42,12 +42,12 @@ export class AudioCapture {
   }
 
   /**
-   * Ensures PCM16 data is exactly 640 bytes (320 Int16 samples = 20ms @ 16kHz).
+   * Ensures PCM16 data is exactly 960 bytes (480 Int16 samples = 20ms @ 24kHz).
    * This prevents "byte length should be a multiple of 2" errors and aligns with
-   * OpenAI Realtime API's expected frame size.
+   * OpenAI Realtime API's expected frame size for 24kHz PCM16.
    */
   static ensurePCM16FrameSize(pcm: Int16Array): Int16Array {
-    const TARGET_SAMPLES = 320; // 20ms @ 16kHz
+    const TARGET_SAMPLES = 480; // 20ms @ 24kHz
     
     if (pcm.length === TARGET_SAMPLES) {
       return pcm; // Already correct size
@@ -73,7 +73,7 @@ export class AudioCapture {
     this.onChunkCallback = onChunk;
 
     const {
-      sampleRate = 16000,
+      sampleRate = 24000,
       echoCancellation = true,
       noiseSuppression = true,
       autoGainControl = true,

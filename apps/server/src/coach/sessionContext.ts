@@ -94,6 +94,7 @@ export async function getInitialSessionUpdate(userId: string) {
         silence_duration_ms: 500,
       },
       input_audio_transcription: { 
+        enabled: true,
         model: 'whisper-1' 
       },
       voice: voiceId,

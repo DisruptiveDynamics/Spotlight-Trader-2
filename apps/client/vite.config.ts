@@ -27,6 +27,11 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      '/stream': {
+        target: 'http://0.0.0.0:8080',
+        changeOrigin: true,
+        secure: false,
+      },
       '/ws': {
         target: 'http://0.0.0.0:8080',
         ws: true,

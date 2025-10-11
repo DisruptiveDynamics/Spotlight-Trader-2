@@ -20,6 +20,7 @@ export type Tick = {
   ts: number;
   price: number;
   size: number;
+  side?: 'buy' | 'sell'; // for color-coding in Time & Sales
 };
 
 export type SSEStatus = 

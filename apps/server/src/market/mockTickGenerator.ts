@@ -67,10 +67,28 @@ export class MockTickGenerator {
     const volumeMultiplier = 1 + Math.abs(change) * 10;
     const volume = Math.floor(volumeBase * volumeMultiplier * (Math.random() + 0.5));
 
+    // Determine tick side (buy/sell) based on price direction
+    const lastPrice = this.lastPrices.get(symbol);
+    let side: 'buy' | 'sell' | undefined;
+    
+    if (lastPrice !== undefined) {
+      if (newPriceRounded > lastPrice) {
+        side = 'buy'; // Uptick
+      } else if (newPriceRounded < lastPrice) {
+        side = 'sell'; // Downtick
+      } else {
+        // For same price, use volume bias (larger volume = more likely aggressor)
+        side = Math.random() > 0.5 ? 'buy' : 'sell';
+      }
+    }
+    
+    this.lastPrices.set(symbol, newPriceRounded);
+
     const tick: Tick = {
       ts: Date.now(),
       price: newPriceRounded,
       size: volume,
+      side,
     };
 
     eventBus.emit(`tick:${symbol}` as const, tick);

@@ -15,6 +15,7 @@ const MultiChart = lazy(() =>
   import('./features/chart/MultiChart').then((m) => ({ default: m.MultiChart }))
 );
 const TapePeek = lazy(() => import('./components/TapePeek').then((m) => ({ default: m.TapePeek })));
+const TapePanel = lazy(() => import('./components/TapePanel').then((m) => ({ default: m.TapePanel })));
 const PresenceBubble = lazy(() =>
   import('./features/coach/PresenceBubble').then((m) => ({ default: m.PresenceBubble }))
 );
@@ -166,9 +167,16 @@ function App() {
             </div>
 
             {/* Right Sidebar - Takes 15% of width */}
-            <div className="w-64 flex-shrink-0 space-y-2 overflow-y-auto">
+            <div className="w-96 flex-shrink-0 space-y-2 overflow-y-auto">
               <SignalDensityControl />
               <AccessibilityControls />
+
+              {/* Time & Sales Tape Panel */}
+              <div className="h-96">
+                <Suspense fallback={<LoadingFallback />}>
+                  <TapePanel symbol="SPY" maxTicks={100} />
+                </Suspense>
+              </div>
 
               {focusManager.isPanelVisible('coach') && (
                 <div className="bg-gray-800 p-4 rounded-lg">

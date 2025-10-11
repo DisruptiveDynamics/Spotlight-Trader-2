@@ -116,6 +116,7 @@ export async function sseMarketStream(req: Request, res: Response) {
         ts: tick.ts,
         price: tick.price,
         size: tick.size,
+        side: tick.side, // 'buy' | 'sell' for color coding
       });
     };
 

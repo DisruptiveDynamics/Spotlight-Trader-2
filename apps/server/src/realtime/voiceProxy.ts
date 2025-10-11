@@ -22,6 +22,12 @@ const activeConnections = new Map<string, ConnectionInfo[]>();
 const MAX_CONNECTIONS_PER_USER = 3;
 const HEARTBEAT_INTERVAL = 25000;
 
+// Server-side OpenAI error cooldown (prevents hammering OpenAI during outages)
+let openaiErrorCount = 0;
+let openaiCooldownUntil = 0;
+const OPENAI_ERROR_THRESHOLD = 3;
+const OPENAI_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes
+
 export function setupVoiceProxy(app: Express, server: HTTPServer) {
   const wss = new WebSocketServer({ noServer: true });
 
@@ -53,6 +59,26 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
 
   wss.on('connection', (clientWs, request) => {
     console.log('[VoiceProxy] Client WebSocket connected');
+    
+    // Check OpenAI error cooldown - reject new connections during cooldown
+    const now = Date.now();
+    if (now < openaiCooldownUntil) {
+      const remainingMs = openaiCooldownUntil - now;
+      const remainingSec = Math.ceil(remainingMs / 1000);
+      console.warn(`[VoiceProxy] In cooldown period. ${remainingSec}s remaining. Rejecting connection.`);
+      
+      clientWs.send(JSON.stringify({
+        type: 'error',
+        error: {
+          type: 'cooldown',
+          message: `OpenAI voice service is temporarily unavailable. Please retry in ${remainingSec} seconds.`,
+          cooldownUntil: openaiCooldownUntil
+        }
+      }));
+      clientWs.close(1008, 'Service in cooldown');
+      return;
+    }
+    
     const url = new URL(request.url || '', `http://${request.headers.host}`);
     const token = url.searchParams.get('t') || request.headers['x-user-token'];
 
@@ -149,7 +175,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
           }, HEARTBEAT_INTERVAL);
         }
         
-        // Enhanced error logging with session ID
+        // Enhanced error logging with session ID and cooldown tracking
         if (message.type === 'error' || message.type === 'server_error') {
           console.error('[VoiceProxy][UpstreamError]', {
             sessionId: upstreamSessionId,
@@ -157,6 +183,35 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
             eventType: message.type,
             error: message.error || message,
           });
+          
+          // Track OpenAI errors and enter cooldown if threshold reached
+          openaiErrorCount++;
+          if (openaiErrorCount >= OPENAI_ERROR_THRESHOLD) {
+            openaiCooldownUntil = Date.now() + OPENAI_COOLDOWN_MS;
+            console.warn(`[VoiceProxy] ${OPENAI_ERROR_THRESHOLD} OpenAI errors detected. Entering ${OPENAI_COOLDOWN_MS / 60000}min cooldown.`);
+            
+            // Notify client of cooldown
+            if (clientWs.readyState === WebSocket.OPEN) {
+              clientWs.send(JSON.stringify({
+                type: 'error',
+                error: {
+                  type: 'cooldown',
+                  message: `OpenAI voice service is experiencing issues. Entering 2-minute cooldown.`,
+                  cooldownUntil: openaiCooldownUntil
+                }
+              }));
+            }
+            
+            // Close connections
+            upstreamWs.close();
+            clientWs.close(1008, 'Service entering cooldown');
+          }
+        }
+        
+        // Reset error count on successful session update
+        if (message.type === 'session.updated') {
+          openaiErrorCount = 0;
+          openaiCooldownUntil = 0;
         }
       } catch (err) {
         console.error('[VoiceProxy] Error parsing OpenAI message:', err);

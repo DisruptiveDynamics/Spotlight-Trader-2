@@ -101,7 +101,9 @@ export class AudioCapture {
       // Handle PCM chunks from worklet
       this.workletNode.port.onmessage = (e) => {
         if (e.data?.pcm && this.onChunkCallback) {
-          this.onChunkCallback(new Int16Array(e.data.pcm));
+          const rawPCM = new Int16Array(e.data.pcm);
+          const framedPCM = AudioCapture.ensurePCM16FrameSize(rawPCM);
+          this.onChunkCallback(framedPCM);
         }
       };
 
@@ -116,14 +118,15 @@ export class AudioCapture {
       const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
       processor.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0);
-        const pcm16 = new Int16Array(inputData.length);
+        const rawPCM = new Int16Array(inputData.length);
         for (let i = 0; i < inputData.length; i++) {
           const sample = inputData[i] ?? 0;
           const s = Math.max(-1, Math.min(1, sample));
-          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+          rawPCM[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
         }
         if (this.onChunkCallback) {
-          this.onChunkCallback(pcm16);
+          const framedPCM = AudioCapture.ensurePCM16FrameSize(rawPCM);
+          this.onChunkCallback(framedPCM);
         }
       };
 

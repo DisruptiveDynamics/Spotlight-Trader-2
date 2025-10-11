@@ -57,9 +57,9 @@ export class MockTickGenerator {
     // Calculate price change
     const change = (trendPull + meanReversion + randomWalk) * config.volatility * config.basePrice / 100;
     const newPrice = Math.max(currentPrice + change, config.basePrice * 0.9); // Floor at 90% of base
-    const newPrice Round = Math.round(newPrice * 100) / 100;
+    const newPriceRounded = Math.round(newPrice * 100) / 100;
 
-    this.prices.set(symbol, newPriceRound);
+    this.prices.set(symbol, newPriceRounded);
 
     // Generate realistic volume (varies by price movement)
     const volumeBase = 50;
@@ -68,7 +68,7 @@ export class MockTickGenerator {
 
     const tick: Tick = {
       ts: Date.now(),
-      price: newPriceRound,
+      price: newPriceRounded,
       size: volume,
     };
 

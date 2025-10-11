@@ -38,7 +38,20 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
   if (sinceSeq !== undefined) {
     const cached = ringBuffer.getSinceSeq(symbol, sinceSeq);
     if (cached.length > 0) {
-      return cached.map((bar) => ({ ...bar, symbol, timeframe }));
+      return cached.map((bar) => ({
+        symbol,
+        timeframe,
+        seq: bar.seq,
+        bar_start: bar.bar_start,
+        bar_end: bar.bar_end,
+        ohlcv: {
+          o: bar.open,
+          h: bar.high,
+          l: bar.low,
+          c: bar.close,
+          v: bar.volume,
+        },
+      }));
     }
   }
 
@@ -46,7 +59,20 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
   const recentFromBuffer = ringBuffer.getRecent(symbol, limit);
   if (recentFromBuffer.length >= Math.min(limit, 10)) {
     console.log(`📊 Using ${recentFromBuffer.length} bars from ring buffer for ${symbol}`);
-    return recentFromBuffer.map((bar) => ({ ...bar, symbol, timeframe }));
+    return recentFromBuffer.map((bar) => ({
+      symbol,
+      timeframe,
+      seq: bar.seq,
+      bar_start: bar.bar_start,
+      bar_end: bar.bar_end,
+      ohlcv: {
+        o: bar.open,
+        h: bar.high,
+        l: bar.low,
+        c: bar.close,
+        v: bar.volume,
+      },
+    }));
   }
 
   // Priority 3: Fetch from Polygon REST API
@@ -59,7 +85,20 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
   // Priority 4: Use ring buffer even if sparse
   if (recentFromBuffer.length > 0) {
     console.log(`📊 Using ${recentFromBuffer.length} sparse bars from ring buffer (fallback)`);
-    return recentFromBuffer.map((bar) => ({ ...bar, symbol, timeframe }));
+    return recentFromBuffer.map((bar) => ({
+      symbol,
+      timeframe,
+      seq: bar.seq,
+      bar_start: bar.bar_start,
+      bar_end: bar.bar_end,
+      ohlcv: {
+        o: bar.open,
+        h: bar.high,
+        l: bar.low,
+        c: bar.close,
+        v: bar.volume,
+      },
+    }));
   }
 
   // Priority 5: Generate high-quality mock data
@@ -104,7 +143,7 @@ async function fetchPolygonHistory(
       return [];
     }
 
-    const data: PolygonAggResponse = await response.json();
+    const data = await response.json() as PolygonAggResponse;
 
     if (!data.results || data.results.length === 0) {
       console.warn(`No historical data from Polygon for ${symbol}`);
@@ -121,11 +160,13 @@ async function fetchPolygonHistory(
         seq: Math.floor(bar_start / 60000),
         bar_start,
         bar_end,
-        open: agg.o,
-        high: agg.h,
-        low: agg.l,
-        close: agg.c,
-        volume: agg.v,
+        ohlcv: {
+          o: agg.o,
+          h: agg.h,
+          l: agg.l,
+          c: agg.c,
+          v: agg.v,
+        },
       };
     });
 
@@ -208,11 +249,13 @@ function generateRealisticBars(
       seq: Math.floor(bar_start / 60000),
       bar_start,
       bar_end,
-      open: Math.round(open * 100) / 100,
-      high: Math.round(high * 100) / 100,
-      low: Math.round(low * 100) / 100,
-      close: Math.round(close * 100) / 100,
-      volume,
+      ohlcv: {
+        o: Math.round(open * 100) / 100,
+        h: Math.round(high * 100) / 100,
+        l: Math.round(low * 100) / 100,
+        c: Math.round(close * 100) / 100,
+        v: volume,
+      },
     });
 
     currentPrice = close;

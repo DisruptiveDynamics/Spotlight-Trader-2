@@ -100,8 +100,8 @@ export class EnhancedVoiceClient {
     });
   }
 
-  private handleOnline(): void {
-    if (this.currentToken && this.state === 'offline') {
+  private async handleOnline(): Promise<void> {
+    if (this.state === 'offline') {
       if (this.reconnectTimeout) {
         clearTimeout(this.reconnectTimeout);
         this.reconnectTimeout = null;
@@ -116,7 +116,15 @@ export class EnhancedVoiceClient {
       }
 
       this.reconnectAttempts = 0;
-      this.connectWebSocket(this.currentToken);
+      
+      try {
+        const token = await this.freshToken();
+        this.currentToken = token;
+        await this.connectWebSocket(token);
+      } catch (error) {
+        console.error('Failed to get fresh token on online event:', error);
+        this.setState('error');
+      }
     }
   }
 
@@ -234,7 +242,7 @@ export class EnhancedVoiceClient {
   private async connectWebSocket(token: string): Promise<void> {
     if (!navigator.onLine) {
       this.setState('offline');
-      this.scheduleReconnect(token);
+      this.scheduleReconnect();
       return;
     }
 
@@ -322,8 +330,8 @@ export class EnhancedVoiceClient {
     };
 
     this.ws.onclose = () => {
-      if (this.currentToken && this.reconnectAttempts < this.maxReconnectAttempts) {
-        this.scheduleReconnect(this.currentToken);
+      if (this.reconnectAttempts < this.maxReconnectAttempts) {
+        this.scheduleReconnect();
       } else {
         this.setState('disconnected');
         this.setCoachState('idle');
@@ -523,17 +531,36 @@ export class EnhancedVoiceClient {
     this.playbackQueue = [];
   }
 
-  private scheduleReconnect(token: string): void {
-    const delay =
-      this.reconnectDelays[Math.min(this.reconnectAttempts, this.reconnectDelays.length - 1)] || 10000;
+  private async freshToken(): Promise<string> {
+    const res = await fetch('/api/voice/token', { 
+      method: 'POST', 
+      credentials: 'include' 
+    });
+    if (!res.ok) {
+      throw new Error(`Token fetch failed: ${res.status}`);
+    }
+    const { token } = await res.json();
+    return token as string;
+  }
+
+  private scheduleReconnect(delay = 1000): void {
+    const backoffDelay =
+      this.reconnectDelays[Math.min(this.reconnectAttempts, this.reconnectDelays.length - 1)] || delay;
     const jitter = Math.random() * 1000;
 
     this.setState('reconnecting');
     this.reconnectAttempts++;
 
-    this.reconnectTimeout = window.setTimeout(() => {
-      this.connectWebSocket(token);
-    }, delay + jitter);
+    this.reconnectTimeout = window.setTimeout(async () => {
+      try {
+        const token = await this.freshToken();
+        this.currentToken = token;
+        await this.connectWebSocket(token);
+      } catch (error) {
+        console.error('Failed to get fresh token for reconnect:', error);
+        this.scheduleReconnect(Math.min(backoffDelay * 2, 30000));
+      }
+    }, backoffDelay + jitter);
   }
 
   // Amplitude monitoring

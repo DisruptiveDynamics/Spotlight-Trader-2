@@ -24,11 +24,13 @@ export interface Bar {
   seq: number;
   bar_start: number;
   bar_end: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
+  ohlcv: {
+    o: number;
+    h: number;
+    l: number;
+    c: number;
+    v: number;
+  };
 }
 
 import type { EvaluatedRule, Signal } from '@shared/types/rules';

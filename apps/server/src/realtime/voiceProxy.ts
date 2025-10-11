@@ -32,7 +32,12 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
 
       // Allow Replit preview domains when REPL_ID is present
       const isReplitDev = process.env.REPL_ID && origin.endsWith('.replit.dev');
-      const isAllowed = allowedOrigins.includes(origin) || isReplitDev;
+      
+      // Allow localhost/127.0.0.1 in development (not production)
+      const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+      const isDev = process.env.NODE_ENV !== 'production';
+      
+      const isAllowed = allowedOrigins.includes(origin) || isReplitDev || (isDev && isLocalhost);
 
       if (!isAllowed) {
         socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');

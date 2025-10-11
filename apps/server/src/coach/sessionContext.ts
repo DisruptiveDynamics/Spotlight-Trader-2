@@ -15,6 +15,7 @@ interface CoachProfile {
 interface SessionUpdate {
   type: 'session.update';
   session: {
+    type?: 'realtime';
     instructions?: string;
     voice?: string;
     turn_detection?: {
@@ -97,6 +98,7 @@ export async function getInitialSessionUpdate(userId: string): Promise<SessionUp
   return {
     type: 'session.update',
     session: {
+      type: 'realtime',
       instructions: truncated,
       voice: voiceId,
       turn_detection: {

@@ -120,10 +120,29 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
 
     es = new EventSource(`/stream/market?${params.toString()}`);
 
-    es.addEventListener('open', () => {
+    es.addEventListener('open', async () => {
       reconnectAttempts = 0;
       emitStatus('connected');
       window.dispatchEvent(new CustomEvent('sse:connected'));
+      
+      // Gap-fill on reconnect if we have a lastSeq
+      if (lastSeq > 0) {
+        const symbol = symbols[0] || 'SPY';
+        try {
+          const res = await fetch(`/api/history?symbol=${encodeURIComponent(symbol)}&timeframe=1m&sinceSeq=${lastSeq}`);
+          if (res.ok) {
+            const bars = await res.json();
+            bars.forEach((bar: Bar) => {
+              if (bar.seq > lastSeq) {
+                lastSeq = bar.seq;
+                listeners.bar.forEach((fn) => fn(bar));
+              }
+            });
+          }
+        } catch (error) {
+          console.error('SSE open gap-fill error:', error);
+        }
+      }
     });
 
     es.addEventListener('bar', (e) => {
@@ -189,6 +208,31 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
 
   connect();
 
+  // Gap-fill on window focus (user returns to tab after being away)
+  const handleFocus = async () => {
+    if (lastSeq > 0 && currentState === 'live') {
+      const symbol = symbols[0] || 'SPY';
+      try {
+        const res = await fetch(`/api/history?symbol=${encodeURIComponent(symbol)}&timeframe=1m&sinceSeq=${lastSeq}`);
+        if (res.ok) {
+          const bars = await res.json();
+          bars.forEach((bar: Bar) => {
+            if (bar.seq > lastSeq) {
+              lastSeq = bar.seq;
+              listeners.bar.forEach((fn) => fn(bar));
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Focus gap-fill error:', error);
+      }
+    }
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', handleFocus);
+  }
+
   return {
     onBar(fn: (b: Bar) => void) {
       listeners.bar.push(fn);
@@ -218,8 +262,38 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
         reconnectTimeout = null;
       }
       es?.close();
+      
+      // Cleanup focus listener
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', handleFocus);
+      }
     },
   };
+}
+
+// Timeframe presets mapping to 1-minute bars (Thinkorswim-style)
+export const TF_PRESETS = {
+  '1H': 60,      // 1 hour of 1-min bars
+  '3H': 180,     // 3 hours of 1-min bars
+  '5H': 300,     // 5 hours of 1-min bars
+  '1D': 390,     // 1 trading day (~6.5 hours)
+  '5D': 1950,    // 5 trading days
+} as const;
+
+export type TimeframePreset = keyof typeof TF_PRESETS;
+
+export async function loadHistoryPreset(
+  symbol: string,
+  preset: TimeframePreset,
+  onBar: (bar: Bar) => void
+): Promise<void> {
+  const limit = TF_PRESETS[preset];
+  const res = await fetch(`/api/history?symbol=${encodeURIComponent(symbol)}&timeframe=1m&limit=${limit}`);
+  if (!res.ok) {
+    throw new Error(`Failed to load ${preset} history: ${res.statusText}`);
+  }
+  const bars: Bar[] = await res.json();
+  bars.forEach(onBar);
 }
 
 export async function fetchHistory(symbol = 'SPY', timeframe = '1m', limit = 300) {

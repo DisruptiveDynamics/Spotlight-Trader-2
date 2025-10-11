@@ -1,0 +1,338 @@
+Yes—these are the right fixes for your repo’s issues (voice coach reconnect loop + history vs. live alignment) based on the structure you shared. Below is a single, **copy-paste Replit Agent prompt** that will (1) patch the voice coach to stop looping, (2) swap synthetic history for Polygon aggregates, and (3) make charts load historical + keep up tick-by-tick with resilient gap-fill. It’s written so the agent searches for nearby filenames if yours differ.
+
+---
+
+## 🔧 Replit Agent Prompt — “Spotlight Trader Fix Pack v1”
+
+**Goal:**
+
+1. Fix AI voice coach reconnect loop: robust WS URL, fresh token on every reconnect, add `session.type: "realtime"` in OpenAI session update.
+2. Replace synthetic `/api/history` with real Polygon aggregates + ring-buffer priming.
+3. Add SSE gap-fill + timeframe loaders so charts feel like Thinkorswim (live wicks + history).
+
+**Safety First (do these steps exactly):**
+
+1. Create a work branch and a rollback snapshot.
+
+   * Create git if missing, ignore secrets:
+
+     * Add `.gitignore` entries: `.env`, `.env.*`, `node_modules`, `build`, `dist`, `.next`, `out`
+   * `git init` (if needed), `git add .`, `git commit -m "pre-fixpack snapshot"`
+   * `git checkout -b fix/voice-chart-v1`
+
+---
+
+### A) Server: add `session.type = "realtime"` to the OpenAI session.update
+
+**Find file:** one of:
+
+* `apps/server/src/coach/sessionContext.ts`
+* or `apps/server/src/coach/sessionContext.js`
+* or wherever the initial **`session.update`** payload is returned.
+
+**Edit rule:** In the object returned for the initial `session.update`, ensure:
+
+```ts
+return {
+  type: 'session.update',
+  session: {
+    type: 'realtime',    // ← add this line if missing
+    instructions: /* keep existing */,
+    voice: /* keep existing */,
+    turn_detection: {
+      type: 'server_vad',
+      threshold: 0.5,
+      prefix_padding_ms: 300,
+      silence_duration_ms: 500,
+    },
+    // keep modalities/audio formats if you already set them
+  },
+};
+```
+
+If a separate proxy merges session fields later, keep that too (don’t remove anything).
+
+---
+
+### B) Client: robust WS URL + fresh token on reconnect (stop the listen→reconnect loop)
+
+**Find file:** one of:
+
+* `apps/client/src/voice/VoiceClient.ts`
+* or `src/voice/VoiceClient.ts`
+* or the main voice WS client class used by your coach bubble.
+
+**Make these changes:**
+
+1. **Build WS URL from the current page origin (supports HTTPS/wss and proxies):**
+
+```ts
+const buildWsUrl = (token: string) => {
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${window.location.host}/ws/realtime?t=${encodeURIComponent(token)}`;
+};
+```
+
+2. **Use it when connecting:**
+
+```ts
+this.ws = new WebSocket(buildWsUrl(token));
+```
+
+3. **Always fetch a fresh token for each (re)connect (do NOT reuse cached/expired tokens):**
+
+```ts
+private async freshToken() {
+  const res = await fetch('/api/voice/token', { method: 'POST', credentials: 'include' });
+  if (!res.ok) throw new Error(`Token fetch failed: ${res.status}`);
+  const { token } = await res.json();
+  return token as string;
+}
+```
+
+4. **Reconnect with exponential backoff + fresh token:**
+
+```ts
+private scheduleReconnect(delay = 1000) {
+  window.clearTimeout(this.reconnectTimeout);
+  this.reconnectTimeout = window.setTimeout(async () => {
+    try {
+      const token = await this.freshToken();
+      await this.connect(token);
+    } catch {
+      this.scheduleReconnect(Math.min(delay * 2, 30000));
+    }
+  }, delay);
+}
+
+this.ws.onerror = () => {
+  this.setState('error');
+  try { this.ws?.close(); } finally { this.scheduleReconnect(); }
+};
+this.ws.onclose = () => {
+  this.setState('disconnected');
+  this.scheduleReconnect();
+};
+```
+
+5. **Power button flow (first user gesture):** fetch a token right before `connect()` and (on iOS) unlock audio first. In your coach UI (e.g., `apps/client/src/features/coach/CoachBubble.tsx`), ensure:
+
+```ts
+const powerOn = async () => {
+  // await ensureAudioUnlocked(); // if you have an iOS unlock helper
+  const res = await fetch('/api/voice/token', { method: 'POST', credentials: 'include' });
+  const { token } = await res.json();
+  await voiceClient.current?.connect(token);
+  setIsPowered(true);
+};
+```
+
+---
+
+### C) Server: real Polygon history + ring-buffer priming (keep synthetic only as last-resort fallback)
+
+**Find file:** one of:
+
+* `apps/server/src/history/service.ts`
+* or `apps/server/src/history/service.js`
+* the module implementing `/api/history`.
+
+**Replace/getHistory implementation** with Polygon aggregates (1-minute), paginated:
+
+```ts
+// imports at top:
+import { restClient } from '@polygon.io/client-js';
+import { ringBuffer } from '../cache/ring'; // adjust relative path to your ring buffer
+// Pull API key from env the same way the rest of your server does
+const polygon = restClient(process.env.POLYGON_API_KEY!);
+
+export async function getHistory(query: {
+  symbol: string; timeframe?: '1m'; limit?: number; before?: number; sinceSeq?: number;
+}) {
+  const { symbol, timeframe = '1m', limit = 1000, before, sinceSeq } = query;
+
+  // 1) Zero-latency fast-path from ring buffer for reconnect gap-fills
+  if (sinceSeq !== undefined) {
+    const cached = ringBuffer.getSinceSeq(symbol, sinceSeq);
+    if (cached?.length) {
+      return cached.map((b: any) => ({
+        symbol,
+        timeframe,
+        seq: b.seq,
+        bar_start: b.bar_start,
+        bar_end: b.bar_end,
+        ohlcv: { o: b.open, h: b.high, l: b.low, c: b.close, v: b.volume ?? 0 },
+      }));
+    }
+  }
+
+  // 2) Polygon REST aggregates: minute bars
+  const toMs = before || Date.now();
+  const fromMs = toMs - (limit ?? 1000) * 60_000; // minutes back
+  const fromISO = new Date(fromMs).toISOString();
+  const toISO   = new Date(toMs).toISOString();
+
+  let results: any[] = [];
+  try {
+    const params = { adjusted: true as const, sort: 'asc' as const, limit: 50000 };
+    let resp: any = await polygon.stocks.aggregates(symbol, 1, 'minute', fromISO, toISO, params);
+    results.push(...(resp.results ?? []));
+    while (resp?.next) {
+      resp = await resp.next();
+      if (!resp?.results?.length) break;
+      results.push(...resp.results);
+    }
+  } catch (err) {
+    console.error('Polygon aggregates failed; falling back to synthetic history:', err);
+  }
+
+  if (!results.length) {
+    // keep your existing synthetic fallback here (do not remove), so charts never go blank
+    // return existingSyntheticBars(...);
+  }
+
+  const bars = results.map((r: any) => {
+    const bar_start = r.t;        // ms
+    const bar_end   = r.t + 60_000;
+    return {
+      symbol,
+      timeframe,
+      seq: Math.floor(bar_start / 60_000),
+      bar_start,
+      bar_end,
+      ohlcv: { o: r.o, h: r.h, l: r.l, c: r.c, v: r.v },
+    };
+  });
+
+  // 3) Prime ring buffer for ultra-fast sinceSeq backfills
+  ringBuffer.putBars(symbol, bars.map(b => ({
+    seq: b.seq,
+    bar_start: b.bar_start,
+    bar_end: b.bar_end,
+    open: b.ohlcv.o,
+    high: b.ohlcv.h,
+    low:  b.ohlcv.l,
+    close:b.ohlcv.c,
+    volume:b.ohlcv.v ?? 0,
+  })));
+
+  return bars;
+}
+```
+
+> **Note:** Keep your existing ring-buffer module + SSE broadcaster as-is; this change only swaps the history source.
+
+---
+
+### D) Client: SSE gap-fill on reconnect/open + on window focus
+
+**Find file:** the client market stream handler, one of:
+
+* `apps/client/src/lib/marketStream.ts`
+* or the module that consumes `/stream/market` and updates the chart series.
+
+**Add last-seq tracking + gap-fill helpers:**
+
+```ts
+// Track last seen seq per symbol
+const lastSeqPerSymbol = new Map<string, number>();
+
+export function applyBar(bar) {
+  lastSeqPerSymbol.set(bar.symbol, bar.seq);
+  // merge bar into your series here (preserve wicks + current forming candle)
+}
+
+export async function gapFill(symbol: string) {
+  const sinceSeq = lastSeqPerSymbol.get(symbol);
+  if (sinceSeq == null) return;
+  const url = `/api/history?symbol=${encodeURIComponent(symbol)}&timeframe=1m&sinceSeq=${sinceSeq}`;
+  const res = await fetch(url);
+  if (!res.ok) return;
+  const bars = await res.json();
+  for (const b of bars) applyBar(b);
+}
+
+export function attachSSE(symbols: string[]) {
+  const params = new URLSearchParams({ symbols: symbols.join(',') });
+  const es = new EventSource(`/stream/market?${params}`);
+
+  es.addEventListener('open', () => {
+    symbols.forEach(gapFill); // backfill immediately on new connection
+  });
+
+  window.addEventListener('focus', () => symbols.forEach(gapFill));
+
+  es.addEventListener('bar', (e) => {
+    const bar = JSON.parse((e as MessageEvent).data);
+    applyBar(bar);
+  });
+
+  es.addEventListener('micro', (e) => {
+    const micro = JSON.parse((e as MessageEvent).data);
+    // update forming candle here; throttle paints to ~60–120ms
+  });
+
+  return es;
+}
+```
+
+**Rendering throttle (to keep the “tick-by-tick feel” without drowning the UI):**
+Coalesce `micro` updates with `requestAnimationFrame` or a `setTimeout` at ~60–120ms before re-rendering the chart.
+
+---
+
+### E) Timeframe buttons (intraday presets like TOS)
+
+Add quick loaders that map to minutes of 1-min bars (adjust to your UI location):
+
+```ts
+const TF_MIN = { '1H': 60, '3H': 180, '5H': 300, '1D': 390, '5D': 1950 };
+
+async function loadHistory(symbol: string, minutes: number) {
+  const res = await fetch(`/api/history?symbol=${encodeURIComponent(symbol)}&timeframe=1m&limit=${minutes}`);
+  if (!res.ok) return;
+  const bars = await res.json();
+  bars.forEach(applyBar);
+}
+```
+
+Wire these to your toolbar or timeframe selector.
+
+---
+
+### F) Dev/Prod origin allowance (WS upgrade)
+
+If your WS proxy checks `Origin` or host, make sure dev origins are allowed in non-prod (Replit, localhost). Do **not** loosen in production; use an allow-list there.
+
+---
+
+### G) Build & Verify
+
+1. Install/build:
+
+* `pnpm -w install` (or your package manager)
+* `pnpm -w build`
+* start your dev server(s)
+
+2. **Sanity checks:**
+
+* `GET /api/history?symbol=SPY&timeframe=1m&limit=5` returns realistic OHLC bars (not synthetic).
+* Open app → select SPY → see **history + live forming candle** that rolls to next minute on time.
+* Toggle offline/online → on reconnect, client calls `/api/history?sinceSeq=…` and fills any gap.
+* Click **Power** on the coach → it connects over `wss://…/ws/realtime` on HTTPS, listens + speaks. Interrupt with “stop” → cancels promptly. No listen→reconnect loop.
+
+3. Commit:
+
+* `git add . && git commit -m "FixPack v1: voice reconnect + polygon history + SSE gapfill"`
+
+---
+
+## ✅ Confidence check — “Are these *your* fixes?”
+
+* **Yes.** They target the exact root causes we identified in your code paths:
+
+  * Voice coach loop: hard-coded `ws://…:4000`, token reuse after 60s TTL, missing `session.type`.
+  * History/live mismatch: server synthesizing history instead of using Polygon aggregates, no deterministic client gap-fill.
+* If a filename differs in your tree, the agent prompt tells the agent to **search by functionality** (look for the `session.update` payload, voice WS client, history service, and SSE market stream). The logic remains the same in any file layout.
+
+If you want me to generate a patch set (unified diffs) tailored to your exact paths, say the word and I’ll output those next.

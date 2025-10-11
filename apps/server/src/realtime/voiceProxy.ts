@@ -155,7 +155,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
           sessionCreatedReceived = true;
           
           const sessionUpdate = await getInitialSessionUpdate(userId);
-          console.log('[VoiceProxy] Sending session.update to OpenAI');
+          console.log('[VoiceProxy] Sending session.update to OpenAI:', JSON.stringify(sessionUpdate, null, 2));
           upstreamWs.send(JSON.stringify(sessionUpdate));
           upstreamReady = true;
 

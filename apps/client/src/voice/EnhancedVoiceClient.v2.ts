@@ -436,6 +436,12 @@ export class EnhancedVoiceClient {
     const audioContext = getAudioContext();
     if (!audioContext) return;
 
+    // Int16Array requires byte length to be a multiple of 2
+    if (arrayBuffer.byteLength % 2 !== 0) {
+      console.warn('[Voice] Received odd byte length audio buffer, truncating last byte:', arrayBuffer.byteLength);
+      arrayBuffer = arrayBuffer.slice(0, arrayBuffer.byteLength - 1);
+    }
+
     // Convert PCM16 ArrayBuffer directly to Float32 for playback
     const float32 = this.pcm16ToFloat32(new Int16Array(arrayBuffer));
 

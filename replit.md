@@ -70,6 +70,34 @@ Focuses on professional ergonomics:
 
 ## Recent Changes
 
+### Voice Connection Loop Fix: Message Processing & Reconnect Logic (October 11, 2025)
+- **✅ Root Cause Identified**: Listening→reconnect loop caused by message processing errors
+  - Client only handled 4-5 OpenAI message types, unhandled messages caused errors
+  - Base64 decoding failures weren't caught, triggering reconnects
+  - No distinction between intentional vs accidental disconnects
+  - Empty error objects `{}` made debugging difficult
+- **✅ Comprehensive Message Handling**: Switch statement for all OpenAI Realtime API types
+  - Session events: `session.created`, `session.updated`
+  - Conversation events: `conversation.*`
+  - Input audio events: `input_audio_buffer.*` with speech detection
+  - Response events: `response.audio.delta`, transcripts, text, etc.
+  - Rate limits, errors, default case for unhandled types
+  - Properly updates coach state (listening/thinking/speaking)
+- **✅ Defensive Error Handling**: Try-catch wrappers prevent crashes
+  - `handleAudioDelta` wrapped to catch base64 decode errors
+  - Enhanced error logging with actual messages, not empty objects
+  - Parsing errors no longer trigger reconnects (critical fix)
+- **✅ Intentional Disconnect Tracking**: Flag prevents reconnect loops
+  - `intentionalDisconnect` flag distinguishes user vs accidental disconnects
+  - `disconnect()` sets flag, `connect()` resets it
+  - `onclose` checks flag before auto-reconnecting
+  - Logs close events with code and reason for debugging
+- **✅ Int16Array Byte Length Fix**: Handle odd-length audio buffers
+  - Added validation for ArrayBuffer byte length before Int16Array conversion
+  - Truncates last byte if length is odd (Int16Array requires even byte count)
+  - Prevents "byte length should be a multiple of 2" errors
+- **🎯 Result**: Voice connection stable, no more listening→reconnect loop. Latest logs show zero voice errors.
+
 ### Voice Connection Fix: Demo Token Authentication (October 11, 2025)
 - **✅ Root Cause Identified**: Voice token endpoint required authentication, but no session existed
   - POST `/api/voice/token` used `requireUser` middleware (401 errors)

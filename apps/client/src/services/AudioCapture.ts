@@ -17,6 +17,53 @@ export class AudioCapture {
   private sourceNode: MediaStreamAudioSourceNode | null = null;
   private onChunkCallback: ((pcm: Int16Array) => void) | null = null;
 
+  /**
+   * Request microphone permission BEFORE attempting to connect.
+   * This ensures the browser shows the permission dialog immediately,
+   * instead of silently failing during WebSocket setup.
+   */
+  static async requestMicPermission(config: AudioCaptureConfig = {}): Promise<MediaStream> {
+    const {
+      sampleRate = 16000,
+      echoCancellation = true,
+      noiseSuppression = true,
+      autoGainControl = true,
+    } = config;
+
+    return navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation,
+        noiseSuppression,
+        autoGainControl,
+        channelCount: 1,
+        sampleRate,
+      },
+    });
+  }
+
+  /**
+   * Ensures PCM16 data is exactly 640 bytes (320 Int16 samples = 20ms @ 16kHz).
+   * This prevents "byte length should be a multiple of 2" errors and aligns with
+   * OpenAI Realtime API's expected frame size.
+   */
+  static ensurePCM16FrameSize(pcm: Int16Array): Int16Array {
+    const TARGET_SAMPLES = 320; // 20ms @ 16kHz
+    
+    if (pcm.length === TARGET_SAMPLES) {
+      return pcm; // Already correct size
+    }
+    
+    if (pcm.length > TARGET_SAMPLES) {
+      // Truncate to exact size
+      return pcm.slice(0, TARGET_SAMPLES);
+    }
+    
+    // Pad with zeros if too short
+    const padded = new Int16Array(TARGET_SAMPLES);
+    padded.set(pcm);
+    return padded;
+  }
+
   async start(
     audioContext: AudioContext,
     onChunk: (pcm: Int16Array) => void,

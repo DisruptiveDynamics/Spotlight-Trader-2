@@ -118,7 +118,8 @@ export class AudioCapture {
         const inputData = e.inputBuffer.getChannelData(0);
         const pcm16 = new Int16Array(inputData.length);
         for (let i = 0; i < inputData.length; i++) {
-          const s = Math.max(-1, Math.min(1, inputData[i]));
+          const sample = inputData[i] ?? 0;
+          const s = Math.max(-1, Math.min(1, sample));
           pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
         }
         if (this.onChunkCallback) {

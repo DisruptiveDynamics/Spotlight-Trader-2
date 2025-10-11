@@ -119,7 +119,12 @@ function App() {
           style={{ opacity }}
         >
           <div className="flex items-center justify-between">
-            <Brand />
+            <div className="flex items-center gap-3">
+              <Brand />
+              <Suspense fallback={null}>
+                <PresenceBubble compact />
+              </Suspense>
+            </div>
             <div className="flex items-center gap-4">
               <LatencyHUD />
               {focusMode !== 'normal' && (
@@ -199,9 +204,6 @@ function App() {
             </div>
           </div>
         </main>
-        <Suspense fallback={null}>
-          <PresenceBubble />
-        </Suspense>
         <Suspense fallback={null}>
           <CommandPalette />
         </Suspense>

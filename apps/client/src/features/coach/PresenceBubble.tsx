@@ -17,9 +17,10 @@ interface WaveProps {
   amplitude: number;
   state: CoachState;
   reducedMotion: boolean;
+  size?: number;
 }
 
-function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
+function WaveAnimation({ amplitude, state, reducedMotion, size = 200 }: WaveProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>();
   const timeRef = useRef(0);
@@ -43,23 +44,23 @@ function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = 200 * dpr;
-    canvas.height = 200 * dpr;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
     ctx.scale(dpr, dpr);
 
-    const centerX = 100;
-    const centerY = 100;
-    const baseRadius = 40;
+    const centerX = size / 2;
+    const centerY = size / 2;
+    const baseRadius = size * 0.2;
 
     const draw = () => {
-      ctx.clearRect(0, 0, 200, 200);
+      ctx.clearRect(0, 0, size, size);
       timeRef.current += 0.02;
 
       const currentState = stateRef.current;
       const currentAmplitude = amplitudeRef.current;
 
       if (currentState === 'idle') {
-        const breathRadius = baseRadius + Math.sin(timeRef.current * 0.5) * 5;
+        const breathRadius = baseRadius + Math.sin(timeRef.current * 0.5) * (size * 0.025);
 
         // Outer glow
         const outerGlow = ctx.createRadialGradient(
@@ -68,14 +69,14 @@ function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
           0,
           centerX,
           centerY,
-          breathRadius + 40
+          breathRadius + (size * 0.2)
         );
         outerGlow.addColorStop(0, 'rgba(59, 130, 246, 0.9)');
         outerGlow.addColorStop(0.5, 'rgba(59, 130, 246, 0.5)');
         outerGlow.addColorStop(1, 'rgba(59, 130, 246, 0)');
 
         ctx.beginPath();
-        ctx.arc(centerX, centerY, breathRadius + 40, 0, Math.PI * 2);
+        ctx.arc(centerX, centerY, breathRadius + (size * 0.2), 0, Math.PI * 2);
         ctx.fillStyle = outerGlow;
         ctx.fill();
 
@@ -98,13 +99,13 @@ function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
         ctx.fill();
       } else if (currentState === 'listening') {
         const points = 64;
-        const variance = currentAmplitude * 15;
+        const variance = currentAmplitude * (size * 0.075);
 
         ctx.beginPath();
         for (let i = 0; i <= points; i++) {
           const angle = (i / points) * Math.PI * 2;
           const noise = Math.sin(angle * 3 + timeRef.current * 2) * variance;
-          const radius = baseRadius + noise + currentAmplitude * 10;
+          const radius = baseRadius + noise + currentAmplitude * (size * 0.05);
           const x = centerX + Math.cos(angle) * radius;
           const y = centerY + Math.sin(angle) * radius;
 
@@ -122,14 +123,14 @@ function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
           0,
           centerX,
           centerY,
-          baseRadius + 20
+          baseRadius + (size * 0.1)
         );
         gradient.addColorStop(0, 'rgba(34, 197, 94, 0.8)');
         gradient.addColorStop(1, 'rgba(34, 197, 94, 0)');
         ctx.fillStyle = gradient;
         ctx.fill();
       } else if (currentState === 'thinking') {
-        const shimmerRadius = baseRadius + Math.sin(timeRef.current) * 5;
+        const shimmerRadius = baseRadius + Math.sin(timeRef.current) * (size * 0.025);
         const gradient = ctx.createLinearGradient(
           centerX - shimmerRadius,
           centerY - shimmerRadius,
@@ -150,7 +151,7 @@ function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
         const ripples = 3;
         for (let i = 0; i < ripples; i++) {
           const progress = (timeRef.current * 0.5 + i * 0.33) % 1;
-          const rippleRadius = baseRadius + progress * 40;
+          const rippleRadius = baseRadius + progress * (size * 0.2);
           const opacity = 1 - progress;
 
           const gradient = ctx.createRadialGradient(
@@ -200,12 +201,16 @@ function WaveAnimation({ amplitude, state, reducedMotion }: WaveProps) {
     <canvas
       ref={canvasRef}
       className="absolute inset-0 w-full h-full"
-      style={{ width: '200px', height: '200px' }}
+      style={{ width: `${size}px`, height: `${size}px` }}
     />
   );
 }
 
-export function PresenceBubble() {
+interface PresenceBubbleProps {
+  compact?: boolean;
+}
+
+export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [coachState, setCoachState] = useState<CoachState>('idle');
   const [amplitude, setAmplitude] = useState(0);
@@ -406,26 +411,29 @@ export function PresenceBubble() {
     return 'text-red-400';
   };
 
-  const showThinkingOverlay = latency > 1500 && coachState === 'thinking';
+  const showThinkingOverlay = latency > 1500 && coachState === 'thinking' && !compact;
+  const bubbleSize = compact ? 36 : 200;
 
   if (showFallback) {
     return <VoiceFallback onSendMessage={handleSendMessage} onClose={handleCloseFallback} />;
   }
 
   return (
-    <div className="fixed bottom-8 right-8 z-50">
-      <div className="relative">
+    <div className={compact ? 'relative' : 'fixed bottom-8 right-8 z-50'}>
+      <div className="relative flex items-center gap-3">
         <button
           onClick={handleBubbleClick}
-          className="relative w-[200px] h-[200px] rounded-full focus:outline-none focus:ring-4 focus:ring-blue-500/50 transition-transform hover:scale-105 touch-manipulation"
+          className={`relative rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-transform hover:scale-105 touch-manipulation ${
+            compact ? 'w-9 h-9' : 'w-[200px] h-[200px]'
+          }`}
           aria-label={getStateLabel()}
           aria-pressed={connectionState === 'connected'}
           role="button"
           style={{ WebkitTapHighlightColor: 'transparent' }}
         >
-          <WaveAnimation amplitude={amplitude} state={coachState} reducedMotion={reducedMotion} />
+          <WaveAnimation amplitude={amplitude} state={coachState} reducedMotion={reducedMotion} size={bubbleSize} />
 
-          {connectionState === 'connected' && (
+          {connectionState === 'connected' && !compact && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -460,27 +468,37 @@ export function PresenceBubble() {
           )}
         </button>
 
-        <div className="mt-4 text-center space-y-2">
-          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-            {getStateLabel()}
-          </div>
+        {!compact && (
+          <>
+            <div className="mt-4 text-center space-y-2">
+              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                {getStateLabel()}
+              </div>
 
-          {connectionState === 'connected' && latency > 0 && (
-            <div className={`text-xs font-mono ${getLatencyColor()}`}>{latency}ms</div>
-          )}
+              {connectionState === 'connected' && latency > 0 && (
+                <div className={`text-xs font-mono ${getLatencyColor()}`}>{latency}ms</div>
+              )}
 
-          <div className="text-xs text-gray-500 dark:text-gray-400">T: toggle • Esc: exit</div>
-        </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">T: toggle • Esc: exit</div>
+            </div>
 
-        {showTooltip && (
-          <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 bg-gray-900 text-white text-sm p-3 rounded-lg shadow-xl animate-fadeIn">
-            <div className="text-center">Click to talk. Tap again to mute. X to exit.</div>
-            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-3 h-3 bg-gray-900" />
-          </div>
+            {showTooltip && (
+              <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 bg-gray-900 text-white text-sm p-3 rounded-lg shadow-xl animate-fadeIn">
+                <div className="text-center">Click to talk. Tap again to mute. X to exit.</div>
+                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-3 h-3 bg-gray-900" />
+              </div>
+            )}
+
+            {statusMessage && (
+              <div className="absolute -top-16 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg animate-fadeIn whitespace-nowrap">
+                {statusMessage}
+              </div>
+            )}
+          </>
         )}
 
-        {statusMessage && (
-          <div className="absolute -top-16 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg animate-fadeIn whitespace-nowrap">
+        {compact && statusMessage && (
+          <div className="bg-gray-700/90 text-white text-xs px-3 py-1.5 rounded-md shadow-lg animate-fadeIn whitespace-nowrap">
             {statusMessage}
           </div>
         )}

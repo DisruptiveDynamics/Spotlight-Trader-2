@@ -135,3 +135,22 @@ Focuses on professional ergonomics:
   - LatencyHUD displays metrics in real-time (shows 0ms when idle)
   - Tick→Wick latency deferred (requires chart update instrumentation)
 - **🎯 Result**: Clean, minimalist dashboard with professional trader ergonomics, organized settings, improved chart readability
+
+### Voice Bubble UI Redesign: Compact Top-Bar Integration (October 11, 2025)
+- **✅ Compact Mode Added**: Voice bubble now supports two rendering modes
+  - **Compact mode (36px)**: Inline in top bar next to logo, horizontal flex layout with status popups to the right
+  - **Full-size mode (200px)**: Fixed bottom-right positioning with vertical layout (preserved original behavior)
+  - Separate render paths prevent layout regressions between modes
+- **✅ Proportional Animation Scaling**: Canvas animations scale correctly at any size
+  - WaveAnimation accepts `size` prop, all radiuses and offsets calculated proportionally
+  - Base radius = `size * 0.2`, breathing/pulse/ripple effects scale with size
+  - Maintains visual consistency from 36px to 200px
+- **✅ Clean Status Popups**: Messages appear as minimal toasts in compact mode
+  - "Click to activate", "Connecting...", "Mic activated" show to the right of bubble
+  - Semi-transparent dark background (`bg-gray-700/90`), compact padding (`px-3 py-1.5`)
+  - Auto-dismiss after 2s, no clutter in top bar
+- **✅ Simplified Compact UI**: Only essential elements when compact
+  - No disconnect button, tooltips, or keyboard hints (available in full-size mode)
+  - Breathing animation visible at all times for visual feedback
+  - Focus ring and hover effects preserved for accessibility
+- **🎯 Result**: Professional, minimal voice control in top bar, full-featured mode available when needed

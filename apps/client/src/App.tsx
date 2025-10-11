@@ -42,7 +42,7 @@ function App() {
   const [focusMode, setFocusMode] = useState(focusManager.getMode());
   const [explainPanelOpen, setExplainPanelOpen] = useState(false);
   const [explainContext, setExplainContext] = useState<InsightContext | null>(null);
-  const [showSplash, setShowSplash] = useState(true);
+  const [showSplash, setShowSplash] = useState(false); // Bypass splash for POC
   const [showAdminConsole, setShowAdminConsole] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 

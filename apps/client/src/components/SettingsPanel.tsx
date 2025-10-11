@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useCoachSettings } from '../state/coachSettings';
 import { useAuthStore } from '../stores/authStore';
+import { AccessibilityControls } from './AccessibilityControls';
 
 interface Voice {
   id: string;
@@ -12,12 +13,15 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
+type Tab = 'coach' | 'accessibility';
+
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const { settings, updateSettings, resetSettings, loadSettings } = useCoachSettings();
   const { logout } = useAuthStore();
   const [voices, setVoices] = useState<Voice[]>([]);
   const [isLoadingVoices, setIsLoadingVoices] = useState(false);
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>('coach');
 
   useEffect(() => {
     fetchVoices();
@@ -72,32 +76,57 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-            Coach Personalization
-          </h2>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center transition-colors"
-            aria-label="Close settings"
-          >
-            <svg
-              className="w-5 h-5 text-gray-500 dark:text-gray-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
+        <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Settings</h2>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center transition-colors"
+              aria-label="Close settings"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
+              <svg
+                className="w-5 h-5 text-gray-500 dark:text-gray-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => setActiveTab('coach')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                activeTab === 'coach'
+                  ? 'bg-blue-500 text-white'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              Coach
+            </button>
+            <button
+              onClick={() => setActiveTab('accessibility')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                activeTab === 'accessibility'
+                  ? 'bg-blue-500 text-white'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              Accessibility
+            </button>
+          </div>
         </div>
 
         <div className="p-6 space-y-6">
+          {activeTab === 'coach' && (
+            <>
           {/* Agent Name */}
           <div>
             <label className="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
@@ -234,6 +263,12 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               Sign Out
             </button>
           </div>
+            </>
+          )}
+
+          {activeTab === 'accessibility' && (
+            <AccessibilityControls />
+          )}
         </div>
       </div>
     </div>

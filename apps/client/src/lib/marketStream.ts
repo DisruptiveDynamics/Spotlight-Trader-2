@@ -40,6 +40,7 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
   let es: EventSource | null = null;
   let reconnectTimeout: number | null = null;
   let reconnectAttempts = 0;
+  let reconnectCount = 0;
   let lastSeq = opts?.sinceSeq || 0;
   let isManualClose = false;
   let currentState: SSEStatus = 'connecting';
@@ -192,6 +193,13 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
 
   const scheduleReconnect = () => {
     if (reconnectTimeout || isManualClose) return;
+    
+    reconnectCount++;
+    window.dispatchEvent(
+      new CustomEvent('metrics:update', {
+        detail: { sseReconnects: reconnectCount },
+      })
+    );
 
     const delay = Math.min(
       1000 * Math.pow(2, reconnectAttempts) + Math.random() * 1000,

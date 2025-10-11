@@ -513,6 +513,11 @@ export class EnhancedVoiceClient {
 
   private notifyLatency(ms: number): void {
     this.latencyListeners.forEach((listener) => listener(ms));
+    window.dispatchEvent(
+      new CustomEvent('metrics:update', {
+        detail: { voiceRTT: ms },
+      })
+    );
   }
 
   onStateChange(listener: VoiceClientListener): () => void {

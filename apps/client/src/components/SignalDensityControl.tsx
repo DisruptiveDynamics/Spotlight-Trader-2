@@ -74,49 +74,45 @@ export function SignalDensityControl() {
   };
 
   return (
-    <div className="bg-gray-800 p-4 rounded-lg">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-white">Signal Density</h3>
-        <button
-          onClick={() => setAudioEnabled(!audioEnabled)}
-          className={`px-2 py-1 text-xs rounded ${audioEnabled ? 'bg-blue-500' : 'bg-gray-700'}`}
-          title={audioEnabled ? 'Audio alerts on' : 'Audio alerts off'}
-        >
-          {audioEnabled ? '🔔' : '🔕'}
-        </button>
-      </div>
-
-      <div className="flex gap-2">
-        <button
-          onClick={() => setDensity('quiet')}
-          className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors ${getDensityColor(
-            'quiet'
-          )}`}
-        >
-          Quiet
-        </button>
-        <button
-          onClick={() => setDensity('normal')}
-          className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors ${getDensityColor(
-            'normal'
-          )}`}
-        >
-          Normal
-        </button>
-        <button
-          onClick={() => setDensity('loud')}
-          className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors ${getDensityColor(
-            'loud'
-          )}`}
-        >
-          Loud
-        </button>
-      </div>
-
-      <div className="mt-3 text-xs text-gray-400">
-        <div>Min confidence: {(DENSITY_CONFIGS[density].minConfidence * 100).toFixed(0)}%</div>
-        <div>Max signals: {DENSITY_CONFIGS[density].maxConcurrentSignals}</div>
-        {density === 'quiet' && <div className="text-blue-400 mt-1">Top opportunity only</div>}
+    <div className="bg-gray-800/50 px-3 py-2 rounded-lg">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-gray-400">Signals</span>
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => setDensity('quiet')}
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${getDensityColor(
+              'quiet'
+            )}`}
+            title="Quiet mode"
+          >
+            Q
+          </button>
+          <button
+            onClick={() => setDensity('normal')}
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${getDensityColor(
+              'normal'
+            )}`}
+            title="Normal mode"
+          >
+            N
+          </button>
+          <button
+            onClick={() => setDensity('loud')}
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${getDensityColor(
+              'loud'
+            )}`}
+            title="Loud mode"
+          >
+            L
+          </button>
+          <button
+            onClick={() => setAudioEnabled(!audioEnabled)}
+            className={`px-1.5 py-1 text-xs rounded transition-colors ${audioEnabled ? 'bg-blue-500/30 text-blue-400' : 'bg-gray-700/50 text-gray-500'}`}
+            title={audioEnabled ? 'Audio alerts on' : 'Audio alerts off'}
+          >
+            {audioEnabled ? '🔔' : '🔕'}
+          </button>
+        </div>
       </div>
     </div>
   );

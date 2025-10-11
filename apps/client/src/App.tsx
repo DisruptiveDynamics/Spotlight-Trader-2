@@ -1,7 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { LatencyHUD } from './components/LatencyHUD';
 import { SignalDensityControl } from './components/SignalDensityControl';
-import { AccessibilityControls } from './components/AccessibilityControls';
 import { Brand } from './components/Brand';
 import { Splash } from './components/Splash';
 import { Toolbar } from './features/chart/Toolbar';
@@ -156,7 +155,7 @@ function App() {
             </div>
           </div>
         </header>
-        <main className="flex-1 flex flex-col min-h-0">
+        <main className="flex-1 flex flex-col min-h-0 max-h-[85vh]">
           <Toolbar status="live" />
           <div className="flex-1 flex gap-2 min-h-0 p-2">
             {/* Main Chart Area - Takes 85% of width */}
@@ -169,7 +168,6 @@ function App() {
             {/* Right Sidebar - Takes 15% of width */}
             <div className="w-96 flex-shrink-0 space-y-2 overflow-y-auto">
               <SignalDensityControl />
-              <AccessibilityControls />
 
               {/* Time & Sales Tape Panel */}
               <div className="h-96">

@@ -26,11 +26,11 @@ export class RingBuffer {
       seq: bar.seq,
       bar_start: bar.bar_start,
       bar_end: bar.bar_end,
-      open: bar.open,
-      high: bar.high,
-      low: bar.low,
-      close: bar.close,
-      volume: bar.volume,
+      open: bar.ohlcv.o,
+      high: bar.ohlcv.h,
+      low: bar.ohlcv.l,
+      close: bar.ohlcv.c,
+      volume: bar.ohlcv.v,
     }));
 
     buffer.push(...cachedBars);

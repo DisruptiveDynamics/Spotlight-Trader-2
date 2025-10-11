@@ -59,17 +59,8 @@ export function initializeMarketPipeline(app: Express) {
 
       const bars = await getHistory(query);
 
-      // Convert flat Bar structure to client format with nested ohlcv
-      res.json(bars.map(bar => ({
-        bar_end: bar.bar_end,
-        ohlcv: {
-          o: bar.open,
-          h: bar.high,
-          l: bar.low,
-          c: bar.close,
-          v: bar.volume
-        }
-      })));
+      // Bars already have nested ohlcv format, just return them
+      res.json(bars);
     } catch (err) {
       console.error('History API error:', err);
       res.status(500).json({ error: 'Internal server error' });

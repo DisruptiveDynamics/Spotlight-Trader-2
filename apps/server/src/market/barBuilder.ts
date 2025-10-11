@@ -117,11 +117,13 @@ export class BarBuilder {
       seq,
       bar_start: state.bar_start,
       bar_end: state.bar_end,
-      open: state.currentBar.open,
-      high: state.currentBar.high,
-      low: state.currentBar.low,
-      close: state.currentBar.close,
-      volume: state.currentBar.volume,
+      ohlcv: {
+        o: state.currentBar.open,
+        h: state.currentBar.high,
+        l: state.currentBar.low,
+        c: state.currentBar.close,
+        v: state.currentBar.volume,
+      },
     };
 
     // Clear microbars to prevent memory leak

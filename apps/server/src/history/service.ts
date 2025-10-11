@@ -105,7 +105,9 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
   const toMs = before || Date.now();
   const fromMs = toMs - limit * 60000;
   console.log(`🎭 Generating ${limit} mock bars for ${symbol} (Polygon unavailable)`);
-  return generateRealisticBars(symbol, fromMs, toMs, limit);
+  const mockBars = generateRealisticBars(symbol, fromMs, toMs, limit);
+  ringBuffer.putBars(symbol, mockBars);
+  return mockBars;
 }
 
 /**

@@ -5,18 +5,28 @@ export async function ensureiOSAudioUnlocked(): Promise<void> {
   if (iosUnlocked) return;
 
   try {
-    // Request microphone permission on first user gesture
-    await navigator.mediaDevices.getUserMedia({ audio: true });
-    
-    // Get or create AudioContext
+    // Get or create AudioContext FIRST (before mic request)
     if (!audioContext) {
       audioContext = new AudioContext({ sampleRate: 24000 });
     }
     
     // Resume AudioContext (required for iOS)
-    await audioContext.resume();
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
+    }
+    
+    // Play silent buffer to unlock (iOS Safari quirk)
+    const buffer = audioContext.createBuffer(1, 1, 22050);
+    const source = audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioContext.destination);
+    source.start(0);
+    
+    // Wait for playback to complete
+    await new Promise(resolve => setTimeout(resolve, 100));
     
     iosUnlocked = true;
+    console.log('[iOS] Audio context unlocked successfully');
   } catch (error) {
     console.error('Failed to unlock iOS audio:', error);
     throw error;

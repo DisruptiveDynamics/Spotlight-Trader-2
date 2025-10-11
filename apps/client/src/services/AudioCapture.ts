@@ -43,28 +43,49 @@ export class AudioCapture {
       },
     });
 
-    // Load AudioWorklet processor
+    // Load AudioWorklet processor with proper error handling
     try {
-      await this.audioContext.audioWorklet.addModule('/worklets/micProcessor.js');
+      const workletUrl = new URL('/worklets/micProcessor.js', window.location.origin).href;
+      await this.audioContext.audioWorklet.addModule(workletUrl);
+      
+      // Create worklet node
+      this.workletNode = new AudioWorkletNode(this.audioContext, 'mic-processor');
+      
+      // Handle PCM chunks from worklet
+      this.workletNode.port.onmessage = (e) => {
+        if (e.data?.pcm && this.onChunkCallback) {
+          this.onChunkCallback(new Int16Array(e.data.pcm));
+        }
+      };
+
+      // Connect mic → worklet → destination
+      this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
+      this.sourceNode.connect(this.workletNode);
+      this.workletNode.connect(this.audioContext.destination);
     } catch (err) {
-      console.warn('AudioWorklet not supported, using fallback');
-      throw new Error('AudioWorklet not available');
+      console.warn('AudioWorklet failed, falling back to ScriptProcessor:', err);
+      
+      // Fallback to ScriptProcessorNode (deprecated but more compatible)
+      const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+      processor.onaudioprocess = (e) => {
+        const inputData = e.inputBuffer.getChannelData(0);
+        const pcm16 = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          const s = Math.max(-1, Math.min(1, inputData[i]));
+          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+        if (this.onChunkCallback) {
+          this.onChunkCallback(pcm16);
+        }
+      };
+
+      this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
+      this.sourceNode.connect(processor);
+      processor.connect(this.audioContext.destination);
+      
+      // Store reference for cleanup
+      (this as any).processorNode = processor;
     }
-
-    // Create worklet node
-    this.workletNode = new AudioWorkletNode(this.audioContext, 'mic-processor');
-    
-    // Handle PCM chunks from worklet
-    this.workletNode.port.onmessage = (e) => {
-      if (e.data?.pcm && this.onChunkCallback) {
-        this.onChunkCallback(new Int16Array(e.data.pcm));
-      }
-    };
-
-    // Connect mic → worklet → destination
-    this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
-    this.sourceNode.connect(this.workletNode);
-    this.workletNode.connect(this.audioContext.destination);
   }
 
   stop(): void {
@@ -78,6 +99,14 @@ export class AudioCapture {
       this.workletNode.disconnect();
       this.workletNode.port.onmessage = null;
       this.workletNode = null;
+    }
+
+    // Cleanup fallback processor if it exists
+    const processorNode = (this as any).processorNode;
+    if (processorNode) {
+      processorNode.disconnect();
+      processorNode.onaudioprocess = null;
+      (this as any).processorNode = null;
     }
 
     // Stop media stream tracks

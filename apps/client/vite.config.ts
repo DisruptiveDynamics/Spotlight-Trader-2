@@ -4,36 +4,45 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+      '@shared': path.resolve(__dirname, '../../packages/shared/src'),
+    },
+  },
   server: {
     host: '0.0.0.0',
     port: 5000,
     strictPort: true,
-    allowedHosts: [
-      '.replit.dev',
-      '.repl.co',
-      'localhost'
-    ],
     hmr: {
       protocol: 'ws',
       host: '0.0.0.0',
       port: 5000,
+      path: '/__vite_hmr',
       clientPort: 5000,
     },
     proxy: {
       '/api': {
         target: 'http://0.0.0.0:8080',
         changeOrigin: true,
+        secure: false,
       },
       '/ws': {
         target: 'http://0.0.0.0:8080',
         ws: true,
+        changeOrigin: true,
       },
     },
   },
-  resolve: {
-    alias: {
-      '@client': path.resolve(__dirname, './src'),
-      '@shared': path.resolve(__dirname, '../../packages/shared/src'),
+  build: {
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom'],
+          charts: ['lightweight-charts'],
+        },
+      },
     },
   },
 });

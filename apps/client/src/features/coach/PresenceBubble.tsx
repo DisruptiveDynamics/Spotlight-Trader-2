@@ -317,18 +317,28 @@ export function PresenceBubble() {
       connectionState === 'offline'
     ) {
       try {
-        // Unlock iOS audio on first user gesture
+        showStatusMessage('Connecting...', 3000);
+        
+        // Step 1: Unlock iOS audio on first user gesture (critical for Safari/iOS)
         await ensureiOSAudioUnlocked();
         
+        // Step 2: Fetch token
         const token = await fetchToken();
         tokenRef.current = token;
+        
+        // Step 3: Connect client (this will set up audio internally)
         await client.connect(token);
 
+        // Step 4: Check permission state and show fallback if needed
         if (client.getPermissionState() === 'denied') {
+          showStatusMessage('Microphone permission denied', 3000);
           setShowFallback(true);
+        } else if (client.getState() === 'connected') {
+          showStatusMessage('Voice coach connected ✅', 2000);
         }
       } catch (error) {
-        console.error('Failed to connect:', error);
+        console.error('Failed to connect voice coach:', error);
+        showStatusMessage('Connection failed. Please try again.', 3000);
 
         if (client.getPermissionState() === 'denied') {
           setShowFallback(true);
@@ -337,8 +347,10 @@ export function PresenceBubble() {
     } else if (connectionState === 'connected') {
       if (coachState === 'speaking') {
         client.interrupt();
+        showStatusMessage('Interrupted', 1000);
       } else {
         client.toggleMute();
+        showStatusMessage(client.isMicMuted() ? 'Muted' : 'Unmuted', 1000);
       }
     }
   };

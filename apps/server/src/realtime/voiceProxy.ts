@@ -151,7 +151,11 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
     });
 
     upstreamWs.on('error', (error) => {
-      console.error('Upstream WebSocket error:', error.message);
+      console.error('[VoiceProxy] Upstream WebSocket error:', {
+        message: error.message,
+        userId,
+        stack: error.stack,
+      });
       clientWs.close(1011, 'Upstream error');
     });
 
@@ -170,7 +174,11 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
     });
 
     clientWs.on('error', (error) => {
-      console.error('Client WebSocket error:', error.message);
+      console.error('[VoiceProxy] Client WebSocket error:', {
+        message: error.message,
+        userId,
+        readyState: clientWs.readyState,
+      });
     });
 
     clientWs.on('close', (code) => {

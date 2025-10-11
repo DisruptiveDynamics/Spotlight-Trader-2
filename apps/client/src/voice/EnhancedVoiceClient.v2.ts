@@ -66,7 +66,7 @@ export class EnhancedVoiceClient {
     this.vad.on('start', () => this.handleSpeechStart());
     this.vad.on('stop', () => this.handleSpeechStop());
     
-    this.audioBatcher = new AudioBatcher(40, 16000); // 40ms batches at 16kHz
+    this.audioBatcher = new AudioBatcher(40, 24000); // 40ms batches at 24kHz to match OpenAI
 
     // Monitor tab visibility
     if (typeof document !== 'undefined') {
@@ -196,7 +196,7 @@ export class EnhancedVoiceClient {
           this.drainAudioQueue();
         },
         {
-          sampleRate: 16000,
+          sampleRate: 24000, // Match OpenAI Realtime API sample rate
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
@@ -205,10 +205,7 @@ export class EnhancedVoiceClient {
 
       this.setPermissionState('granted');
       
-      // Start VAD
-      await this.vad.start();
-
-      // Setup analyser for amplitude monitoring
+      // Setup analyser for amplitude monitoring BEFORE starting VAD
       this.analyserNode = audioContext.createAnalyser();
       this.analyserNode.fftSize = 256;
       this.analyserNode.smoothingTimeConstant = 0.8;
@@ -223,6 +220,9 @@ export class EnhancedVoiceClient {
         source.connect(this.analyserNode);
       }
 
+      // Start VAD after audio pipeline is set up
+      await this.vad.start();
+      
       this.startAmplitudeMonitoring();
     } catch (error) {
       console.error('Failed to setup audio capture:', error);
@@ -239,7 +239,9 @@ export class EnhancedVoiceClient {
     }
 
     // Use correct WebSocket URL - Replit proxies through port 5000
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/realtime?t=${token}`;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const wsUrl = `${protocol}//${host}/ws/realtime?t=${encodeURIComponent(token)}`;
     console.log('[Voice] Connecting to:', wsUrl);
     this.ws = new WebSocket(wsUrl);
     

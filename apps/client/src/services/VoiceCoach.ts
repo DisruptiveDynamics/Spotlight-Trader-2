@@ -80,7 +80,7 @@ export class AudioBatcher {
   private lastFlush: number = Date.now();
   private maxQueueSize = 8;
 
-  constructor(batchDurationMs = 40, sampleRate = 16000) {
+  constructor(batchDurationMs = 40, sampleRate = 24000) {
     this.batchDurationMs = batchDurationMs;
     this.sampleRate = sampleRate;
   }

@@ -102,6 +102,19 @@ Focuses on professional ergonomics with zero-lag interactions:
   - Ensures voice coach session established correctly
 - **🎯 Result**: All critical issues resolved, voice reconnect stable, charts load historical data correctly, zero LSP errors, architect-approved implementation
 
+### Fix Pack v1.1: Chart Empty Bug - Data Format Alignment (October 11, 2025)
+- **✅ Nested OHLCV Format Enforced**: Fixed critical bug where charts were empty despite server having data
+  - Root cause: Bar format mismatch across 4 pipeline layers
+  - barBuilder.ts: Now emits bars with nested `ohlcv: { o, h, l, c, v }` format (was using flat format)
+  - ring.ts: Fixed putBars() to extract from `bar.ohlcv.o/h/l/c/v` instead of undefined `bar.open/high/low/close/volume`
+  - history/service.ts: Mock bars now stored in ring buffer before returning (ensures ring buffer population)
+  - wiring/index.ts: Removed double transformation that was trying to convert already-nested bars
+- **✅ End-to-End Data Flow Validated**: All layers now use consistent nested ohlcv structure
+  - History API returns full bars: `{"ohlcv":{"o":580,"h":580.01,"l":579.45,"c":579.63,"v":128965}}`
+  - Chart renders candles with prices 580-760, red/green OHLC data, EMA indicators
+  - Zero LSP errors, architect-approved implementation
+- **🎯 Result**: Charts fully operational, complete historical context, professional rendering quality
+
 ### Phase 2A: Time & Sales Tape Complete (October 11, 2025)
 - **✅ Professional Time & Sales Panel**: Live tick-by-tick execution feed with institutional-grade features
   - Real-time tick streaming via SSE (8 ticks/sec SPY, 6 ticks/sec QQQ)

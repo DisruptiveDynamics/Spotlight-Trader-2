@@ -53,6 +53,7 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
 
   const backfillGap = async (fromSeq: number, toSeq: number, previousLastSeq: number) => {
     try {
+      console.log(`📊 Backfilling gap: seq ${fromSeq} → ${toSeq}`);
       emitStatus('replaying_gap');
       
       const symbol = symbols[0] || 'SPY';
@@ -65,17 +66,32 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
       });
 
       const res = await fetch(`/api/history?${params.toString()}`);
-      if (!res.ok) throw new Error('Gap backfill failed');
+      if (!res.ok) {
+        throw new Error(`Gap backfill failed: ${res.status} ${res.statusText}`);
+      }
 
-      const bars = (await res.json()) as Bar[];
+      const rawBars = await res.json();
       
-      bars
+      // Transform history response to Bar format
+      const bars: Bar[] = rawBars.map((b: any) => ({
+        symbol: b.symbol || symbol,
+        timeframe: b.timeframe || '1m',
+        seq: Math.floor(b.bar_end / 60000),
+        bar_start: b.bar_end - 60000,
+        bar_end: b.bar_end,
+        ohlcv: b.ohlcv,
+      }));
+      
+      const filledBars = bars
         .filter(bar => bar.seq > previousLastSeq && bar.seq <= toSeq)
-        .sort((a, b) => a.seq - b.seq)
-        .forEach(bar => {
-          lastSeq = bar.seq;
-          listeners.bar.forEach((fn) => fn(bar));
-        });
+        .sort((a, b) => a.seq - b.seq);
+      
+      console.log(`✅ Filled ${filledBars.length} bars in gap`);
+      
+      filledBars.forEach(bar => {
+        lastSeq = bar.seq;
+        listeners.bar.forEach((fn) => fn(bar));
+      });
 
     } catch (error) {
       console.error('Gap backfill error:', error);

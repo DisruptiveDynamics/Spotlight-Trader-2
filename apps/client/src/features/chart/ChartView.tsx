@@ -11,7 +11,7 @@ export function ChartView() {
   const isPausedRef = useRef(false);
   const [, forceUpdate] = useState({});
   const [lastSeq, setLastSeq] = useLastSeq('SPY', '1m');
-  
+
   const barUpdateQueueRef = useRef<Bar[]>([]);
   const microbarQueueRef = useRef<Micro[]>([]);
   const rafIdRef = useRef<number | null>(null);

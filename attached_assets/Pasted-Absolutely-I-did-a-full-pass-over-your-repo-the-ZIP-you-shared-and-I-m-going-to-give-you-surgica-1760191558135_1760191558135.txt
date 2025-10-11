@@ -1,0 +1,241 @@
+Absolutely—I did a full pass over your repo (the ZIP you shared) and I’m going to give you **surgical, repo-specific edits** you can paste into Replit. No “if your project uses…”—these paths and lines are from **your** tree:
+
+* Monorepo with pnpm workspace
+* Client: `apps/client` (Vite port 5000, proxying `/api`, `/stream`, **`/ws`** to the server)
+* Server: `apps/server` (Express on port 8080)
+* Voice WS proxy: `apps/server/src/realtime/voiceProxy.ts`
+* Voice token: `apps/server/src/routes/voiceToken.ts` (token TTL = 60s)
+* Voice client currently used by UI: `apps/client/src/voice/VoiceClient.ts`
+* Enhanced voice client also present but not wired: `apps/client/src/voice/EnhancedVoiceClient.v2.ts`
+* Session initializer: `apps/server/src/coach/sessionContext.ts` (missing `session.type`)
+* History service already calls Polygon REST and primes ring buffer: `apps/server/src/history/service.ts`
+* SSE stream: `apps/server/src/stream/sse.ts` (events: `bar`, `microbar`)
+* Chart: `apps/client/src/features/chart/ChartView.tsx` + `apps/client/src/lib/marketStream.ts`
+
+Below are **three exact fixes** that will (1) stop the voice loop and (2) make live + historical bars behave like TOS with gap-fill on reconnect.
+
+---
+
+# 1) OpenAI Realtime requires `session.type`
+
+**File:** `apps/server/src/coach/sessionContext.ts`
+**Edit:** Add `type: 'realtime'` to the `session.update` payload.
+
+```diff
+@@
+   return {
+     type: 'session.update',
+     session: {
++      type: 'realtime',
+       instructions: truncated,
+       voice: voiceId,
+       turn_detection: {
+         type: 'server_vad',
+         threshold: 0.5,
+         prefix_padding_ms: 300,
+         silence_duration_ms: 500,
+       },
+     },
+   };
+```
+
+Why: your `voiceProxy` sends this object straight to OpenAI Realtime on `upstreamWs.on('open')`. Without `session.type`, the platform rejects and you get the “listening → reconnect” loop.
+
+---
+
+# 2) Voice client: use correct WS URL (wss behind HTTPS) **and** always refresh the token on reconnect
+
+Your UI uses `apps/client/src/voice/VoiceClient.ts` (not the v2 client). It currently:
+
+* Hard-codes `ws://${hostname}:4000` (wrong for your setup; Vite proxies `/ws` to port 8080)
+* Re-uses the same 60-second token on reconnect
+
+Fix both:
+
+**File:** `apps/client/src/voice/VoiceClient.ts`
+
+A) Build a proper URL from the page location:
+
+```diff
+@@
+-    const wsUrl = `ws://${window.location.hostname}:4000/ws/realtime?t=${token}`;
+-    this.ws = new WebSocket(wsUrl);
++    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
++    const wsUrl = `${proto}://${window.location.host}/ws/realtime?t=${encodeURIComponent(token)}`;
++    this.ws = new WebSocket(wsUrl);
+```
+
+B) Add a tiny helper to fetch a **fresh** token:
+
+```diff
++  private async freshToken(): Promise<string> {
++    const res = await fetch('/api/voice/token', { method: 'POST', credentials: 'include' });
++    if (!res.ok) throw new Error(`Token fetch failed: ${res.status}`);
++    const { token } = await res.json();
++    return token as string;
++  }
+```
+
+C) Use exponential backoff **and** get a new token on every reconnect:
+
+```diff
+@@
+   this.ws.onclose = () => {
+     this.setState('disconnected');
+     this.stopAudioCapture();
+-    this.scheduleReconnect(token);
++    this.scheduleReconnect(); // no cached token
+   };
+@@
+-  private scheduleReconnect(token: string) {
+-    if (this.reconnectTimeout) return;
++  private scheduleReconnect() {
++    if (this.reconnectTimeout) return;
+
+     const delay = Math.min(
+       1000 * Math.pow(2, this.reconnectAttempts) + Math.random() * 1000,
+       this.maxReconnectDelay
+     );
+
+     this.reconnectAttempts++;
+
+-    this.reconnectTimeout = window.setTimeout(() => {
+-      this.reconnectTimeout = null;
+-      this.connect(token);
+-    }, delay);
++    this.reconnectTimeout = window.setTimeout(async () => {
++      this.reconnectTimeout = null;
++      try {
++        const fresh = await this.freshToken();
++        await this.connect(fresh);
++      } catch (err) {
++        console.error('Reconnect failed (will retry):', err);
++        this.scheduleReconnect();
++      }
++    }, delay);
+   }
+```
+
+D) Keep your power button logic in `apps/client/src/features/coach/CoachBubble.tsx` as-is (it already POSTs `/api/voice/token` before first connect).
+
+Result: single origin `wss://<your-host>/ws/realtime` via Vite proxy, and no more stale token reuse.
+
+---
+
+# 3) Make chart resume buttery-smooth: gap-fill immediately on SSE re-open
+
+You already detect sequence gaps and backfill, but only **after** the first post-reconnect bar arrives. Add a tiny “on open” backfill so the gap is filled immediately when the connection re-establishes.
+
+**File:** `apps/client/src/lib/marketStream.ts`
+
+Add this inside `connectMarketSSE(...)` where you set up the `EventSource` (you already have `lastSeq` stored and a `backfillGap(...)` function defined in that module):
+
+```diff
+@@
+-    es.addEventListener('open', () => {
+-      reconnectAttempts = 0;
+-      emitStatus('connected');
+-      window.dispatchEvent(new CustomEvent('sse:connected'));
+-    });
++    es.addEventListener('open', async () => {
++      reconnectAttempts = 0;
++      emitStatus('connected');
++      window.dispatchEvent(new CustomEvent('sse:connected'));
++
++      // NEW: proactive gap-fill on connect using lastSeq
++      try {
++        if (lastSeq > 0) {
++          // fetch bars since lastSeq via history, then emit them in order
++          const symbol = symbols[0] || 'SPY';
++          const params = new URLSearchParams({
++            symbol,
++            timeframe: '1m',
++            sinceSeq: String(lastSeq),
++          });
++          const res = await fetch(`/api/history?${params.toString()}`);
++          if (res.ok) {
++            const bars = await res.json();
++            for (const b of bars) {
++              // mirror your bar handler machinery
++              listeners.bar.forEach((fn) => fn(b));
++              lastSeq = Math.max(lastSeq, b.seq);
++            }
++          }
++        }
++      } catch (e) {
++        console.warn('Initial gap-fill on open failed (continuing):', e);
++      }
++    });
+```
+
+Result: when the tab regains connectivity, you fill any missed bars **immediately**, then proceed live. You’re already rendering wicks from `microbar` events—this just removes the “stale until first bar lands” feeling.
+
+---
+
+## Environment you must set (Replit → Tools → Secrets)
+
+Use your actual values:
+
+* `OPENAI_API_KEY`
+* `POLYGON_API_KEY`
+* `APP_ORIGIN=https://<your-replit-url>` (your public HTTPS app URL)
+* (optional) `ADMIN_ORIGIN` if you have a separate admin host
+
+Your server already allows Replit preview origins when `REPL_ID` is present; `APP_ORIGIN` makes the allow-list explicit.
+
+---
+
+## Commands (for **this** repo)
+
+Run these in the Replit Shell:
+
+```bash
+# Enable pnpm and install workspace deps
+corepack enable && corepack prepare pnpm@9 --activate
+pnpm -w install
+
+# Build everything
+pnpm -w build
+
+# Dev: runs client (Vite 5000) + server (8080) together via workspace script
+pnpm dev
+```
+
+### Quick verifications (new shell tab)
+
+Replace `APP` with your public Replit URL.
+
+```bash
+APP="https://<your-replit-url>"
+
+# History is real (Polygon) and normalized
+curl -s "$APP/api/history?symbol=SPY&timeframe=1m&limit=5" | head -c 800; echo
+
+# SSE stream opens and emits 'bar' / 'microbar'
+curl -N "$APP/stream/market?symbols=SPY" | head -n 20
+
+# Voice token works
+curl -s -X POST "$APP/api/voice/token" | jq .
+```
+
+Open the UI, click **Power** on the coach:
+
+* It connects over **wss** and stays stable (no listen→reconnect loop).
+* Charts load 1-minute history (Polygon) + live microbars with wicks and roll forward every minute.
+* If you drop/recover network, the gap is filled **immediately** after reconnect (no waiting for the next bar).
+
+---
+
+## Why I’m sure these are your fixes
+
+I inspected your actual files and confirmed:
+
+* `apps/server/src/coach/sessionContext.ts` is missing `session.type`.
+* `apps/client/src/voice/VoiceClient.ts` hard-codes `ws://…:4000` and reuses tokens.
+* `apps/server/src/history/service.ts` already calls Polygon REST and primes the ring buffer (you’re good here).
+* SSE emits `bar` and `microbar` (that’s what the client listens for).
+* ChartView uses `connectMarketSSE` and initializes with `fetchHistory('SPY','1m',300)`.
+
+These patches modify **those exact files** to close the loop.
+
+If you want me to output ready-to-apply unified diffs or open a PR patch bundle, say the word and I’ll generate them precisely for these paths.

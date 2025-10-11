@@ -35,7 +35,8 @@ export class VoiceClient {
 
     this.setState('connecting');
 
-    const wsUrl = `ws://${window.location.hostname}:4000/ws/realtime?t=${token}`;
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `${proto}://${window.location.host}/ws/realtime?t=${encodeURIComponent(token)}`;
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
@@ -63,8 +64,15 @@ export class VoiceClient {
     this.ws.onclose = () => {
       this.setState('disconnected');
       this.stopAudioCapture();
-      this.scheduleReconnect(token);
+      this.scheduleReconnect();
     };
+  }
+
+  private async freshToken(): Promise<string> {
+    const res = await fetch('/api/voice/token', { method: 'POST', credentials: 'include' });
+    if (!res.ok) throw new Error(`Token fetch failed: ${res.status}`);
+    const { token } = await res.json();
+    return token as string;
   }
 
   disconnect() {
@@ -257,7 +265,7 @@ export class VoiceClient {
     return bytes.buffer;
   }
 
-  private scheduleReconnect(token: string) {
+  private scheduleReconnect() {
     if (this.reconnectTimeout) return;
 
     const delay = Math.min(
@@ -267,9 +275,15 @@ export class VoiceClient {
 
     this.reconnectAttempts++;
 
-    this.reconnectTimeout = window.setTimeout(() => {
+    this.reconnectTimeout = window.setTimeout(async () => {
       this.reconnectTimeout = null;
-      this.connect(token);
+      try {
+        const fresh = await this.freshToken();
+        await this.connect(fresh);
+      } catch (err) {
+        console.error('Reconnect failed (will retry):', err);
+        this.scheduleReconnect();
+      }
     }, delay);
   }
 

@@ -120,6 +120,12 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
       // Parse OpenAI messages to handle session.created
       try {
         const message = JSON.parse(data.toString());
+        console.log('[VoiceProxy] Received from OpenAI:', message.type);
+        
+        // Log errors from OpenAI
+        if (message.type === 'error') {
+          console.error('[VoiceProxy] OpenAI error:', JSON.stringify(message, null, 2));
+        }
         
         // Wait for session.created, then send our session.update
         if (message.type === 'session.created' && !sessionCreatedReceived) {
@@ -128,26 +134,22 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
           
           const sessionUpdate = await getInitialSessionUpdate(userId);
           const fullUpdate = {
-            ...sessionUpdate,
+            type: 'session.update',
             session: {
-              ...sessionUpdate.session,
               modalities: ['audio', 'text'],
+              instructions: sessionUpdate.session.instructions,
+              voice: sessionUpdate.session.voice,
               input_audio_format: 'pcm16',
               output_audio_format: 'pcm16',
               input_audio_transcription: {
                 model: 'whisper-1',
               },
-              turn_detection: {
-                type: 'server_vad',
-                threshold: 0.5,
-                prefix_padding_ms: 300,
-                silence_duration_ms: 500,
-              },
-              temperature: 0.3,
+              turn_detection: sessionUpdate.session.turn_detection,
+              temperature: 0.8,
             },
           };
 
-          console.log('[VoiceProxy] Sending session.update to OpenAI');
+          console.log('[VoiceProxy] Sending session.update:', JSON.stringify(fullUpdate, null, 2));
           upstreamWs.send(JSON.stringify(fullUpdate));
           upstreamReady = true;
 

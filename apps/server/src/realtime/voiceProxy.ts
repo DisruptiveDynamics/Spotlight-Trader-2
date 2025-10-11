@@ -154,9 +154,19 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
           console.log('[VoiceProxy] Received session.created from OpenAI, session ID:', upstreamSessionId);
           sessionCreatedReceived = true;
           
-          const sessionUpdate = await getInitialSessionUpdate(userId);
-          console.log('[VoiceProxy] Sending session.update to OpenAI:', JSON.stringify(sessionUpdate, null, 2));
-          upstreamWs.send(JSON.stringify(sessionUpdate));
+          // TEST: Minimal payload to isolate API key vs data issue
+          const minimalUpdate = {
+            type: 'session.update',
+            session: {
+              modalities: ['text', 'audio'],
+              instructions: 'You are a helpful assistant.',
+              voice: 'alloy',
+              input_audio_format: 'pcm16',
+              output_audio_format: 'pcm16'
+            }
+          };
+          console.log('[VoiceProxy] Sending MINIMAL TEST session.update to OpenAI:', JSON.stringify(minimalUpdate, null, 2));
+          upstreamWs.send(JSON.stringify(minimalUpdate));
           upstreamReady = true;
 
           // Flush buffered client messages

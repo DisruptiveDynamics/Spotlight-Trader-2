@@ -59,10 +59,10 @@ export function initializeMarketPipeline(app: Express) {
 
       const bars = await getHistory(query);
 
-      // Convert Bar structure to client format with nested ohlcv
+      // Convert flat Bar structure to client format with nested ohlcv
       res.json(bars.map(bar => ({
         bar_end: bar.bar_end,
-        ohlcv: bar.ohlcv || {
+        ohlcv: {
           o: bar.open,
           h: bar.high,
           l: bar.low,

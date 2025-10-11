@@ -66,13 +66,11 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
         seq: Math.floor(bar_start / 60000),
         bar_start,
         bar_end,
-        ohlcv: {
-          o: agg.o,
-          h: agg.h,
-          l: agg.l,
-          c: agg.c,
-          v: agg.v,
-        },
+        open: agg.o,
+        high: agg.h,
+        low: agg.l,
+        close: agg.c,
+        volume: agg.v,
       };
     });
 
@@ -109,13 +107,11 @@ function generateMockBars(symbol: string, fromMs: number, toMs: number, limit: n
       seq: Math.floor(bar_start / 60000),
       bar_start,
       bar_end,
-      ohlcv: {
-        o: open,
-        h: high,
-        l: low,
-        c: close,
-        v: Math.floor(Math.random() * 1000000),
-      },
+      open,
+      high,
+      low,
+      close,
+      volume: Math.floor(Math.random() * 1000000),
     });
 
     basePrice = close;

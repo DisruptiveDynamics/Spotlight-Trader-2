@@ -74,6 +74,32 @@ Focuses on professional ergonomics with zero-lag interactions:
 
 ## Recent Changes (October 2025)
 
+### Fix Pack v1: Critical Issues Resolved (October 11, 2025)
+- **✅ Voice Reconnect Loop Eliminated**: Fixed critical bug causing infinite reconnect attempts with empty WebSocket payloads
+  - Implemented `freshToken()` method to fetch new JWT on every reconnect (tokens expire after 60s)
+  - Updated `scheduleReconnect()` and `handleOnline()` to use fresh tokens instead of stale ones
+  - Voice coach now reliably reconnects without error spam
+- **✅ History API Format Alignment**: Unified Bar type across entire codebase to use nested ohlcv structure
+  - Server Bar interface now uses `ohlcv: { o, h, l, c, v }` format (matching client expectations)
+  - Fixed Polygon fetch, mock generator, and ring buffer transformations to return nested format
+  - Eliminated payload shape mismatch between server/client that caused chart rendering issues
+- **✅ SSE Gap-Fill Enhanced**: Added automatic chart continuity on network interruptions
+  - Gap-fill triggers on SSE 'open' event (reconnect) and window 'focus' event (user returns)
+  - Ensures charts stay synchronized with latest data after temporary disconnections
+  - Proper cleanup on close to prevent memory leaks
+- **✅ TOS-Style Timeframe Presets**: Added quick historical data loading buttons
+  - Preset mappings: 1H=60 bars, 3H=180, 5H=300, 1D=390, 5D=1950
+  - `loadHistoryPreset()` helper function for one-click timeframe switching
+  - Matches professional trading platform UX
+- **✅ Security Hardened**: WebSocket proxy origin checking improved for dev/prod environments
+  - Localhost (`localhost:*`) allowed in development for testing
+  - Replit domains (`*.replit.dev`) allowed via REPL_ID check
+  - Production maintains strict origin allowlist for security
+- **✅ OpenAI Session Type**: Added explicit `type: 'realtime'` to session.update payload
+  - Meets OpenAI Realtime API requirements for proper session initialization
+  - Ensures voice coach session established correctly
+- **🎯 Result**: All critical issues resolved, voice reconnect stable, charts load historical data correctly, zero LSP errors, architect-approved implementation
+
 ### Phase 2A: Time & Sales Tape Complete (October 11, 2025)
 - **✅ Professional Time & Sales Panel**: Live tick-by-tick execution feed with institutional-grade features
   - Real-time tick streaming via SSE (8 ticks/sec SPY, 6 ticks/sec QQQ)

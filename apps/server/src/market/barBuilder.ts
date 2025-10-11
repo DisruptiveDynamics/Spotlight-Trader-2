@@ -21,7 +21,7 @@ interface SymbolState {
 
 export class BarBuilder {
   private states = new Map<string, SymbolState>();
-  private microbarInterval = 250;
+  private microbarInterval = 50; // Ultra-smooth 20 updates/sec (TOS-level)
   private microbarTimers = new Map<string, NodeJS.Timeout>();
   private barFinalizeTimers = new Map<string, NodeJS.Timeout>();
 

@@ -108,12 +108,25 @@ export async function sseMarketStream(req: Request, res: Response) {
       );
     };
 
+    // Tick streaming for real-time "tape" feel
+    const tickHandler = (tick: any) => {
+      recordSSEEvent('tick');
+      bpc.write('tick', {
+        symbol,
+        ts: tick.ts,
+        price: tick.price,
+        size: tick.size,
+      });
+    };
+
     eventBus.on(`microbar:${symbol}` as const, microbarHandler);
     eventBus.on(`bar:new:${symbol}:1m` as const, barHandler);
+    eventBus.on(`tick:${symbol}` as const, tickHandler);
 
     listeners.push(
       { event: `microbar:${symbol}`, handler: microbarHandler },
-      { event: `bar:new:${symbol}:1m`, handler: barHandler }
+      { event: `bar:new:${symbol}:1m`, handler: barHandler },
+      { event: `tick:${symbol}`, handler: tickHandler }
     );
   }
 

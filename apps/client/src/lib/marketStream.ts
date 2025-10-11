@@ -15,6 +15,13 @@ export type Micro = {
   ohlcv: Ohlcv;
 };
 
+export type Tick = {
+  symbol: string;
+  ts: number;
+  price: number;
+  size: number;
+};
+
 export type SSEStatus = 
   | 'connecting' 
   | 'connected' 
@@ -42,6 +49,7 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
   const listeners = {
     bar: [] as ((b: Bar) => void)[],
     microbar: [] as ((m: Micro) => void)[],
+    tick: [] as ((t: Tick) => void)[],
     status: [] as ((s: SSEStatus) => void)[],
     gap: [] as ((detected: { expected: number; received: number }) => void)[],
   };
@@ -149,6 +157,11 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
       listeners.microbar.forEach((fn) => fn(m));
     });
 
+    es.addEventListener('tick', (e) => {
+      const t = JSON.parse((e as MessageEvent).data) as Tick;
+      listeners.tick.forEach((fn) => fn(t));
+    });
+
     es.onerror = () => {
       console.warn('SSE error, scheduling reconnect');
       emitStatus('error');
@@ -181,6 +194,9 @@ export function connectMarketSSE(symbols = ['SPY'], opts?: MarketSSEOptions) {
     },
     onMicro(fn: (m: Micro) => void) {
       listeners.microbar.push(fn);
+    },
+    onTick(fn: (t: Tick) => void) {
+      listeners.tick.push(fn);
     },
     onStatus(fn: (s: SSEStatus) => void) {
       listeners.status.push(fn);

@@ -418,14 +418,35 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
     return <VoiceFallback onSendMessage={handleSendMessage} onClose={handleCloseFallback} />;
   }
 
-  return (
-    <div className={compact ? 'relative' : 'fixed bottom-8 right-8 z-50'}>
+  if (compact) {
+    return (
       <div className="relative flex items-center gap-3">
         <button
           onClick={handleBubbleClick}
-          className={`relative rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-transform hover:scale-105 touch-manipulation ${
-            compact ? 'w-9 h-9' : 'w-[200px] h-[200px]'
-          }`}
+          className="relative w-9 h-9 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-transform hover:scale-105 touch-manipulation"
+          aria-label={getStateLabel()}
+          aria-pressed={connectionState === 'connected'}
+          role="button"
+          style={{ WebkitTapHighlightColor: 'transparent' }}
+        >
+          <WaveAnimation amplitude={amplitude} state={coachState} reducedMotion={reducedMotion} size={bubbleSize} />
+        </button>
+
+        {statusMessage && (
+          <div className="bg-gray-700/90 text-white text-xs px-3 py-1.5 rounded-md shadow-lg animate-fadeIn whitespace-nowrap">
+            {statusMessage}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed bottom-8 right-8 z-50">
+      <div className="relative">
+        <button
+          onClick={handleBubbleClick}
+          className="relative w-[200px] h-[200px] rounded-full focus:outline-none focus:ring-4 focus:ring-blue-500/50 transition-transform hover:scale-105 touch-manipulation"
           aria-label={getStateLabel()}
           aria-pressed={connectionState === 'connected'}
           role="button"
@@ -433,7 +454,7 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
         >
           <WaveAnimation amplitude={amplitude} state={coachState} reducedMotion={reducedMotion} size={bubbleSize} />
 
-          {connectionState === 'connected' && !compact && (
+          {connectionState === 'connected' && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -468,37 +489,27 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
           )}
         </button>
 
-        {!compact && (
-          <>
-            <div className="mt-4 text-center space-y-2">
-              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                {getStateLabel()}
-              </div>
+        <div className="mt-4 text-center space-y-2">
+          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+            {getStateLabel()}
+          </div>
 
-              {connectionState === 'connected' && latency > 0 && (
-                <div className={`text-xs font-mono ${getLatencyColor()}`}>{latency}ms</div>
-              )}
+          {connectionState === 'connected' && latency > 0 && (
+            <div className={`text-xs font-mono ${getLatencyColor()}`}>{latency}ms</div>
+          )}
 
-              <div className="text-xs text-gray-500 dark:text-gray-400">T: toggle • Esc: exit</div>
-            </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">T: toggle • Esc: exit</div>
+        </div>
 
-            {showTooltip && (
-              <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 bg-gray-900 text-white text-sm p-3 rounded-lg shadow-xl animate-fadeIn">
-                <div className="text-center">Click to talk. Tap again to mute. X to exit.</div>
-                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-3 h-3 bg-gray-900" />
-              </div>
-            )}
-
-            {statusMessage && (
-              <div className="absolute -top-16 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg animate-fadeIn whitespace-nowrap">
-                {statusMessage}
-              </div>
-            )}
-          </>
+        {showTooltip && (
+          <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 bg-gray-900 text-white text-sm p-3 rounded-lg shadow-xl animate-fadeIn">
+            <div className="text-center">Click to talk. Tap again to mute. X to exit.</div>
+            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-3 h-3 bg-gray-900" />
+          </div>
         )}
 
-        {compact && statusMessage && (
-          <div className="bg-gray-700/90 text-white text-xs px-3 py-1.5 rounded-md shadow-lg animate-fadeIn whitespace-nowrap">
+        {statusMessage && (
+          <div className="absolute -top-16 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg animate-fadeIn whitespace-nowrap">
             {statusMessage}
           </div>
         )}

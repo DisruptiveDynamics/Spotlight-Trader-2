@@ -253,20 +253,26 @@ export class EnhancedVoiceClient {
       this.drainAudioQueue();
     };
 
-    this.ws.onmessage = async (event) => {
+    this.ws.onmessage = (event) => {
       try {
         const data = event.data;
         
-        // Binary audio data (ArrayBuffer)
+        // Binary audio data (ArrayBuffer) - synchronous processing
         if (data instanceof ArrayBuffer) {
-          await this.handleAudioArrayBuffer(data);
+          this.handleAudioArrayBuffer(data);
           return;
         }
         
-        // Legacy Blob handling (should not happen with binaryType='arraybuffer')
+        // Blob fallback (shouldn't happen with binaryType='arraybuffer')
         if (data instanceof Blob) {
-          const arrayBuffer = await data.arrayBuffer();
-          await this.handleAudioArrayBuffer(arrayBuffer);
+          console.warn('[Voice] Received Blob instead of ArrayBuffer - this indicates a bug');
+          const reader = new FileReader();
+          reader.onload = () => {
+            if (reader.result instanceof ArrayBuffer) {
+              this.handleAudioArrayBuffer(reader.result);
+            }
+          };
+          reader.readAsArrayBuffer(data);
           return;
         }
 
@@ -275,7 +281,7 @@ export class EnhancedVoiceClient {
           const msg = JSON.parse(data);
 
           if (msg.type === 'response.audio.delta' && msg.delta) {
-            await this.handleAudioDelta(msg.delta);
+            this.handleAudioDelta(msg.delta);
           }
 
           if (msg.type === 'response.audio_transcript.delta' && msg.delta) {
@@ -337,7 +343,7 @@ export class EnhancedVoiceClient {
     }
   }
 
-  private async handleAudioArrayBuffer(arrayBuffer: ArrayBuffer): Promise<void> {
+  private handleAudioArrayBuffer(arrayBuffer: ArrayBuffer): void {
     const audioContext = getAudioContext();
     if (!audioContext) return;
 
@@ -360,7 +366,7 @@ export class EnhancedVoiceClient {
     }
   }
 
-  private async handleAudioDelta(deltaBase64: string): Promise<void> {
+  private handleAudioDelta(deltaBase64: string): void {
     const audioContext = getAudioContext();
     if (!audioContext) return;
 

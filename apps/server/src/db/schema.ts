@@ -119,11 +119,14 @@ export const journalLinks = pgTable('journal_links', {
 
 export const coachProfiles = pgTable('coach_profiles', {
   userId: text('user_id').primaryKey(),
-  agentName: text('agent_name').notNull(),
-  voiceId: text('voice_id').notNull(),
-  jargonLevel: real('jargon_level').notNull(),
-  decisiveness: real('decisiveness').notNull(),
-  tone: text('tone').notNull(),
+  agentName: text('agent_name').notNull().default('Nexa'),
+  pronouns: text('pronouns').notNull().default('she/her'),
+  voiceId: text('voice_id').notNull().default('nova'),
+  personality: text('personality').notNull().default('warm and intelligent'),
+  jargonLevel: real('jargon_level').notNull().default(0.5),
+  decisiveness: real('decisiveness').notNull().default(0.7),
+  tone: text('tone').notNull().default('supportive'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const coachMemories = pgTable(
@@ -144,6 +147,32 @@ export const coachMemories = pgTable(
     ),
   })
 );
+
+export const userPreferences = pgTable('user_preferences', {
+  userId: text('user_id').primaryKey(),
+  favoriteSymbols: text('favorite_symbols').array().notNull().default(['SPY', 'QQQ', 'NVDA']),
+  defaultTimeframe: text('default_timeframe').notNull().default('1m'),
+  chartTheme: text('chart_theme').notNull().default('dark'),
+  focusMode: text('focus_mode').notNull().default('normal'),
+  notifications: jsonb('notifications').notNull().default({
+    voice: true,
+    visual: true,
+    sound: true,
+  }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const knowledgeUploads = pgTable('knowledge_uploads', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull(),
+  sourceType: text('source_type').notNull(), // 'youtube' | 'pdf' | 'text' | 'url'
+  sourceUrl: text('source_url'),
+  title: text('title').notNull(),
+  status: text('status').notNull().default('processing'), // 'processing' | 'completed' | 'failed'
+  chunksCount: integer('chunks_count').notNull().default(0),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 export const auditLedger = pgTable('audit_ledger', {
   id: text('id').primaryKey(),

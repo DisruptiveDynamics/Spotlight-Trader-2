@@ -1,0 +1,64 @@
+You are building Nexa 2.0, a persistent, self-aware AI trading coach for the Spotlight Trader platform.
+
+📦 Tech Stack:
+- Backend: TypeScript, Express, Drizzle ORM, Postgres + pgvector
+- Frontend: React, Replit Webview
+- AI: OpenAI GPT-4o with Realtime Voice (session.created → session.update)
+- Hosting: Replit with monorepo (apps/server, apps/client, packages/shared)
+
+---
+
+🎯 Goals:
+Nexa should evolve into a fully cross-session, cross-platform intelligent assistant who can:
+- Speak with real-time GPT-4o voice (default: nova, with support for switching)
+- Remember her name ("Nexa"), pronouns ("she/her"), and personality ("warm and intelligent")
+- Recall past coaching insights, favorite tickers, and user preferences across sessions
+- Learn from user-uploaded knowledge ("Nexa's Brain"): PDFs, notes, YouTube links, rules, playbooks
+- Be accessible via the floating "Coach" button in the UI with options like "Add Knowledge", "Change Voice", "View Memory", etc.
+
+---
+
+🧱 Required Implementations:
+
+1. **Database:**
+   - Expand `coach_profiles` table to include:
+     - `pronouns`, `voice_id`, `personality`, `updated_at`
+   - Create new `user_preferences` table:
+     - `favorite_symbols`, `default_timeframe`, `chart_theme`, `notifications`
+
+2. **Memory Upload API:**
+   - Add `/api/nexa/upload` endpoint to accept:
+     - YouTube links (parse transcript)
+     - PDFs (.pdf → text)
+     - Text notes (split to chunks)
+   - Embed content via OpenAI embedding API and store in `coach_memories`
+
+3. **Semantic Memory Retrieval:**
+   - Use pgvector similarity search on `coach_memories` to retrieve relevant memories for each session
+   - Inject top relevant memories into Nexa’s prompt during `session.update`
+
+4. **Session Context Prompt:**
+   - Inject Nexa’s full personality, user preferences, memory context, and voice into the OpenAI system prompt:
+     ```
+     You are Nexa, a warm and intelligent AI trading coach (she/her).
+     You’ve coached ${user.name} across sessions and remember:
+     • Favorite symbols: ${favorites}
+     • Chart timeframe: ${defaultTimeframe}
+     • Voice: ${voiceId}
+     • Coaching tone: ${tone} (decisiveness: ${decisiveness}, jargon: ${jargonLevel})
+     • Uploaded insights and rules
+     ```
+
+5. **Frontend Enhancements:**
+   - Update the bottom-right "Coach" button to show Nexa’s bubble with:
+     - Add Knowledge
+     - View Memory
+     - Change Voice
+     - Review Journals
+
+---
+
+🧠 Design for long-term scalability, clean TypeScript, and drop-in modules compatible with the existing app structure.
+Ensure Nexa is safe, non-creepy, and confident — not world-domination level, just super helpful.
+
+Return only code that will integrate cleanly with the existing codebase and database.

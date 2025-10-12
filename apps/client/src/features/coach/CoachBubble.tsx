@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { VoiceClient } from '../../voice/VoiceClient';
+import { NexaMenu } from './NexaMenu';
 
 type CoachState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
@@ -160,6 +161,8 @@ export function CoachBubble() {
               />
             </svg>
           </button>
+
+          <NexaMenu isConnected={isPowered} onDisconnect={handlePowerOff} />
         </div>
       </div>
 

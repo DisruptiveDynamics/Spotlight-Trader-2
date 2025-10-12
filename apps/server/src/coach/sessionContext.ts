@@ -2,6 +2,7 @@ import { db } from '../db/index.js';
 import { coachProfiles } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { retrieveTopK } from '../memory/store.js';
+import { buildKnowledgeContext } from '../memory/knowledgeRetrieval.js';
 import { VOICE_COACH_SYSTEM } from './policy.js';
 import { VOICE_COPILOT_TOOLS } from '../realtime/voiceTools.js';
 
@@ -45,7 +46,10 @@ export async function buildSessionContext(userId: string): Promise<string> {
         }
       : defaultProfile;
 
-  const memories = await retrieveTopK(userId, 'what should I keep in mind today?', 4, 10, 0.1);
+  const [memories, knowledgeContext] = await Promise.all([
+    retrieveTopK(userId, 'what should I keep in mind today?', 4, 10, 0.1),
+    buildKnowledgeContext(userId),
+  ]);
 
   const lines: string[] = [];
   lines.push('**Your Identity:**');
@@ -68,6 +72,11 @@ export async function buildSessionContext(userId: string): Promise<string> {
       const preview = mem.text.slice(0, 80);
       lines.push(`${idx + 1}. [${mem.kind}] ${preview}${mem.text.length > 80 ? '...' : ''}`);
     });
+  }
+
+  if (knowledgeContext) {
+    lines.push('');
+    lines.push(knowledgeContext);
   }
 
   return lines.join('\n');

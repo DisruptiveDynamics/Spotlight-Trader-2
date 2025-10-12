@@ -4,7 +4,7 @@ import { eq, and, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { embedText } from './embed.js';
 
-export type MemoryKind = 'playbook' | 'glossary' | 'postmortem';
+export type MemoryKind = 'playbook' | 'glossary' | 'postmortem' | 'knowledge';
 
 export interface Memory {
   id: string;
@@ -106,10 +106,20 @@ export async function retrieveTopK(
   query: string,
   k = 4,
   decayHalfLifeDays = 10,
-  _diversityPenalty = 0.1
+  _diversityPenalty = 0.1,
+  excludeKnowledge = true
 ): Promise<MemoryWithScore[]> {
   const queryEmbedding = await embedText(query);
   const embeddingLiteral = `'[${queryEmbedding.join(',')}]'::vector`;
+
+  const conditions = [eq(coachMemories.userId, userId)];
+  
+  // Exclude knowledge kind by default to prevent uploaded content from polluting personal memories
+  if (excludeKnowledge) {
+    conditions.push(sql`${coachMemories.kind} != 'knowledge'`);
+  }
+
+  const whereClause = conditions.length === 1 ? conditions[0] : and(...conditions);
 
   const results = await db
     .select({
@@ -122,7 +132,7 @@ export async function retrieveTopK(
       similarity: sql<number>`1 - (${coachMemories.embedding} <=> ${sql.raw(embeddingLiteral)})`,
     })
     .from(coachMemories)
-    .where(eq(coachMemories.userId, userId))
+    .where(whereClause)
     .orderBy(sql`${coachMemories.embedding} <=> ${sql.raw(embeddingLiteral)}`)
     .limit(k * 3);
 

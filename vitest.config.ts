@@ -9,30 +9,35 @@ export default defineConfig({
       '@client': fileURLToPath(new URL('./apps/client/src', import.meta.url)),
     },
   },
+  // Shared defaults
   test: {
     globals: true,
     css: false,
   },
   projects: [
-    // Server: pure Node
+    // Server tests (node)
     defineProject({
       test: {
         name: 'server',
         environment: 'node',
-        include: ['apps/server/src/**/*.test.ts'],
+        // cover both *.test.* and __tests__ patterns
+        include: [
+          'apps/server/src/**/*.{test,spec}.{ts,tsx,js,jsx}',
+          'apps/server/src/**/__tests__/**/*.{ts,tsx,js,jsx}',
+        ],
       },
     }),
 
-    // Client: jsdom + setup for DOM-ish APIs
+    // Client tests (jsdom + setup)
     defineProject({
       test: {
         name: 'client',
         environment: 'jsdom',
-        include: [
-          'apps/client/src/**/*.test.ts',
-          'apps/client/src/**/*.test.tsx'
-        ],
         setupFiles: ['./test/setup.client.ts'],
+        include: [
+          'apps/client/src/**/*.{test,spec}.{ts,tsx,js,jsx}',
+          'apps/client/src/**/__tests__/**/*.{ts,tsx,js,jsx}',
+        ],
       },
     }),
   ],

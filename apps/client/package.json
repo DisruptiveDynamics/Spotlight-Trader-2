@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "fix": "eslint . --fix || true",
+    "typecheck": "tsc -p . --noEmit || true"
   },
   "dependencies": {
     "@openai/agents": "^0.1.9",

@@ -38,8 +38,18 @@ Provides structured trade tracking and automated end-of-day summaries. The Coach
 ### Continuous Learning Loop & Backtesting
 An event-driven system with in-memory feature flags. Includes a database schema for user feedback and aggregated rule performance metrics. A deterministic backtest harness runs historical data against the same evaluator as live trading.
 
-### Voice Presence Control System
+### Voice Presence Control System (Phase 3 Complete)
 A voice interface featuring modern animations, robust audio handling, and extensive personalization. Includes a core audio infrastructure, UI components like the PresenceBubble, and performance optimizations such as AudioWorklet for lower latency and enhanced barge-in capabilities.
+
+**Phase 3 - Voice Integration with Copilot:**
+- **Voice Tools Registry**: 7 tools registered in OpenAI Realtime API format (get_chart_snapshot, propose_entry_exit, get_recommended_risk_box, get_pattern_summary, evaluate_rules, log_journal_event, generate_trade_plan)
+- **Function Call Routing**: VoiceProxy intercepts response.function_call_arguments.done events and routes to copilot tool handlers with userId context
+- **Callout Streaming**: VoiceCalloutBridge connects CopilotBroadcaster to voice sessions - triggers inject alerts as conversation items for real-time coaching
+- **Tool-Powered Responses**: Voice assistant can query chart data, validate rules, calculate trade plans, and log decisions during conversation
+- **Coach Policy**: Updated with tool usage instructions and alert handling guidelines (sub-15-second responses)
+
+**Integration Flow:**
+Trigger fires → CopilotBroadcaster → VoiceCalloutBridge → Voice session receives [ALERT] → OpenAI calls tools for analysis → Voice speaks coaching response
 
 ### Trader UX Pack
 Focuses on professional ergonomics:
@@ -99,7 +109,7 @@ An intelligent trading assistant that provides real-time pattern recognition, pr
 - Warns on >200ms latency, targets <150ms tick→callout pipeline
 - Tool contracts frozen at v1.0.0 for API stability
 
-**Status**: Phase 1 & 2 complete. Trigger system operational with sub-200ms latency. Ready for voice integration and advanced pattern mining.
+**Status**: Phase 1, 2 & 3 complete. Trigger system operational with sub-200ms latency. Voice integration fully wired with tool calling and callout streaming.
 
 ## External Dependencies
 

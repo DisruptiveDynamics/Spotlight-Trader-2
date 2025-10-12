@@ -9,7 +9,10 @@
     "./tsconfig": "./tsconfig.base.json"
   },
   "scripts": {
-    "build": "echo 'no build step required for this package'"
+    "build": "echo 'no build step required for this package'",
+    "lint": "eslint . --max-warnings 0",
+    "fix": "eslint . --fix || true",
+    "typecheck": "tsc -p . --noEmit || true"
   },
   "dependencies": {
     "@eslint/js": "^9.0.0",

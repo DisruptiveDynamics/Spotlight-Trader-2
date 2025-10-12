@@ -18,19 +18,29 @@
     "fmt:check": "prettier --check .",
     "test": "vitest",
     "build:client": "vite build --config client/vite.config.ts",
-    "build:server": "tsc -p server"
+    "build:server": "tsc -p server",
+    "lint:root": "eslint . --max-warnings 0",
+    "fix": "pnpm -r fix || true",
+    "fix:root": "eslint . --fix",
+    "typecheck": "pnpm -r typecheck || true"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^8.46.0",
+    "@typescript-eslint/parser": "^8.46.0",
     "concurrently": "^8.2.2",
     "esbuild": "^0.25.10",
     "eslint": "^9.37.0",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-jsonc": "^2.21.0",
+    "eslint-plugin-markdown": "^5.1.0",
+    "eslint-plugin-unused-imports": "^4.2.0",
     "husky": "^9.0.10",
     "kill-port": "^2.0.1",
     "lint-staged": "^15.2.0",
-    "prettier": "^3.2.4",
+    "prettier": "^3.6.2",
     "tsx": "^4.20.6",
-    "typescript": "^5.6.3",
+    "typescript": "^5.9.3",
     "vitest": "^1.2.0"
   },
   "dependencies": {

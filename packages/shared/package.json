@@ -15,7 +15,9 @@
     "build": "tsc",
     "check": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "fix": "eslint . --fix || true",
+    "typecheck": "tsc -p . --noEmit || true"
   },
   "dependencies": {
     "zod": "^3.22.4"

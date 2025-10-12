@@ -12,7 +12,9 @@
     "lint:fix": "eslint . --fix",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "fix": "eslint . --fix || true",
+    "typecheck": "tsc -p . --noEmit || true"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.9.0",

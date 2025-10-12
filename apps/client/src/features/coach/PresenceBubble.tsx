@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { VoiceClient } from '../../voice/VoiceClient';
+import { EnhancedVoiceClient } from '../../voice/EnhancedVoiceClient.v2';
 import { VoiceFallback } from './VoiceFallback';
 import { ensureiOSAudioUnlocked } from '../../voice/ios';
 
@@ -222,7 +222,7 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
   const [_permissionState, setPermissionState] = useState<PermissionState>('pending');
   const [statusMessage, setStatusMessage] = useState<string>('');
 
-  const voiceClientRef = useRef<VoiceClient | null>(null);
+  const voiceClientRef = useRef<EnhancedVoiceClient | null>(null);
   const clickTimeoutRef = useRef<number | null>(null);
   const clickCountRef = useRef(0);
   const tokenRef = useRef<string | null>(null);
@@ -242,11 +242,11 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
   }, []);
 
   useEffect(() => {
-    const client = new VoiceClient();
+    const client = new EnhancedVoiceClient();
     voiceClientRef.current = client;
 
     // Set up connection state listener
-    const cleanupConnectionState = client.onStateChange((state) => {
+    const cleanupConnectionState = client.onStateChange((state: ConnectionState) => {
       setConnectionState(state);
       if (state === 'disconnected') {
         setCoachState('idle');
@@ -254,13 +254,18 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
     });
 
     // Set up coach state listener
-    const cleanupCoachState = client.onCoachStateChange((state) => {
-      // When connected but mic disabled, show 'muted' instead of 'idle'
-      if (state === 'idle' && client.getState() === 'connected' && !client.isMicActive()) {
-        setCoachState('muted');
-      } else {
-        setCoachState(state);
-      }
+    const cleanupCoachState = client.onCoachStateChange((state: CoachState) => {
+      setCoachState(state);
+    });
+
+    // Set up amplitude listener for wave animations
+    const cleanupAmplitude = client.onAmplitudeChange((level: number) => {
+      setAmplitude(level);
+    });
+
+    // Set up latency listener for performance monitoring
+    const cleanupLatency = client.onLatency((ms: number) => {
+      setLatency(ms);
     });
 
     tooltipTimerRef.current = window.setTimeout(() => {
@@ -273,6 +278,8 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
       client.disconnect();
       cleanupConnectionState();
       cleanupCoachState();
+      cleanupAmplitude();
+      cleanupLatency();
       if (tooltipTimerRef.current) {
         clearTimeout(tooltipTimerRef.current);
       }
@@ -373,13 +380,13 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
       } else if (connectionState === 'connected') {
         // Connected → Toggle mute/unmute
         try {
-          const isMicActive = client.isMicActive();
-          if (isMicActive) {
-            client.disableMic();
-            showStatusMessage('Muted 🔇', 1500);
-          } else {
-            await client.enableMic();
+          const isMuted = client.isMicMuted();
+          if (isMuted) {
+            client.unmute();
             showStatusMessage('Unmuted 🔊', 1500);
+          } else {
+            client.mute();
+            showStatusMessage('Muted 🔇', 1500);
           }
         } catch (error) {
           console.error('Failed to toggle mute:', error);
@@ -412,13 +419,13 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
       if (connectionState === 'connected' && voiceClientRef.current) {
         try {
           const client = voiceClientRef.current;
-          const isMicActive = client.isMicActive();
-          if (isMicActive) {
-            client.disableMic();
-            showStatusMessage('Muted 🔇', 1500);
-          } else {
-            await client.enableMic();
+          const isMuted = client.isMicMuted();
+          if (isMuted) {
+            client.unmute();
             showStatusMessage('Unmuted 🔊', 1500);
+          } else {
+            client.mute();
+            showStatusMessage('Muted 🔇', 1500);
           }
         } catch (error) {
           console.error('Failed to toggle mute:', error);

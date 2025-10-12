@@ -154,6 +154,10 @@ export const userPreferences = pgTable('user_preferences', {
   defaultTimeframe: text('default_timeframe').notNull().default('1m'),
   chartTheme: text('chart_theme').notNull().default('dark'),
   focusMode: text('focus_mode').notNull().default('normal'),
+  signalDensity: text('signal_density').notNull().default('medium'),
+  signalAudio: boolean('signal_audio').notNull().default(true),
+  colorVision: text('color_vision').notNull().default('normal'),
+  highContrast: boolean('high_contrast').notNull().default(false),
   notifications: jsonb('notifications').notNull().default({
     voice: true,
     visual: true,

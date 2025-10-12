@@ -1,12 +1,12 @@
 import { validateEnv } from '@shared/env';
 import { ringBuffer } from '@server/cache/ring';
-import type { Bar } from '@server/market/eventBus';
+import type { Bar, Timeframe } from '@server/market/eventBus';
 
 const env = validateEnv(process.env);
 
 interface HistoryQuery {
   symbol: string;
-  timeframe?: '1m';
+  timeframe?: Timeframe;
   limit?: number;
   before?: number;
   sinceSeq?: number;
@@ -76,7 +76,7 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
   }
 
   // Priority 3: Fetch from Polygon REST API
-  const polygonBars = await fetchPolygonHistory(symbol, limit, before);
+  const polygonBars = await fetchPolygonHistory(symbol, timeframe, limit, before);
   if (polygonBars.length > 0) {
     ringBuffer.putBars(symbol, polygonBars);
     return polygonBars;
@@ -111,25 +111,54 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
 }
 
 /**
+ * Convert timeframe to Polygon API multiplier
+ */
+function timeframeToMultiplier(timeframe: Timeframe): number {
+  const map: Record<Timeframe, number> = {
+    '1m': 1,
+    '2m': 2,
+    '5m': 5,
+    '10m': 10,
+    '15m': 15,
+    '30m': 30,
+    '1h': 60,
+  };
+  return map[timeframe] || 1;
+}
+
+/**
+ * Convert timeframe to milliseconds
+ */
+function timeframeToMs(timeframe: Timeframe): number {
+  return timeframeToMultiplier(timeframe) * 60000;
+}
+
+/**
  * Fetch historical bars from Polygon REST API using direct fetch
+ * Fetches 60-90 day window for proper intraday analysis
  */
 async function fetchPolygonHistory(
   symbol: string,
+  timeframe: Timeframe,
   limit: number,
   before?: number
 ): Promise<Bar[]> {
   const toMs = before || Date.now();
-  const fromMs = toMs - limit * 60000;
+  
+  // Default to 60 days of history for proper context (configurable)
+  const daysBack = 60;
+  const fromMs = toMs - (daysBack * 24 * 60 * 60 * 1000);
 
   // Format dates for Polygon API (YYYY-MM-DD)
   const fromDate = new Date(fromMs).toISOString().split('T')[0];
   const toDate = new Date(toMs).toISOString().split('T')[0];
 
-  const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/1/minute/${fromDate}/${toDate}`;
+  const multiplier = timeframeToMultiplier(timeframe);
+  const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/minute/${fromDate}/${toDate}`;
   const params = new URLSearchParams({
     adjusted: 'true',
     sort: 'asc',
-    limit: String(limit),
+    limit: String(50000), // Max results, Polygon will paginate
     apiKey: env.POLYGON_API_KEY,
   });
 
@@ -152,14 +181,15 @@ async function fetchPolygonHistory(
       return [];
     }
 
+    const timeframeMs = timeframeToMs(timeframe);
     const bars: Bar[] = data.results.map((agg) => {
       const bar_start = agg.t;
-      const bar_end = bar_start + 60000;
+      const bar_end = bar_start + timeframeMs;
 
       return {
         symbol,
-        timeframe: '1m',
-        seq: Math.floor(bar_start / 60000),
+        timeframe,
+        seq: Math.floor(bar_start / timeframeMs),
         bar_start,
         bar_end,
         ohlcv: {

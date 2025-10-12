@@ -18,9 +18,11 @@ export interface Microbar {
   volume: number;
 }
 
+export type Timeframe = '1m' | '2m' | '5m' | '10m' | '15m' | '30m' | '1h';
+
 export interface Bar {
   symbol: string;
-  timeframe: '1m';
+  timeframe: Timeframe;
   seq: number;
   bar_start: number;
   bar_end: number;

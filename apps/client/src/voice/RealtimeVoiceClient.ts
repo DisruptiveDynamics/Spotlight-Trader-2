@@ -106,7 +106,7 @@ export class RealtimeVoiceClient {
   toggleMute(): void {
     if (!this.session || this.connectionState !== 'connected') {
       this.log('mute:error', { reason: 'not connected' });
-      return;
+      throw new Error('Cannot toggle mute: not connected');
     }
 
     const targetMutedState = !this.isMuted;

@@ -37,15 +37,21 @@ export function initializeMarketPipeline(app: Express) {
         return res.status(400).json({ error: 'symbol is required' });
       }
 
+      // Validate timeframe
+      const validTimeframes = ['1m', '2m', '5m', '10m', '15m', '30m', '1h'];
+      if (typeof timeframe === 'string' && !validTimeframes.includes(timeframe)) {
+        return res.status(400).json({ error: 'Invalid timeframe' });
+      }
+
       const query: {
         symbol: string;
-        timeframe: '1m';
+        timeframe: string;
         limit: number;
         before?: number;
         sinceSeq?: number;
       } = {
         symbol: symbol.toUpperCase(),
-        timeframe: timeframe as '1m',
+        timeframe: (typeof timeframe === 'string' ? timeframe : '1m'),
         limit: limit ? parseInt(limit as string, 10) : 1000,
       };
 

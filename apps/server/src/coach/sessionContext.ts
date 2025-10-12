@@ -7,7 +7,9 @@ import { VOICE_COPILOT_TOOLS } from '../realtime/voiceTools.js';
 
 interface CoachProfile {
   agentName: string;
+  pronouns: string;
   voiceId: string;
+  personality: string;
   jargonLevel: number;
   decisiveness: number;
   tone: string;
@@ -21,8 +23,10 @@ export async function buildSessionContext(userId: string): Promise<string> {
     .limit(1);
 
   const defaultProfile: CoachProfile = {
-    agentName: 'Coach',
-    voiceId: 'alloy',
+    agentName: 'Nexa',
+    pronouns: 'she/her',
+    voiceId: 'nova',
+    personality: 'warm and intelligent',
     jargonLevel: 0.5,
     decisiveness: 0.7,
     tone: 'supportive',
@@ -32,7 +36,9 @@ export async function buildSessionContext(userId: string): Promise<string> {
     profileResults.length > 0 && profileResults[0]
       ? {
           agentName: profileResults[0].agentName,
+          pronouns: profileResults[0].pronouns || 'she/her',
           voiceId: profileResults[0].voiceId,
+          personality: profileResults[0].personality || 'warm and intelligent',
           jargonLevel: profileResults[0].jargonLevel,
           decisiveness: profileResults[0].decisiveness,
           tone: profileResults[0].tone,
@@ -42,8 +48,11 @@ export async function buildSessionContext(userId: string): Promise<string> {
   const memories = await retrieveTopK(userId, 'what should I keep in mind today?', 4, 10, 0.1);
 
   const lines: string[] = [];
-  lines.push('**Your Profile:**');
+  lines.push('**Your Identity:**');
   lines.push(`- Name: ${profile.agentName}`);
+  lines.push(`- Pronouns: ${profile.pronouns}`);
+  lines.push(`- Personality: ${profile.personality}`);
+  lines.push(`- Voice: ${profile.voiceId}`);
   lines.push(`- Tone: ${profile.tone}`);
   lines.push(
     `- Jargon Level: ${profile.jargonLevel > 0.7 ? 'high' : profile.jargonLevel > 0.4 ? 'medium' : 'low'}`
@@ -72,7 +81,7 @@ export async function getInitialSessionUpdate(userId: string) {
     .limit(1);
 
   const voiceId =
-    profileResults.length > 0 && profileResults[0] ? profileResults[0].voiceId : 'alloy';
+    profileResults.length > 0 && profileResults[0] ? profileResults[0].voiceId : 'nova';
 
   const contextBlock = await buildSessionContext(userId);
 

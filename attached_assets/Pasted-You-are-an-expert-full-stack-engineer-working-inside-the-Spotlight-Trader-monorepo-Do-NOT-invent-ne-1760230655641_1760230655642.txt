@@ -1,0 +1,65 @@
+You are an expert full-stack engineer working inside the Spotlight Trader monorepo. Do NOT invent new frameworks or patterns. Respect existing front-end, back-end, database, env management, routing, and the app’s state management solution. Uphold strict TypeScript (no any), ESLint/Prettier, and current folder conventions. No dead code, no regressions, and keep PRs small and well-documented.
+
+GOALS
+1) Voice Coach (single session, clean voice switching, no duplicates)
+   - Enforce exactly one active realtime voice session per user tab.
+   - Changing the voice must use a session.update on the SAME session (do not open a new upstream connection).
+   - Prevent duplicate audio and overlapping responses with a robust session identity, event deduping, and proper teardown of listeners/streams.
+   - On voice change: cancel any in-flight speech once, then resume with the new voice. No double playback.
+   - Mute/unmute must toggle input audio cleanly without dropping the session; disconnect must fully close and release resources.
+   - Ensure the server realtime proxy forwards session.update correctly and does not create new upstream sessions on voice change.
+   - Fix prior “missing required parameter: session.type” by ensuring the initial session bootstrap includes ALL required fields for the current Realtime API model version.
+   - Add structured, minimal logs for connect/update/disconnect/error paths that are dev-only and respect our logging format.
+
+2) Voice Bubble UX (single-click mute/unmute, double-click disconnect, color by state)
+   - Interaction model:
+     • From idle/error → single-click = connect/activate.
+     • When connected → single-click = mute/unmute (toggling input audio only).
+     • Double-click = full disconnect (return to idle).
+   - Bubble color must deterministically reflect state: idle, connecting, listening, speaking, muted, error.
+   - No duplicate event handlers; ensure cleanup on unmount/navigation. Keep accessible labels/tooltips consistent with our a11y standard.
+
+3) Historical Bars + Live Stitching
+   - On symbol or timeframe change, fetch sufficient historical aggregates for intraday analysis (configurable window, default ~60–90 days) from Polygon.
+   - Use minute timespan with multipliers that match the selected timeframe (1, 2, 5, 10, 15, 30, 60). Do not hardcode API keys; read from existing env.
+   - Live prints/updates must be aggregated into the currently selected timeframe using reliable bucketing (floor to timeframe boundary). Creating a new bar vs updating the current one must be correct and monotonic.
+   - Ensure we no longer “stall” at ~20 bars: after history loads, chart must continue with live bars rolling forward correctly.
+   - Guard against duplicate or out-of-order updates and ensure idempotency.
+
+4) Timeframe Control (top of app)
+   - The existing timeframe UI above the chart must control the actual bar timeframe for both history fetch and live aggregation.
+   - Supported: 1m, 2m, 5m, 10m, 15m, 30m, 1h.
+   - Use the app’s current state manager (do not introduce a new one). Single source of truth for timeframe; avoid prop drilling and re-render storms.
+   - Changing timeframe must trigger a clean reload of history for that timeframe and maintain live stitching seamlessly.
+
+NON-FUNCTIONAL REQUIREMENTS
+- TypeScript strict everywhere; no implicit anys; narrow types; exhaustive switches; runtime guards where needed.
+- Keep modules small and cohesive. Create or update services/stores only where appropriate; no cross-layer leakage.
+- Do not hardcode secrets/URLs; use existing env conventions (e.g., VITE_* on client). Keep our proxy path unchanged unless already configurable.
+- Performance: O(1) bar updates, minimal allocations; avoid unnecessary array copies and chart re-renders (memoization where appropriate).
+- Reliability: defensively handle WS reconnects, stale session IDs, and dedupe by sequence/clock.
+- A11y/i18n: maintain labels/aria; no color-only semantics for status without tooltip/label.
+- Observability: structured logs (dev only), feature-flag gates if needed, and clear error messages for unsupported states.
+
+ACCEPTANCE CRITERIA (manual verification)
+Voice Coach
+- From idle, single-click bubble → connects and enters “listening” state; color updates accordingly.
+- Change voice in Settings → current speech cancels once, resumes with new voice; no duplicate audio, no overlapping messages, single upstream session.
+- Single-click while connected toggles mute/unmute without disconnecting; double-click always disconnects and returns to idle; state/colors correct.
+
+Charts
+- Selecting 1m/2m/5m/10m/15m/30m/1h reloads historical data for that timeframe and then continues live with correct rollover.
+- Historical data shows deep enough window (configurable); live aggregation produces new bars at correct boundaries, no “frozen” last bar, no bar spam.
+
+TESTING & QA
+- Unit tests for: (a) timeframe bucketing math, (b) monotonic bar creation, (c) voice session state machine (activate/mute/unmute/disconnect), (d) voice change flow (session.update + cancel).
+- Integration smoke: switch symbols/timeframes repeatedly; change voice mid-speech; toggle mute rapidly; double-click disconnect under load.
+- Verify no memory leaks (listeners cleaned), no duplicate WS connections, and no console warnings.
+
+DELIVERY
+- Implement changes in a feature branch. Keep diffs scoped and documented.
+- Update README/DEV notes: brief setup, env variables used, how to run the new tests, and manual test checklist.
+- Do not modify unrelated modules (alerts, journaling, rules) beyond minimal typing fixes if required.
+- Run full lint/format/typecheck; CI must pass.
+
+Proceed with this plan and produce a single PR that meets all acceptance criteria. If any uncertainty arises about existing conventions, inspect current implementations and mirror them rather than introducing new patterns.

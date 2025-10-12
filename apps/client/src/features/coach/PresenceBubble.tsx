@@ -223,6 +223,8 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
   const [statusMessage, setStatusMessage] = useState<string>('');
 
   const voiceClientRef = useRef<RealtimeVoiceClient | null>(null);
+  const clickTimeoutRef = useRef<number | null>(null);
+  const clickCountRef = useRef(0);
   const tokenRef = useRef<string | null>(null);
   const tooltipTimerRef = useRef<number>();
   const statusTimerRef = useRef<number>();
@@ -255,6 +257,9 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
         console.error('Voice error:', error);
         setConnectionState('error');
       },
+      onMuteChange: (isMuted) => {
+        setCoachState(isMuted ? 'muted' : 'listening');
+      },
     });
     voiceClientRef.current = client;
 
@@ -271,6 +276,9 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
       }
       if (statusTimerRef.current) {
         clearTimeout(statusTimerRef.current);
+      }
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
       }
     };
   }, []);
@@ -314,36 +322,68 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
     const client = voiceClientRef.current;
     if (!client) return;
 
-    if (
-      connectionState === 'disconnected' ||
-      connectionState === 'error' ||
-      connectionState === 'offline'
-    ) {
-      try {
-        setConnectionState('connecting');
-        showStatusMessage('Connecting...', 3000);
-        
-        // Unlock iOS audio on first user gesture (critical for Safari/iOS)
-        await ensureiOSAudioUnlocked();
-        
-        // Fetch ephemeral token
-        const ephemeralKey = await fetchEphemeralToken();
-        
-        // Connect client (SDK handles mic permissions automatically)
-        await client.connect(ephemeralKey);
+    // Implement single-click vs double-click detection
+    clickCountRef.current += 1;
 
-        showStatusMessage('Voice coach connected ✅', 2000);
-      } catch (error) {
-        console.error('Failed to connect voice coach:', error);
-        showStatusMessage('Connection failed. Please try again.', 3000);
-        setConnectionState('error');
-      }
-    } else if (connectionState === 'connected') {
-      // For now, just disconnect when clicking while connected
-      // TODO: Add mute/interrupt functionality once SDK exposes it
-      showStatusMessage('Disconnecting...', 1000);
-      await client.disconnect();
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
     }
+
+    // Double-click detection (within 300ms)
+    if (clickCountRef.current === 2) {
+      clickCountRef.current = 0;
+      
+      // Double-click → Disconnect
+      if (connectionState === 'connected') {
+        showStatusMessage('Disconnecting...', 1000);
+        await client.disconnect();
+      }
+      return;
+    }
+
+    // Single-click with delay to detect if double-click follows
+    clickTimeoutRef.current = window.setTimeout(async () => {
+      clickCountRef.current = 0;
+
+      // Single-click behavior
+      if (
+        connectionState === 'disconnected' ||
+        connectionState === 'error' ||
+        connectionState === 'offline'
+      ) {
+        // Idle/Error → Connect
+        try {
+          setConnectionState('connecting');
+          showStatusMessage('Connecting...', 3000);
+          
+          // Unlock iOS audio on first user gesture (critical for Safari/iOS)
+          await ensureiOSAudioUnlocked();
+          
+          // Fetch ephemeral token
+          const ephemeralKey = await fetchEphemeralToken();
+          
+          // Connect client (SDK handles mic permissions automatically)
+          await client.connect(ephemeralKey);
+
+          showStatusMessage('Voice coach connected ✅', 2000);
+        } catch (error) {
+          console.error('Failed to connect voice coach:', error);
+          showStatusMessage('Connection failed. Please try again.', 3000);
+          setConnectionState('error');
+        }
+      } else if (connectionState === 'connected') {
+        // Connected → Toggle mute/unmute
+        try {
+          client.toggleMute();
+          const isMuted = client.getMutedState();
+          setCoachState(isMuted ? 'muted' : 'listening');
+          showStatusMessage(isMuted ? 'Muted 🔇' : 'Unmuted 🔊', 1500);
+        } catch (error) {
+          console.error('Failed to toggle mute:', error);
+          showStatusMessage('Failed to toggle mute', 2000);
+        }
+      }
+    }, 300);
   };
 
   const handleDisconnect = () => {
@@ -366,8 +406,16 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 't' || e.key === 'T') {
       e.preventDefault();
-      if (connectionState === 'connected') {
-        voiceClientRef.current?.toggleMute();
+      if (connectionState === 'connected' && voiceClientRef.current) {
+        try {
+          voiceClientRef.current.toggleMute();
+          const isMuted = voiceClientRef.current.getMutedState();
+          setCoachState(isMuted ? 'muted' : 'listening');
+          showStatusMessage(isMuted ? 'Muted 🔇' : 'Unmuted 🔊', 1500);
+        } catch (error) {
+          console.error('Failed to toggle mute:', error);
+          showStatusMessage('Failed to toggle mute', 2000);
+        }
       }
     } else if (e.key === 'Escape') {
       e.preventDefault();

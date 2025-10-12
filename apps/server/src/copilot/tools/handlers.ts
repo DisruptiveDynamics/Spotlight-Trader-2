@@ -128,12 +128,23 @@ export async function proposeEntryExit(
 export async function evaluateRules(
   params: EvaluateRulesParams
 ): Promise<RulesEvaluation> {
+  if (!params.context) {
+    throw new Error('Missing required context parameter');
+  }
   return rulesSentinel.evaluate(params.context);
 }
 
 export async function logJournalEvent(
   params: LogJournalEventParams
 ): Promise<JournalEventResult> {
+  if (!params.payload) {
+    throw new Error('Missing required payload parameter');
+  }
+  
+  if (!params.payload.symbol || !params.payload.timeframe) {
+    throw new Error('Missing required fields: symbol and timeframe');
+  }
+
   const id = nanoid();
 
   await db.insert(journalEvents).values({

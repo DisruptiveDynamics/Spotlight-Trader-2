@@ -9,6 +9,8 @@ import {
   recordWSDisconnection,
   recordWSLRUEviction,
 } from '../metrics/registry';
+import { toolHandlers } from '../copilot/tools/handlers';
+import { voiceCalloutBridge } from './voiceCalloutBridge';
 
 const env = validateEnv(process.env);
 
@@ -144,7 +146,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
     });
 
     upstreamWs.on('message', async (data) => {
-      // Parse OpenAI messages to handle session.created
+      // Parse OpenAI messages to handle session.created and function calls
       try {
         const message = JSON.parse(data.toString());
         
@@ -154,19 +156,13 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
           console.log('[VoiceProxy] Received session.created from OpenAI, session ID:', upstreamSessionId);
           sessionCreatedReceived = true;
           
-          // TEST: Minimal payload to isolate API key vs data issue
-          const minimalUpdate = {
-            type: 'session.update',
-            session: {
-              modalities: ['text', 'audio'],
-              instructions: 'You are a helpful assistant.',
-              voice: 'alloy',
-              input_audio_format: 'pcm16',
-              output_audio_format: 'pcm16'
-            }
-          };
-          console.log('[VoiceProxy] Sending MINIMAL TEST session.update to OpenAI:', JSON.stringify(minimalUpdate, null, 2));
-          upstreamWs.send(JSON.stringify(minimalUpdate));
+          // Get full session config with tools
+          const sessionUpdate = await getInitialSessionUpdate(userId);
+          console.log('[VoiceProxy] Sending session.update with copilot tools:', {
+            toolCount: (sessionUpdate.session as any).tools?.length || 0,
+            voice: sessionUpdate.session.voice,
+          });
+          upstreamWs.send(JSON.stringify(sessionUpdate));
           upstreamReady = true;
 
           // Flush buffered client messages
@@ -184,6 +180,9 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
             }
           }
 
+          // Register voice session for callout streaming
+          voiceCalloutBridge.registerSession(userId, clientWs, upstreamWs);
+          
           // Start heartbeat
           upstreamHeartbeat = setInterval(() => {
             if (upstreamWs.readyState === WebSocket.OPEN) {
@@ -229,6 +228,95 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
         if (message.type === 'session.updated') {
           openaiErrorCount = 0;
           openaiCooldownUntil = 0;
+        }
+        
+        // Handle function calls from voice assistant
+        if (message.type === 'response.function_call_arguments.done') {
+          const callId = message.call_id;
+          const functionName = message.name;
+          const argsString = message.arguments;
+          
+          console.log('[VoiceProxy] Function call:', { functionName, callId, userId, args: argsString });
+          
+          try {
+            const args = JSON.parse(argsString);
+            let result: any = null;
+            
+            // Call the appropriate copilot tool handler with userId context
+            switch (functionName) {
+              case 'get_chart_snapshot':
+                result = await toolHandlers.get_chart_snapshot(args);
+                break;
+              case 'propose_entry_exit':
+                result = await toolHandlers.propose_entry_exit(args);
+                break;
+              case 'get_recommended_risk_box':
+                result = await toolHandlers.get_recommended_risk_box(args);
+                break;
+              case 'get_pattern_summary':
+                result = await toolHandlers.get_pattern_summary(args);
+                break;
+              case 'evaluate_rules':
+                // Merge userId context with args
+                result = await toolHandlers.evaluate_rules({ 
+                  context: { 
+                    ...args, 
+                    userId 
+                  } 
+                });
+                break;
+              case 'log_journal_event':
+                // Ensure userId is included in journal events
+                result = await toolHandlers.log_journal_event({ 
+                  type: args.type, 
+                  payload: {
+                    ...args,
+                    userId
+                  }
+                });
+                break;
+              case 'generate_trade_plan':
+                result = await toolHandlers.generate_trade_plan(args);
+                break;
+              default:
+                result = { error: `Unknown function: ${functionName}` };
+            }
+            
+            // Send function result back to OpenAI
+            const functionOutput = {
+              type: 'conversation.item.create',
+              item: {
+                type: 'function_call_output',
+                call_id: callId,
+                output: JSON.stringify(result),
+              },
+            };
+            
+            upstreamWs.send(JSON.stringify(functionOutput));
+            
+            // Trigger response generation
+            upstreamWs.send(JSON.stringify({ type: 'response.create' }));
+            
+            console.log('[VoiceProxy] Function result sent:', { callId, functionName, userId, success: true });
+          } catch (error) {
+            console.error('[VoiceProxy] Function call error:', { userId, functionName, error: error instanceof Error ? error.message : 'Unknown error' });
+            
+            const errorOutput = {
+              type: 'conversation.item.create',
+              item: {
+                type: 'function_call_output',
+                call_id: callId,
+                output: JSON.stringify({ 
+                  error: error instanceof Error ? error.message : 'Unknown error',
+                  functionName,
+                  timestamp: Date.now()
+                }),
+              },
+            };
+            
+            upstreamWs.send(JSON.stringify(errorOutput));
+            upstreamWs.send(JSON.stringify({ type: 'response.create' }));
+          }
         }
       } catch (err) {
         console.error('[VoiceProxy] Error parsing OpenAI message:', err);
@@ -287,6 +375,8 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
 
     clientWs.on('close', (code) => {
       upstreamWs.close();
+      voiceCalloutBridge.unregisterSession(userId);
+      
       const index = userConnections.findIndex((conn) => conn.ws === clientWs);
       if (index !== -1) {
         userConnections.splice(index, 1);

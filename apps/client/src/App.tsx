@@ -49,16 +49,12 @@ function App() {
   const [showAdminConsole, setShowAdminConsole] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  // Show sign-in page if not authenticated
-  if (!user) {
-    return <SignIn />;
-  }
-
-  // Initialize feature flag syncing
+  // Initialize feature flag syncing (only when authenticated)
   useEffect(() => {
+    if (!user) return;
     startFlagSync();
     return () => stopFlagSync();
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     const unsubscribe = focusManager.subscribe(setFocusMode);
@@ -117,6 +113,11 @@ function App() {
   }, []);
 
   const opacity = focusManager.getNonPriceOpacity();
+
+  // Show sign-in page if not authenticated
+  if (!user) {
+    return <SignIn />;
+  }
 
   return (
     <>

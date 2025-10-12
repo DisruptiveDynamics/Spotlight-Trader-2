@@ -38,27 +38,36 @@ export function SignIn({ sessionExpired = false }: SignInProps) {
   };
 
   const handleDemo = async () => {
+    console.log('Demo mode button clicked');
     setLoading(true);
     setError('');
 
     try {
+      console.log('Fetching /api/auth/demo...');
       const res = await fetch('/api/auth/demo', {
         method: 'POST',
         credentials: 'include',
       });
 
+      console.log('Demo response status:', res.status);
+
       if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Demo login failed:', errorText);
         throw new Error('Demo login failed');
       }
 
       const data = await res.json();
+      console.log('Demo response data:', data);
 
       if (data.user) {
+        console.log('Setting user in auth store:', data.user);
         setUser({
           userId: data.user.id,
           email: data.user.email,
-          createdAt: new Date().toISOString(),
+          createdAt: data.user.createdAt || new Date().toISOString(),
         });
+        console.log('User set successfully');
       }
     } catch (err) {
       console.error('Demo login error:', err);

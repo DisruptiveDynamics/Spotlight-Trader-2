@@ -13,27 +13,32 @@ interface AuthState {
   logout: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-  user: null,
+export const useAuthStore = create<AuthState>((set) => {
+  const stored = authStorage.get();
+  const isValid = stored && stored.user && !authStorage.isExpired();
   
-  setUser: (user) => {
-    set({ user });
-    if (user) {
-      authStorage.set({
-        user,
-        expiresAt: Date.now() + 30 * 60 * 1000,
-      });
-    } else {
+  return {
+    user: (isValid && stored?.user) ? stored.user : null,
+    
+    setUser: (user) => {
+      set({ user });
+      if (user) {
+        authStorage.set({
+          user,
+          expiresAt: Date.now() + 30 * 60 * 1000,
+        });
+      } else {
+        authStorage.clear();
+      }
+    },
+    
+    logout: () => {
       authStorage.clear();
-    }
-  },
-  
-  logout: () => {
-    authStorage.clear();
-    set({ user: null });
-    fetch('/api/auth/logout', {
-      method: 'POST',
-      credentials: 'include',
-    }).catch(console.error);
-  },
-}));
+      set({ user: null });
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      }).catch(console.error);
+    },
+  };
+});

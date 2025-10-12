@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { VoiceClient } from '../../voice/VoiceClient';
+import { RealtimeVoiceClient } from '../../voice/RealtimeVoiceClient';
 import { VoiceFallback } from './VoiceFallback';
 import { ensureiOSAudioUnlocked } from '../../voice/ios';
 
@@ -222,7 +222,7 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
   const [_permissionState, setPermissionState] = useState<PermissionState>('pending');
   const [statusMessage, setStatusMessage] = useState<string>('');
 
-  const voiceClientRef = useRef<VoiceClient | null>(null);
+  const voiceClientRef = useRef<RealtimeVoiceClient | null>(null);
   const clickTimeoutRef = useRef<number | null>(null);
   const clickCountRef = useRef(0);
   const tokenRef = useRef<string | null>(null);
@@ -242,21 +242,26 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
   }, []);
 
   useEffect(() => {
-    const client = new VoiceClient();
-    voiceClientRef.current = client;
-
-    // Subscribe to connection state changes
-    const unsubscribeState = client.onStateChange((state) => {
-      setConnectionState(state);
-      if (state === 'disconnected' || state === 'error') {
+    const client = new RealtimeVoiceClient({
+      instructions: 'You are a world-class intraday trading coach. Your #1 job is to help the user trade THEIR plan on THEIR symbols in real time. Be concise (2 sentences or less unless asked). If no quality setup: say "No edge right now" and stop.',
+      voice: 'alloy',
+      onConnected: () => {
+        setConnectionState('connected');
         setCoachState('idle');
-      }
+      },
+      onDisconnected: () => {
+        setConnectionState('disconnected');
+        setCoachState('idle');
+      },
+      onError: (error) => {
+        console.error('Voice error:', error);
+        setConnectionState('error');
+      },
+      onMuteChange: (isMuted) => {
+        setCoachState(isMuted ? 'muted' : 'listening');
+      },
     });
-
-    // Subscribe to coach state changes
-    const unsubscribeCoachState = client.onCoachStateChange((state) => {
-      setCoachState(state);
-    });
+    voiceClientRef.current = client;
 
     tooltipTimerRef.current = window.setTimeout(() => {
       if (!hasInteracted) {
@@ -265,8 +270,6 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
     }, 5000);
 
     return () => {
-      unsubscribeState();
-      unsubscribeCoachState();
       client.disconnect();
       if (tooltipTimerRef.current) {
         clearTimeout(tooltipTimerRef.current);
@@ -292,8 +295,8 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
     }, duration);
   };
 
-  const fetchVoiceToken = async (): Promise<string> => {
-    const response = await fetch('/api/voice/token', {
+  const fetchEphemeralToken = async (): Promise<string> => {
+    const response = await fetch('/api/voice/ephemeral-token', {
       method: 'POST',
       credentials: 'include',
       headers: {
@@ -303,11 +306,11 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: response.statusText }));
-      throw new Error(`Failed to fetch voice token: ${error.error || response.statusText}`);
+      throw new Error(`Failed to fetch ephemeral token: ${error.error || response.statusText}`);
     }
 
     const data = await response.json();
-    return data.token;
+    return data.ephemeralKey;
   };
 
   const handleBubbleClick = async () => {
@@ -356,15 +359,11 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
           // Unlock iOS audio on first user gesture (critical for Safari/iOS)
           await ensureiOSAudioUnlocked();
           
-          // Fetch voice proxy token
-          const token = await fetchVoiceToken();
-          tokenRef.current = token;
+          // Fetch ephemeral token
+          const ephemeralKey = await fetchEphemeralToken();
           
-          // Connect to voice proxy (which has tools and real-time data)
-          await client.connect(token);
-          
-          // Enable microphone after connection
-          await client.enableMic();
+          // Connect client (SDK handles mic permissions automatically)
+          await client.connect(ephemeralKey);
 
           showStatusMessage('Voice coach connected ✅', 2000);
         } catch (error) {
@@ -375,14 +374,10 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
       } else if (connectionState === 'connected') {
         // Connected → Toggle mute/unmute
         try {
-          const isMicActive = client.isMicActive();
-          if (isMicActive) {
-            client.disableMic();
-            showStatusMessage('Muted 🔇', 1500);
-          } else {
-            await client.enableMic();
-            showStatusMessage('Unmuted 🔊', 1500);
-          }
+          client.toggleMute();
+          const isMuted = client.getMutedState();
+          setCoachState(isMuted ? 'muted' : 'listening');
+          showStatusMessage(isMuted ? 'Muted 🔇' : 'Unmuted 🔊', 1500);
         } catch (error) {
           console.error('Failed to toggle mute:', error);
           showStatusMessage('Failed to toggle mute', 2000);
@@ -408,19 +403,15 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
     handleDisconnect();
   };
 
-  const handleKeyDown = async (e: KeyboardEvent) => {
+  const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 't' || e.key === 'T') {
       e.preventDefault();
       if (connectionState === 'connected' && voiceClientRef.current) {
         try {
-          const isMicActive = voiceClientRef.current.isMicActive();
-          if (isMicActive) {
-            voiceClientRef.current.disableMic();
-            showStatusMessage('Muted 🔇', 1500);
-          } else {
-            await voiceClientRef.current.enableMic();
-            showStatusMessage('Unmuted 🔊', 1500);
-          }
+          voiceClientRef.current.toggleMute();
+          const isMuted = voiceClientRef.current.getMutedState();
+          setCoachState(isMuted ? 'muted' : 'listening');
+          showStatusMessage(isMuted ? 'Muted 🔇' : 'Unmuted 🔊', 1500);
         } catch (error) {
           console.error('Failed to toggle mute:', error);
           showStatusMessage('Failed to toggle mute', 2000);

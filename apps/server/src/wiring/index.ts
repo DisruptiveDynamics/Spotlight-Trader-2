@@ -43,26 +43,20 @@ export function initializeMarketPipeline(app: Express) {
         return res.status(400).json({ error: 'Invalid timeframe' });
       }
 
-      const query: {
-        symbol: string;
-        timeframe: string;
-        limit: number;
-        before?: number;
-        sinceSeq?: number;
-      } = {
+      const query: any = {
         symbol: symbol.toUpperCase(),
         timeframe: (typeof timeframe === 'string' ? timeframe : '1m'),
         limit: limit ? parseInt(limit as string, 10) : 1000,
       };
-
+      
       if (before) {
         query.before = parseInt(before as string, 10);
       }
-
+      
       if (sinceSeq) {
         query.sinceSeq = parseInt(sinceSeq as string, 10);
       }
-
+      
       const bars = await getHistory(query);
 
       // Bars already have nested ohlcv format, just return them

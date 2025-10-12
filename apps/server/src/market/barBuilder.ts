@@ -17,6 +17,8 @@ interface SymbolState {
   bar_end: number;
   microbars: Microbar[];
   lastTickTs: number;
+  timeframe: string; // e.g. '1m', '5m', '15m'
+  timeframeMs: number; // timeframe in milliseconds
 }
 
 export class BarBuilder {
@@ -40,53 +42,73 @@ export class BarBuilder {
     return fromZonedTime(wall, ET).getTime();
   }
 
-  subscribe(symbol: string) {
-    if (this.states.has(symbol)) return;
+  subscribe(symbol: string, timeframe: string = '1m') {
+    const stateKey = `${symbol}:${timeframe}`;
+    if (this.states.has(stateKey)) return;
+
+    // Parse timeframe to get bar duration in minutes
+    const barMinutes = this.parseTimeframe(timeframe);
+    const timeframeMs = barMinutes * 60000;
 
     const now = Date.now();
-    const bar_start = this.floorToExchangeMinute(now);
-    const bar_end = bar_start + 60000;
+    const bar_start = this.floorToExchangeMinute(now, barMinutes);
+    const bar_end = bar_start + timeframeMs;
 
-    this.states.set(symbol, {
+    this.states.set(stateKey, {
       currentBar: null,
       bar_start,
       bar_end,
       microbars: [],
       lastTickTs: now,
+      timeframe,
+      timeframeMs,
     });
 
-    eventBus.on(`tick:${symbol}` as const, (tick) => this.handleTick(symbol, tick));
-    this.startMicrobarTimer(symbol);
-    this.startBarFinalizeTimer(symbol);
+    eventBus.on(`tick:${symbol}` as const, (tick) => this.handleTick(symbol, timeframe, tick));
+    this.startMicrobarTimer(symbol, timeframe);
+    this.startBarFinalizeTimer(symbol, timeframe);
   }
 
-  unsubscribe(symbol: string) {
-    this.states.delete(symbol);
-    const microTimer = this.microbarTimers.get(symbol);
+  private parseTimeframe(timeframe: string): number {
+    const match = timeframe.match(/^(\d+)([mh])$/);
+    if (!match || !match[1] || !match[2]) return 1; // default to 1 minute
+    
+    const value = parseInt(match[1], 10);
+    const unit = match[2];
+    
+    return unit === 'h' ? value * 60 : value;
+  }
+
+  unsubscribe(symbol: string, timeframe: string = '1m') {
+    const stateKey = `${symbol}:${timeframe}`;
+    this.states.delete(stateKey);
+    const microTimer = this.microbarTimers.get(stateKey);
     if (microTimer) {
       clearInterval(microTimer);
-      this.microbarTimers.delete(symbol);
+      this.microbarTimers.delete(stateKey);
     }
-    const finalizeTimer = this.barFinalizeTimers.get(symbol);
+    const finalizeTimer = this.barFinalizeTimers.get(stateKey);
     if (finalizeTimer) {
       clearInterval(finalizeTimer);
-      this.barFinalizeTimers.delete(symbol);
+      this.barFinalizeTimers.delete(stateKey);
     }
   }
 
-  private handleTick(symbol: string, tick: Tick) {
-    const state = this.states.get(symbol);
+  private handleTick(symbol: string, timeframe: string, tick: Tick) {
+    const stateKey = `${symbol}:${timeframe}`;
+    const state = this.states.get(stateKey);
     if (!state) return;
 
     state.lastTickTs = tick.ts;
 
-    // Check if we crossed minute boundary
+    // Check if we crossed timeframe boundary
     if (tick.ts >= state.bar_end) {
-      this.finalizeBar(symbol, state);
+      this.finalizeBar(symbol, timeframe, state);
 
-      const tickMinute = this.floorToExchangeMinute(tick.ts);
-      state.bar_start = tickMinute;
-      state.bar_end = tickMinute + 60000;
+      const barMinutes = this.parseTimeframe(timeframe);
+      const tickBoundary = this.floorToExchangeMinute(tick.ts, barMinutes);
+      state.bar_start = tickBoundary;
+      state.bar_end = tickBoundary + state.timeframeMs;
       state.currentBar = null;
     }
 
@@ -106,14 +128,14 @@ export class BarBuilder {
     }
   }
 
-  private finalizeBar(symbol: string, state: SymbolState) {
+  private finalizeBar(symbol: string, timeframe: string, state: SymbolState) {
     if (!state.currentBar) return;
 
-    const seq = Math.floor(state.bar_start / 60000);
+    const seq = Math.floor(state.bar_start / state.timeframeMs);
 
     const finalizedBar: Bar = {
       symbol,
-      timeframe: '1m',
+      timeframe: timeframe as any, // Cast to satisfy Bar type
       seq,
       bar_start: state.bar_start,
       bar_end: state.bar_end,
@@ -129,12 +151,15 @@ export class BarBuilder {
     // Clear microbars to prevent memory leak
     state.microbars = [];
 
-    eventBus.emit(`bar:new:${symbol}:1m` as const, finalizedBar);
+    // Emit with dynamic timeframe in event name
+    // Type cast needed for dynamic event key pattern
+    (eventBus as any).emit(`bar:new:${symbol}:${timeframe}`, finalizedBar);
   }
 
-  private startMicrobarTimer(symbol: string) {
+  private startMicrobarTimer(symbol: string, timeframe: string = '1m') {
+    const stateKey = `${symbol}:${timeframe}`;
     const timer = setInterval(() => {
-      const state = this.states.get(symbol);
+      const state = this.states.get(stateKey);
       if (!state || !state.currentBar) return;
 
       const microbar: Microbar = {
@@ -151,34 +176,37 @@ export class BarBuilder {
       eventBus.emit(`microbar:${symbol}` as const, microbar);
     }, this.microbarInterval);
 
-    this.microbarTimers.set(symbol, timer);
+    this.microbarTimers.set(stateKey, timer);
   }
 
-  private startBarFinalizeTimer(symbol: string) {
+  private startBarFinalizeTimer(symbol: string, timeframe: string = '1m') {
+    const stateKey = `${symbol}:${timeframe}`;
     // Check every second if the current bar needs to be finalized
     const timer = setInterval(() => {
-      const state = this.states.get(symbol);
+      const state = this.states.get(stateKey);
       if (!state) return;
 
       const now = Date.now();
       
       // If current time has crossed bar_end, finalize even without new ticks
       if (now >= state.bar_end && state.currentBar) {
-        this.finalizeBar(symbol, state);
+        this.finalizeBar(symbol, timeframe, state);
 
-        // Start new bar at the next minute boundary
-        const tickMinute = this.floorToExchangeMinute(now);
-        state.bar_start = tickMinute;
-        state.bar_end = tickMinute + 60000;
+        // Start new bar at the next timeframe boundary
+        const barMinutes = this.parseTimeframe(timeframe);
+        const nextBoundary = this.floorToExchangeMinute(now, barMinutes);
+        state.bar_start = nextBoundary;
+        state.bar_end = nextBoundary + state.timeframeMs;
         state.currentBar = null;
       }
     }, 1000);
 
-    this.barFinalizeTimers.set(symbol, timer);
+    this.barFinalizeTimers.set(stateKey, timer);
   }
 
-  getState(symbol: string): SymbolState | undefined {
-    return this.states.get(symbol);
+  getState(symbol: string, timeframe: string = '1m'): SymbolState | undefined {
+    const stateKey = `${symbol}:${timeframe}`;
+    return this.states.get(stateKey);
   }
 }
 

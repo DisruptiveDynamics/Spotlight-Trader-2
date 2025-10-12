@@ -186,3 +186,74 @@ export const featureFlags = pgTable('feature_flags', {
   value: jsonb('value').notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const patternStats = pgTable(
+  'pattern_stats',
+  {
+    id: text('id').primaryKey(),
+    symbol: text('symbol').notNull(),
+    timeframe: text('timeframe').notNull(),
+    setup: text('setup').notNull(),
+    regime: text('regime').notNull(),
+    winRate: real('win_rate').notNull(),
+    evR: real('ev_r').notNull(),
+    maeP50: real('mae_p50').notNull(),
+    maeP80: real('mae_p80').notNull(),
+    mfeP50: real('mfe_p50').notNull(),
+    mfeP80: real('mfe_p80').notNull(),
+    timeToTarget: real('time_to_target').notNull(),
+    falseBreakRate: real('false_break_rate').notNull(),
+    volumeZScores: jsonb('volume_zscores').notNull(),
+    rangeZScores: jsonb('range_zscores').notNull(),
+    vwapBehaviors: text('vwap_behaviors').array().notNull(),
+    atrPercentile: real('atr_percentile').notNull(),
+    lastUpdated: timestamp('last_updated', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    symbolTimeframeSetupIdx: index('pattern_stats_symbol_timeframe_setup_idx').on(
+      table.symbol,
+      table.timeframe,
+      table.setup
+    ),
+  })
+);
+
+export const callouts = pgTable(
+  'callouts',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    symbol: text('symbol').notNull(),
+    timeframe: text('timeframe').notNull(),
+    kind: text('kind').notNull(),
+    setupTag: text('setup_tag').notNull(),
+    rationale: text('rationale').array().notNull(),
+    qualityGrade: text('quality_grade').notNull(),
+    urgency: text('urgency').notNull(),
+    rulesPass: boolean('rules_pass').notNull(),
+    timestamp: timestamp('timestamp', { withTimezone: true }).defaultNow().notNull(),
+    accepted: boolean('accepted'),
+    rejectedReason: text('rejected_reason'),
+  },
+  (table) => ({
+    symbolTimestampIdx: index('callouts_symbol_timestamp_idx').on(table.symbol, table.timestamp),
+  })
+);
+
+export const journalEvents = pgTable('journal_events', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull(),
+  type: text('type').notNull(),
+  symbol: text('symbol').notNull(),
+  timeframe: text('timeframe').notNull(),
+  indicators: jsonb('indicators'),
+  proposal: jsonb('proposal'),
+  decision: text('decision'),
+  mae: real('mae'),
+  mfe: real('mfe'),
+  realizedR: real('realized_r'),
+  rulesRef: text('rules_ref'),
+  qualityGrade: text('quality_grade'),
+  reasoning: text('reasoning').notNull(),
+  timestamp: timestamp('timestamp', { withTimezone: true }).defaultNow().notNull(),
+});

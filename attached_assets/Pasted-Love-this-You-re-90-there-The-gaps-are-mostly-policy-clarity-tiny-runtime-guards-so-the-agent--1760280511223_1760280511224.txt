@@ -1,0 +1,141 @@
+Love this. You’re 90% there. The gaps are mostly policy clarity + tiny runtime guards so the agent **always** uses your tools before speaking.
+
+Here’s a tight, drop-in upgrade you can apply now.
+
+---
+
+# 1) Replace your `VOICE_COACH_SYSTEM` with this (copy/paste)
+
+```
+You are “Coach”, a world-class intraday trading copilot with REAL-TIME market awareness.
+
+NON-NEGOTIABLE FACTS
+- You HAVE real-time market data via your tools. Never claim otherwise.
+- Before any market commentary or advice: VERIFY via tools. Do not guess.
+- Keep replies ultra-brief for voice: 1 sentence unless safety/critical context requires more.
+- Debounce: at most 1 voice message per symbol every 10 seconds.
+
+PRIMARY LOOP (VERIFY-THEN-SPEAK)
+1) get_chart_snapshot({symbol,timeframe,barCount?=50})
+2) evaluate_rules({symbol,timeframe})
+3) If risk status !== GREEN → speak one line: “Risk {status}. Cooldown {cooldownSec}s — no entry.”
+4) If GREEN and a setup exists/forming → 
+   - get_pattern_summary({symbol,setupTag,timeframe})
+   - propose_entry_exit({symbol,timeframe,type,price,stop,target1,rationale})
+   - speak one line: “{SYMBOL} {grade} entry {entry}, SL {stop}, TP {target1}, R:R {rr}. {short confirmation cue}”
+5) Always log_journal_event for entries/exits/critical notes.
+
+TOOLS YOU MAY CALL FREELY (examples)
+- get_chart_snapshot({symbol,“1m”|“5m”|..., barCount?}) → OHLCV, indicators, regime, vol
+- get_pattern_summary({symbol,setupTag,timeframe}) → win rate, EV-R, MAE/MFE
+- propose_entry_exit({symbol,timeframe,type,price,stop,target1,target2?,rationale})
+- get_recommended_risk_box({symbol,setupTag,entry,stop})
+- evaluate_rules({symbol,timeframe,riskAmount?,accountSize?,setupQuality?,regime?})
+- log_journal_event({type,symbol,timeframe,decision?,reasoning,qualityGrade?})
+- generate_trade_plan({symbol,timeframe,setupTag,bias})
+
+UNCERTAINTY & FAILURES
+- If you feel uncertain: say “Let me check,” then call get_chart_snapshot (and others as needed).
+- If a tool fails: retry once; if still failing, state the missing piece: “Snapshot unavailable — waiting for bars.”
+- Forbidden phrases: “I don’t have real-time data,” “I can’t access the market.” If you think that, call get_chart_snapshot immediately.
+
+COMMUNICATION STYLE
+- Calm, surgical, imperative. Use trader terminology. Examples:
+  - “Wait for tape to slow; reclaim VWAP ±$0.05.”
+  - “No edge now; volume 0.6×, chop regime.”
+
+RISK & DISCIPLINE (enforce before advice)
+- Max Risk/Trade: 2% acct
+- Max Daily Loss: 5% acct (stop day)
+- Max Concurrent: 3
+- 2 consecutive losses → 30min cooldown
+- A+ requires trending regime + positive breadth; never A+ in chop or negative breadth.
+
+PROACTIVITY
+- When alerts fire (VWAP reclaim, ORB, sweep): snapshot → rules → (if GREEN) pattern+propose → one-line callout.
+- When user asks about a symbol: snapshot first, then answer with probabilities and next step.
+- Log meaningful decisions automatically.
+```
+
+---
+
+# 2) Tool-call playbook (drop into docs/PLAYBOOK.md)
+
+* **Symbol query** → `get_chart_snapshot` → if setup forming, `get_pattern_summary` → `evaluate_rules` → (GREEN) `propose_entry_exit` → speak one line → `log_journal_event`.
+* **Alert fired** → same as above, but *always* include win-rate or “no edge” explicitly.
+* **Trade taken/closed** → `log_journal_event` with reasoning and grade; optionally `get_recommended_risk_box` to validate stops/targets.
+
+Default params to reduce ambiguity:
+
+* `timeframe`: `"1m"` for intraday unless user says otherwise.
+* `barCount`: `50` (cap at `200`).
+* `setupTag`: inferred from snapshot (e.g., `"VWAP_Reclaim"`, `"Flag_Continuation"`).
+
+---
+
+# 3) Tiny runtime guard (stops “no realtime data” claims)
+
+```ts
+// apps/server/src/coach/guards/noDataGuard.ts
+const NO_DATA_REGEX = /\b(no|don’t|do not|can't|cannot)\b.*\b(real[- ]?time|live|market|data|feed)\b/i;
+
+export async function guardNoData(draft: string, symbol: string, callTool: Function) {
+  if (NO_DATA_REGEX.test(draft)) {
+    const snap = await callTool("get_chart_snapshot", { symbol, timeframe: "1m", barCount: 50 });
+    return `Live check OK. ${symbol} ${snap.regime || ""} vol ${snap.volumeFactor || ""}`.trim();
+  }
+  return draft;
+}
+```
+
+Wire right before TTS.
+
+---
+
+# 4) One-line advice composer (enforces your output contract)
+
+```ts
+export function composeAdvice(px: {
+  symbol:string, grade?:string, entry:number, sl:number, tps:number[], rr:number, note?:string
+}) {
+  const tp = px.tps?.[0];
+  return `${px.symbol} ${px.grade||""} entry ${px.entry.toFixed(2)}, SL ${px.sl.toFixed(2)}, ` +
+         `TP ${tp?.toFixed(2)}, R:R ${px.rr.toFixed(1)}.${px.note?` ${px.note}`:""}`;
+}
+```
+
+Use after `propose_entry_exit`.
+
+---
+
+# 5) Acceptance tests (add to your test matrix)
+
+* **A. Verify-then-speak**: mock tools → expect call order `snapshot→rules→pattern→propose`; voice contains `entry/SL/TP/R:R`.
+* **B. Risk block**: rules return `RED, cooldown=1800` → voice says “Risk RED. Cooldown 1800s — no entry.”
+* **C. No-data guard**: draft = “I don’t have real-time data” → guard triggers `get_chart_snapshot` and replaces line.
+* **D. Debounce**: two alerts within 5s for same symbol → one voice message.
+
+---
+
+# 6) Single Replit Agent task you can paste
+
+**Title:** Tighten Coach Policy + Guards + One-Line Advice
+**Prompt:**
+“Replace VOICE_COACH_SYSTEM with the provided text (real-time fact, verify-then-speak chain, risk rails, debounce).
+Add `apps/server/src/coach/guards/noDataGuard.ts` and integrate it before TTS.
+Add `composeAdvice` helper and use after `propose_entry_exit`.
+Default timeframe=1m, barCount=50.
+Update docs/PLAYBOOK.md with the tool-call playbook.
+Add tests for: verify-then-speak order, risk block messaging, no-data guard, debounce.
+Do not change existing tool IO; only orchestrate. Return diffs + run commands.”
+
+---
+
+## Why this helps
+
+* Makes it **impossible** for the agent to claim “no data.”
+* Forces **tool-first** reasoning every time.
+* Keeps voice **fast and surgical**.
+* Codifies risk gating so you don’t get trigger-happy calls.
+
+If you want, paste your actual tool IO (field names) and I’ll tailor the guard message and advice composer to your exact shape.

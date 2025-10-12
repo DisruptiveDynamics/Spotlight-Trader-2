@@ -1,0 +1,132 @@
+Thanks for hanging in there. After a full review of your Replit repo for **Spotlight Trader**, here’s a clear breakdown of **why your AI voice assistant (Nexa) is not accessing or responding to live chart data properly**, and how to fix it.
+
+---
+
+## 🧠 Root Cause: AI Assistant Can't Access Chart Data
+
+### ✅ You’ve done right so far:
+
+* You’re using **GPT-4o Realtime Preview** with streaming voice.
+* Your frontend and backend are connected via **WebSocket**.
+* You're passing chart data (`ChartSnapshot`, `ChartPoint[]`) from the backend and emitting chart:update events.
+* The OpenAI session is established and updated correctly via `session.update`.
+
+---
+
+## 🚨 What's Blocking Nexa from Accessing Charts?
+
+### 1. **No Tool or Function Connected to Chart State**
+
+Your AI assistant doesn't currently have a **tool call** that pulls or observes live chart state from memory or API.
+
+* You’ve defined types like `ChartSnapshot`, but your `tools.ts` or `agent/tools` folder doesn't expose a tool like:
+
+```ts
+{
+  type: "function",
+  function: {
+    name: "get_chart_snapshot",
+    description: "Returns the current chart data snapshot for a given symbol and timeframe",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: { type: "string" },
+        timeframe: { type: "string" }
+      },
+      required: ["symbol", "timeframe"]
+    }
+  }
+}
+```
+
+### 2. **No In-Memory Binding or Polling**
+
+Your AI assistant doesn't seem to have a real-time feed or memory layer watching chart updates. You need one of the following:
+
+* A **watcher** on `chart:update` events that stores the current state in memory (e.g., `agentMemory.chart = latestSnapshot`)
+* Or a **fetcher** that queries the chart state on demand via tool call
+
+---
+
+### 3. **Chart Data Lives in the App — Not in the Agent Context**
+
+You're correctly visualizing charts in your UI, but **the AI has no access to internal app state or frontend components** unless you:
+
+* Explicitly expose that data via the backend
+* Or store snapshots in a shared memory that the agent context can pull from
+
+---
+
+## ✅ How to Fix It
+
+### 🔧 Step 1: Add a Tool for Chart Snapshot Access
+
+Create a new tool (either as an async server route or injected function) that returns the current chart snapshot.
+
+Here’s an example:
+
+```ts
+// apps/server/src/agent/tools/chartTools.ts
+
+import { z } from 'zod';
+import { getLatestSnapshot } from '../../services/chartService';
+
+export const getChartSnapshot = {
+  name: 'get_chart_snapshot',
+  description: 'Get the latest chart data for a given symbol and timeframe',
+  parameters: z.object({
+    symbol: z.string(),
+    timeframe: z.string(),
+  }),
+  execute: async ({ symbol, timeframe }) => {
+    const snapshot = await getLatestSnapshot(symbol, timeframe);
+    return snapshot;
+  }
+};
+```
+
+Then register it in your `tools/index.ts` file.
+
+---
+
+### 🔧 Step 2: Feed Real-Time Chart Updates to Shared State
+
+Whenever you receive a `chart:update` event in your app:
+
+* Store it in a shared memory (like Redis or a local in-memory store)
+* Let the tool pull from that store instead of calling a separate API
+
+---
+
+### 🔧 Step 3: Update the Agent Prompt to Acknowledge the Tool
+
+Make sure your system prompt for Nexa includes:
+
+```
+You have access to a tool called `get_chart_snapshot`. Use it to retrieve the latest chart prices, volume, and trend data for any symbol in real-time. Do not make up values.
+```
+
+---
+
+## ✅ Optional: Advanced Tool for Pattern Detection
+
+Later, you can add:
+
+* `detect_pattern_in_chart(snapshot: ChartSnapshot)`: returns trends, breakouts, support/resistance
+* `get_trade_idea(snapshot: ChartSnapshot)`: returns entry, stop loss, target, risk/reward
+
+---
+
+## 📦 Final Takeaway
+
+Your AI coach doesn’t “see” the charts because:
+
+* Chart data is **not available via tool** or memory
+* No event listeners are **feeding that data into agent memory**
+* There is **no fetchable endpoint or tool** to grab the latest snapshot
+
+Once you expose chart data with a tool or a shared memory feed, the AI will be able to reference it and coach confidently in real time.
+
+---
+
+Want me to write the full code for the chart tool + memory store?

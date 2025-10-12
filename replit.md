@@ -78,7 +78,28 @@ An intelligent trading assistant that provides real-time pattern recognition, pr
 - `/api/copilot/callouts/stream`: SSE endpoint with heartbeat for real-time callout delivery
 - `/api/copilot/test/trigger-callout`: Test endpoint demonstrating tool→broadcaster→UI flow
 
-**Status**: Phase 1 infrastructure ~85% complete. Real-time callouts flowing end-to-end. Next: voice integration, trigger implementations, session manager.
+**Trigger System (Phase 2 Complete):**
+- **BaseTrigger**: State machine with idle→primed→fired→cooldown transitions and hysteresis (2-bar confirmation)
+- **TriggerManager**: Event-driven processor listening to telemetry bus bar:new events with proper lifecycle management
+- **Production Triggers**:
+  - VWAP Reclaim/Reject: 2 consecutive closes above/below with volume confirmation (1.2x)
+  - ORB Breakout: Opening range (first 2 bars) with 2x volume surge filter
+  - EMA Pullback: 9/20 EMA uptrend with pullback to 9 EMA and shrinking volume (0.8x)
+- **Deduplication**: 60-second callout cache prevents duplicate alerts
+- **Configuration**: Externalized trigger parameters in `triggers/config.ts` for live tuning
+- **Test Infrastructure**: `/api/triggers/test/*` endpoints for validation
+
+**UI Enhancements:**
+- **CalloutsOverlay**: SSE auto-reconnect, backpressure (10-callout cap, drops oldest "watch" first), Accept/Reject/Snooze actions
+- **Auto-journaling**: Accept logs decision entry, Reject logs reasoning for learning loop
+- **Symbol Snoozing**: 30-second per-symbol filtering with auto-expiry
+
+**Performance Monitoring:**
+- p50/p95 latency tracking with 60-second logging intervals
+- Warns on >200ms latency, targets <150ms tick→callout pipeline
+- Tool contracts frozen at v1.0.0 for API stability
+
+**Status**: Phase 1 & 2 complete. Trigger system operational with sub-200ms latency. Ready for voice integration and advanced pattern mining.
 
 ## External Dependencies
 

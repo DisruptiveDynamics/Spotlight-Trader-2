@@ -19,23 +19,34 @@ interface TriggerSet {
 class TriggerManager {
   private triggers = new Map<string, TriggerSet>();
   private sessionStartMs: number = 0;
+  private eventListener: ((event: TelemetryEvent) => Promise<void>) | null = null;
+  private calloutCache = new Set<string>();
 
   initialize(sessionStartMs: number): void {
     this.sessionStartMs = sessionStartMs;
     
-    const eventListener = async (event: TelemetryEvent) => {
+    this.eventListener = async (event: TelemetryEvent) => {
       if (event.type === 'bar:new' && event.data) {
         const barData = event.data as { bar?: Bar };
         if (barData.bar) {
-          console.log(`[TriggerManager] Processing bar for ${event.symbol}, seq: ${barData.bar.seq}`);
           await this.processNewBar(event.symbol, barData.bar);
         }
       }
     };
 
-    telemetryBus.on('event', eventListener);
+    telemetryBus.on('event', this.eventListener);
 
     console.log('✅ Trigger manager initialized');
+  }
+
+  dispose(): void {
+    if (this.eventListener) {
+      telemetryBus.off('event', this.eventListener);
+      this.eventListener = null;
+    }
+    this.triggers.clear();
+    this.calloutCache.clear();
+    console.log('✅ Trigger manager disposed');
   }
 
   private ensureTriggers(symbol: string): TriggerSet {
@@ -113,10 +124,20 @@ class TriggerManager {
     event: { symbol: string; setup: string; confidence: number; entryZone: { low: number; high: number } },
     rationale: string
   ): Promise<void> {
+    const calloutKey = `${event.symbol}:${event.setup}:${Date.now()}`;
+    
+    if (this.calloutCache.has(calloutKey)) {
+      return;
+    }
+
+    this.calloutCache.add(calloutKey);
+    
+    setTimeout(() => {
+      this.calloutCache.delete(calloutKey);
+    }, 60000);
+
     const urgency = event.confidence > 0.75 ? 'now' : 'soon';
     const qualityGrade = event.confidence > 0.75 ? 'A' : event.confidence > 0.65 ? 'B' : 'C';
-
-    console.log(`[TriggerManager] 🔥 Firing callout for ${event.symbol} - ${event.setup}: ${rationale}`);
 
     await proposeCallout({
       kind: 'entry',
@@ -136,6 +157,7 @@ class TriggerManager {
       this.triggers.delete(symbol);
     } else {
       this.triggers.clear();
+      this.calloutCache.clear();
     }
   }
 }

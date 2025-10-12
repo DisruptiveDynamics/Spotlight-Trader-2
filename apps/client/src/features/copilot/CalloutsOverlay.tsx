@@ -14,6 +14,7 @@ const MAX_CALLOUTS = 10;
 
 export function CalloutsOverlay() {
   const [callouts, setCallouts] = useState<Callout[]>([]);
+  const [snoozedSymbols, setSnoozedSymbols] = useState<Set<string>>(new Set());
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
 
@@ -36,6 +37,12 @@ export function CalloutsOverlay() {
 
       eventSource.onmessage = (event) => {
         const callout = JSON.parse(event.data) as Callout;
+        
+        const symbol = callout.setupTag.split('_')[0] || callout.setupTag;
+        if (snoozedSymbols.has(symbol)) {
+          return;
+        }
+        
         setCallouts((prev) => {
           const newCallouts = [callout, ...prev];
           
@@ -73,7 +80,81 @@ export function CalloutsOverlay() {
         eventSourceRef.current = null;
       }
     };
-  }, []);
+  }, [snoozedSymbols]);
+
+  const handleAccept = async (callout: Callout) => {
+    try {
+      await fetch('/api/copilot/callouts/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ calloutId: callout.id }),
+      });
+
+      await fetch('/api/copilot/log_journal_event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'decision',
+          payload: {
+            symbol: callout.setupTag,
+            timeframe: '5m',
+            decision: 'accept',
+            reasoning: `Accepted ${callout.kind} callout: ${callout.rationale}`,
+          },
+        }),
+      });
+
+      setCallouts((prev) => prev.filter((c) => c.id !== callout.id));
+    } catch (error) {
+      console.error('Failed to accept callout:', error);
+    }
+  };
+
+  const handleReject = async (callout: Callout) => {
+    const reason = prompt('Why are you rejecting this callout?');
+    if (!reason) return;
+
+    try {
+      await fetch('/api/copilot/callouts/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ calloutId: callout.id, reason }),
+      });
+
+      await fetch('/api/copilot/log_journal_event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'decision',
+          payload: {
+            symbol: callout.setupTag,
+            timeframe: '5m',
+            decision: 'reject',
+            reasoning: reason,
+          },
+        }),
+      });
+
+      setCallouts((prev) => prev.filter((c) => c.id !== callout.id));
+    } catch (error) {
+      console.error('Failed to reject callout:', error);
+    }
+  };
+
+  const handleSnooze = (callout: Callout) => {
+    const symbol = callout.setupTag.split('_')[0] || callout.setupTag;
+    setSnoozedSymbols((prev) => new Set(prev).add(symbol));
+    
+    setTimeout(() => {
+      setSnoozedSymbols((prev) => {
+        const next = new Set(prev);
+        next.delete(symbol);
+        return next;
+      });
+    }, 30000);
+
+    setCallouts((prev) => prev.filter((c) => c.id !== callout.id));
+  };
 
   const getUrgencyColor = (urgency: string) => {
     switch (urgency) {
@@ -127,21 +208,25 @@ export function CalloutsOverlay() {
                 {callout.rationale}
               </p>
               <div className="mt-2 flex gap-2">
+                {(callout.kind === 'entry' || callout.kind === 'exit') && (
+                  <button
+                    className="text-xs px-2 py-1 bg-green-600 hover:bg-green-700 rounded transition-colors"
+                    onClick={() => handleAccept(callout)}
+                  >
+                    ✓ Accept
+                  </button>
+                )}
                 <button
-                  className="text-xs px-2 py-1 bg-green-600 hover:bg-green-700 rounded transition-colors"
-                  onClick={() => {
-                    setCallouts((prev) => prev.filter((c) => c.id !== callout.id));
-                  }}
+                  className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 rounded transition-colors"
+                  onClick={() => handleReject(callout)}
                 >
-                  ✓ Got it
+                  ✗ Reject
                 </button>
                 <button
                   className="text-xs px-2 py-1 bg-gray-600 hover:bg-gray-700 rounded transition-colors"
-                  onClick={() => {
-                    setCallouts((prev) => prev.filter((c) => c.id !== callout.id));
-                  }}
+                  onClick={() => handleSnooze(callout)}
                 >
-                  Dismiss
+                  💤 Snooze 30s
                 </button>
               </div>
             </div>

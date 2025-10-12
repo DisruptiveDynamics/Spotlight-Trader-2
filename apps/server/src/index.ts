@@ -21,6 +21,7 @@ import exportRouter from './routes/export';
 import importRouter from './routes/import';
 import coachSettingsRouter from './routes/coachSettings';
 import { copilotToolsRouter } from './routes/copilotTools';
+import copilotActionsRouter from './routes/copilotActions';
 import voicePreviewRouter from './routes/voicePreview';
 import { requireUser } from './middleware/requireUser';
 import { rateLimit } from './middleware/rateLimit';
@@ -77,6 +78,7 @@ app.use('/api/export', exportRouter);
 app.use('/api/import', importRouter);
 app.use('/api/coach', coachSettingsRouter);
 app.use('/api/copilot', copilotToolsRouter);
+app.use('/api/copilot', copilotActionsRouter);
 app.use('/api/voice', voicePreviewRouter);
 
 initializeLearningLoop();

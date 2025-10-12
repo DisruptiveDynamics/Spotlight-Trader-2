@@ -69,7 +69,7 @@ export async function proposeCallout(
     timeframe: params.context.timeframe,
     kind: params.kind,
     setupTag: params.context.setupTag,
-    rationale: params.context.rationale,
+    rationale: [params.context.rationale],
     qualityGrade,
     urgency,
     rulesPass: true,

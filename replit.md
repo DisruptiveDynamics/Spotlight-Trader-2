@@ -52,6 +52,34 @@ Focuses on professional ergonomics:
 - **Accessibility**: Color vision presets and High Contrast Mode.
 - **Performance Safeguards**: UI debouncing, microbar coalescing, lazy loading, and event throttling.
 
+### Realtime Copilot System
+An intelligent trading assistant that provides real-time pattern recognition, proactive alerts, and trade assistance. Built on a deterministic event-driven architecture with SSE streaming for sub-200ms latency.
+
+**Core Components:**
+- **Telemetry Bus**: EventEmitter bridge streaming market deltas from BarBuilder to copilot tools
+- **Tool Registry**: 10 tool contracts with strict TypeScript types (chart snapshot, market stream, callouts, entry/exit proposals, rules evaluation, journal events, session summary, pattern stats, risk box, trade plan)
+- **Tool Handlers**: Server-side implementations delegating to Pattern Memory, Rules Sentinel, and database
+- **Copilot Broadcaster**: SSE event bus pushing real-time callouts from tool handlers to CalloutsOverlay UI
+- **Rules Sentinel**: Risk governance with position limits, quality gates, circuit breakers (2-loss cooldown, daily-loss hard stop)
+- **Pattern Memory**: Cached lookup service querying aggregated pattern stats (win rate, EV-R, MAE/MFE, false break rates, volume/range z-scores)
+- **Trigger Engine**: BaseTrigger foundation with state machine (idle→primed→fired→cooldown) and hysteresis logic
+
+**Database Schema Extensions:**
+- `pattern_stats`: Symbol/timeframe/setup performance metrics with 1-hour cache TTL
+- `callouts`: Copilot proposals with quality grade, urgency, rules validation
+- `journal_events`: Enhanced journaling for entry/exit/decision/note events
+
+**UI Components:**
+- `CalloutsOverlay`: SSE-connected overlay displaying real-time copilot alerts with urgency color-coding and dismiss actions
+- Integrated into App.tsx with lazy loading and Suspense boundaries
+
+**API Routes:**
+- `/api/copilot/*`: Tool handler endpoints for all 10 tools
+- `/api/copilot/callouts/stream`: SSE endpoint with heartbeat for real-time callout delivery
+- `/api/copilot/test/trigger-callout`: Test endpoint demonstrating tool→broadcaster→UI flow
+
+**Status**: Phase 1 infrastructure ~85% complete. Real-time callouts flowing end-to-end. Next: voice integration, trigger implementations, session manager.
+
 ## External Dependencies
 
 ### Third-Party APIs

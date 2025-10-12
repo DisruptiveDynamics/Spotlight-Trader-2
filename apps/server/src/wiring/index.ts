@@ -12,6 +12,41 @@ import { getMarketSource, getMarketReason } from '@server/market/bootstrap';
 import { isRthOpen } from '@server/market/session';
 
 const DEFAULT_FAVORITES = ['SPY', 'QQQ'];
+const DEFAULT_TIMEFRAME = '1m';
+
+// Track active timeframe subscriptions per symbol
+const activeSubscriptions = new Map<string, string>();
+// Track bar listeners to properly remove them
+const barListeners = new Map<string, (bar: any) => void>();
+
+function subscribeSymbolTimeframe(symbol: string, timeframe: string) {
+  // Unsubscribe from old timeframe if exists
+  const oldTimeframe = activeSubscriptions.get(symbol);
+  if (oldTimeframe) {
+    barBuilder.unsubscribe(symbol, oldTimeframe);
+    
+    // Remove old bar listener using stored reference
+    const oldListener = barListeners.get(symbol);
+    if (oldListener) {
+      eventBus.off(`bar:new:${symbol}:${oldTimeframe}` as any, oldListener);
+    }
+  }
+
+  // Subscribe to new timeframe
+  barBuilder.subscribe(symbol, timeframe);
+  
+  // Create and store bar listener reference for proper cleanup
+  const barListener = (bar: any) => {
+    ringBuffer.putBars(symbol, [bar]);
+  };
+  barListeners.set(symbol, barListener);
+  
+  // Listen to bar events for this timeframe
+  eventBus.on(`bar:new:${symbol}:${timeframe}` as any, barListener);
+
+  activeSubscriptions.set(symbol, timeframe);
+  console.log(`📊 Subscribed ${symbol} to ${timeframe} timeframe`);
+}
 
 export function initializeMarketPipeline(app: Express) {
   polygonWs.connect();
@@ -22,11 +57,7 @@ export function initializeMarketPipeline(app: Express) {
 
   for (const symbol of DEFAULT_FAVORITES) {
     polygonWs.subscribe(symbol);
-    barBuilder.subscribe(symbol);
-
-    eventBus.on(`bar:new:${symbol}:1m` as const, (bar) => {
-      ringBuffer.putBars(symbol, [bar]);
-    });
+    subscribeSymbolTimeframe(symbol, DEFAULT_TIMEFRAME);
   }
 
   app.get('/api/history', async (req, res) => {
@@ -68,6 +99,34 @@ export function initializeMarketPipeline(app: Express) {
   });
 
   app.get('/stream/market', sseMarketStream);
+
+  // Endpoint to change timeframe for a symbol
+  app.post('/api/chart/timeframe', (req, res) => {
+    try {
+      const { symbol, timeframe } = req.body;
+
+      if (!symbol || typeof symbol !== 'string') {
+        return res.status(400).json({ error: 'symbol is required' });
+      }
+
+      const validTimeframes = ['1m', '2m', '5m', '10m', '15m', '30m', '1h'];
+      if (!timeframe || !validTimeframes.includes(timeframe)) {
+        return res.status(400).json({ error: 'Invalid timeframe' });
+      }
+
+      subscribeSymbolTimeframe(symbol.toUpperCase(), timeframe);
+
+      res.json({ 
+        success: true, 
+        symbol: symbol.toUpperCase(), 
+        timeframe,
+        message: `Switched to ${timeframe} timeframe for ${symbol}`
+      });
+    } catch (err) {
+      console.error('Timeframe change error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
 
   app.get('/api/market/status', (_req, res) => {
     const source = getMarketSource();

@@ -13,6 +13,7 @@ import { getMarketSource, getMarketReason } from '@server/market/bootstrap';
 export async function sseMarketStream(req: Request, res: Response) {
   const symbolsParam = (req.query.symbols as string) || 'SPY';
   const symbols = symbolsParam.split(',').map((s) => s.trim().toUpperCase());
+  const timeframe = (req.query.timeframe as string) || '1m'; // Allow client to specify timeframe
   const sinceSeq = req.query.sinceSeq ? parseInt(req.query.sinceSeq as string, 10) : undefined;
 
   res.setHeader('Content-Type', 'text/event-stream');
@@ -30,7 +31,7 @@ export async function sseMarketStream(req: Request, res: Response) {
 
   if (sinceSeq !== undefined) {
     for (const symbol of symbols) {
-      const backfill = await getHistory({ symbol, sinceSeq });
+      const backfill = await getHistory({ symbol, timeframe: timeframe as any, sinceSeq });
       for (const bar of backfill) {
         bpc.write(
           'bar',
@@ -40,13 +41,7 @@ export async function sseMarketStream(req: Request, res: Response) {
             seq: bar.seq,
             bar_start: bar.bar_start,
             bar_end: bar.bar_end,
-            ohlcv: {
-              open: bar.open,
-              high: bar.high,
-              low: bar.low,
-              close: bar.close,
-              volume: bar.volume,
-            },
+            ohlcv: bar.ohlcv,
           },
           String(bar.seq)
         );
@@ -96,13 +91,7 @@ export async function sseMarketStream(req: Request, res: Response) {
           seq: data.seq,
           bar_start: data.bar_start,
           bar_end: data.bar_end,
-          ohlcv: {
-            open: data.open,
-            high: data.high,
-            low: data.low,
-            close: data.close,
-            volume: data.volume,
-          },
+          ohlcv: data.ohlcv,
         },
         String(data.seq)
       );
@@ -120,13 +109,15 @@ export async function sseMarketStream(req: Request, res: Response) {
       });
     };
 
+    const barEventKey = `bar:new:${symbol}:${timeframe}`;
+    
     eventBus.on(`microbar:${symbol}` as const, microbarHandler);
-    eventBus.on(`bar:new:${symbol}:1m` as const, barHandler);
+    eventBus.on(barEventKey as any, barHandler);
     eventBus.on(`tick:${symbol}` as const, tickHandler);
 
     listeners.push(
       { event: `microbar:${symbol}`, handler: microbarHandler },
-      { event: `bar:new:${symbol}:1m`, handler: barHandler },
+      { event: barEventKey, handler: barHandler },
       { event: `tick:${symbol}`, handler: tickHandler }
     );
   }

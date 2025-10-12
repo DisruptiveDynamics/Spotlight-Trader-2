@@ -26,6 +26,8 @@ export class BarBuilder {
   private microbarInterval = 50; // Ultra-smooth 20 updates/sec (TOS-level)
   private microbarTimers = new Map<string, NodeJS.Timeout>();
   private barFinalizeTimers = new Map<string, NodeJS.Timeout>();
+  // Track tick listeners to properly remove them
+  private tickListeners = new Map<string, (tick: Tick) => void>();
 
   private floorToExchangeMinute(tsMs: number, barMinutes: number = 1): number {
     const d = toZonedTime(new Date(tsMs), ET);
@@ -64,7 +66,11 @@ export class BarBuilder {
       timeframeMs,
     });
 
-    eventBus.on(`tick:${symbol}` as const, (tick) => this.handleTick(symbol, timeframe, tick));
+    // Create and store tick listener reference for proper cleanup
+    const tickListener = (tick: Tick) => this.handleTick(symbol, timeframe, tick);
+    this.tickListeners.set(stateKey, tickListener);
+    
+    eventBus.on(`tick:${symbol}` as const, tickListener);
     this.startMicrobarTimer(symbol, timeframe);
     this.startBarFinalizeTimer(symbol, timeframe);
   }
@@ -81,12 +87,23 @@ export class BarBuilder {
 
   unsubscribe(symbol: string, timeframe: string = '1m') {
     const stateKey = `${symbol}:${timeframe}`;
+    
+    // Remove tick listener using stored reference
+    const tickListener = this.tickListeners.get(stateKey);
+    if (tickListener) {
+      eventBus.off(`tick:${symbol}` as any, tickListener);
+      this.tickListeners.delete(stateKey);
+    }
+    
+    // Clean up state and timers
     this.states.delete(stateKey);
+    
     const microTimer = this.microbarTimers.get(stateKey);
     if (microTimer) {
       clearInterval(microTimer);
       this.microbarTimers.delete(stateKey);
     }
+    
     const finalizeTimer = this.barFinalizeTimers.get(stateKey);
     if (finalizeTimer) {
       clearInterval(finalizeTimer);
@@ -152,8 +169,7 @@ export class BarBuilder {
     state.microbars = [];
 
     // Emit with dynamic timeframe in event name
-    // Type cast needed for dynamic event key pattern
-    (eventBus as any).emit(`bar:new:${symbol}:${timeframe}`, finalizedBar);
+    eventBus.emit(`bar:new:${symbol}:${timeframe}` as any, finalizedBar);
   }
 
   private startMicrobarTimer(symbol: string, timeframe: string = '1m') {

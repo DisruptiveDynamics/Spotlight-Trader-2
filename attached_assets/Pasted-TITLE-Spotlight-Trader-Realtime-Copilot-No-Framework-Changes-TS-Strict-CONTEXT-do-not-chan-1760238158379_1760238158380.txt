@@ -1,0 +1,118 @@
+TITLE: Spotlight Trader — Realtime Copilot (No Framework Changes, TS Strict)
+
+CONTEXT (do not change)
+- Monorepo with client = React + TypeScript, server = Node + WebSocket proxy for OpenAI Realtime.
+- Existing data pipeline with live ticks and Polygon aggregates; timeframe control above the chart; env uses VITE_* on client.
+- Keep existing state manager and routing; preserve bubble UI location and semantics; do not rename folders or introduce new frameworks.
+
+MISSION
+Implement a low-latency, single-session realtime copilot that: (1) observes charts and indicators in real time, (2) speaks naturally (primary voice “shimmer”, fallback allowed) with hard barge-in, (3) issues concise callouts and proposes entries/exits with stops/targets and R/R, (4) auto-journals decisions and outcomes, (5) follows a versioned rule set, (6) proactively focuses on the top 5–10 favorites, and (7) uses weekly/bi-weekly/monthly pattern mining to calibrate thresholds. Zero regressions.
+
+HARD CONSTRAINTS
+- Do NOT change frameworks, folder structure, routers, or state manager. Reuse our stores/contexts; no prop-drill storms.
+- TypeScript strict everywhere; ESLint/Prettier clean; no implicit any; exhaustive switch/guards; no dead code.
+- No secrets in the client; reuse existing env conventions (e.g., VITE_POLYGON_KEY). Keep our WS proxy path unchanged unless already configurable.
+- Keep modules small/cohesive; no UI coupling from server/domain code.
+- No auto-trading. Demo vs Live must be feature-flagged and visible.
+
+A) REALTIME SESSION & VOICE (client + server proxy)
+- Exactly ONE OpenAI Realtime session per browser tab. Prevent duplicates via sessionId + seq dedupe and strict teardown.
+- Voice: primary = "shimmer", with fallback if unavailable. Voice changes must use session.update on the SAME upstream session and cancel/flush any in-flight speech once (no overlap).
+- Implement barge-in: when user speaks, TTS stops immediately. Single-click toggles mute/unmute; double-click fully disconnects; bubble color reflects: idle, connecting, listening, speaking, muted, error.
+- Fix any bootstrap errors (e.g., “missing required parameter: session.type”) by supplying current required fields per model. Reconnect with exponential backoff and stale-session protection.
+- Dev-only structured logs for connect/update/disconnect/error; no sensitive data in logs.
+
+B) ASSISTANT TOOL SURFACE (server — typed, compact, stable contracts)
+Expose tools callable by the assistant; keep payloads small, types strict, and never leak secrets:
+1) get_chart_snapshot(symbol, timeframe, lookback)
+   → last N bars + indicators (VWAP/AVWAPs, EMA/RSI/ATR), session high/low, volatility bucket, regime tag.
+2) subscribe_market_stream(symbol, timeframe)
+   → stream normalized deltas from our Telemetry Bus (bar:new/update, indicator updates, session levels).
+3) propose_callout(kind, context)
+   → create a structured callout (setup tag, rationale bullets, quality grade, urgency).
+4) propose_entry_exit(entry|exit, price, stop, target1, target2, rationale, rules_ref)
+   → returns proposal w/ R math and Rules Sentinel results; triggers UI notification for Accept/Reject.
+5) evaluate_rules(context)
+   → pass/fail per rule with traces (risk caps, cooldowns, do-not-trade windows, regime filters).
+6) log_journal_event(type, payload)
+   → append-only journal (symbol/tf, indicators, proposal/decision, MAE/MFE, realized R, short “why/why not”).
+7) summarize_session(range)
+   → concise EOD summary with expectancy by setup, rule violations, and tomorrow’s focus list.
+8) get_pattern_summary(symbol, timeframe)
+   → last 5/10/20 day stats for each setup (win rate, EV in R, MAE/MFE percentiles, time-to-±1R, false-break rate, volume/range z-scores by minute bucket, ATR percentile, PDH/PDL & VWAP/AVWAP behaviors).
+9) get_recommended_risk_box(symbol, timeframe, setup)
+   → structure/ATR-aligned stop and T1/T2 targets sized by recent MAE/MFE distribution; include expected hold-time.
+10) generate_trade_plan(symbol, timeframe)
+   → premarket plan for a symbol (levels, AVWAPs, HVN/LVN, ATR, 3-bullet game plan).
+11) set_voice(voiceId="shimmer"), speak(text), mute(), unmute().
+
+C) TELEMETRY BUS (server domain + client bridge)
+- Create/extend a lightweight event bus fed by our existing data layer (NOT the UI). Events: {bar:new|update}, {tick}, {indicator: VWAP/AVWAP/EMA/RSI/ATR}, {levels: sessionHigh/Low}, {volatility: bucket}, {breadth for index names}, {timeframe: changed}, {symbol: changed}.
+- The assistant subscribes via subscribe_market_stream; stream only compact deltas.
+
+D) INDICATOR WORKER (client)
+- Move indicator/feature computation off the UI thread into a Web Worker. Publish narrow diffs to the Telemetry Bus. Budget: 5–15 ms per update. Avoid large copies.
+
+E) TRIGGER ENGINE (server domain)
+- Declarative triggers with anti-chop hysteresis and cooldowns:
+  • 1–2m ORB with volume surge and no immediate 1R rejection.
+  • VWAP reclaim/reject (require 2 closes + delta confirmation).
+  • Trend pullback to 9/20 EMA with shrinking pullback volume.
+  • Range break from LVN/HVN with expansion.
+  • PDH/PDL break + hold (not a tick-through).
+- Use per-symbol time-of-day baselines with z-scores (volume, bar range). Include market regime and breadth filters for index names.
+
+F) RULES SENTINEL (server domain)
+- Versioned Rules Registry (risk per trade/day, A+ criteria, max concurrent positions, time-of-day filters). Apply to every proposal and return pass/fail with reasons. Daily circuit breakers (e.g., 2 consecutive losers → cooldown; daily loss limit → hard stop with audible confirmation).
+
+G) HINT ENGINE (server domain)
+- Maintain an “attention score” for the user’s top 5–10 favorites (momentum, liquidity, proximity to level, setup preconditions, regime alignment). When threshold passes, proactively request a snapshot and prep a plan (entry zone, stop, T1/T2, expected hold-time, quality).
+
+H) PATTERN MEMORY (server; nightly + cached for premarket)
+- Nightly aggregation over last 5/10/20 sessions keyed by (symbol, timeframe, setup, regime). Store: win rate, EV(R), MAE/MFE p50/p80, time-to-±1R, false-break rate, volume/range z-scores by minute bucket, AVWAP/PDH/PDL behaviors, ATR percentile, breadth-adjusted results.
+- At runtime, triggers/assistant look up rows to set thresholds, confidence, and risk box. No heavy compute on the hot path.
+
+I) COPILOT UX (client)
+- Preserve bubble semantics: from idle/error → single-click connects; when connected → single-click mutes/unmutes; double-click always disconnects. Bubble color maps to state (idle/connecting/listening/speaking/muted/error); add accessible labels/tooltips.
+- Add a minimal “Callouts” overlay showing active proposals with Accept/Reject and Snooze 30s. Accept → auto-journal; Reject → log reason. Keep voice callouts ≤4 seconds; longer context goes to journal.
+
+J) TIMEFRAME & HISTORY GUARANTEES
+- On symbol or timeframe change, fetch sufficient historical backfill (configurable, default ~60–90 intraday days) using minute timespan with correct multiplier (1,2,5,10,15,30,60). Use env for keys; no hardcoding.
+- Live ticks aggregate deterministically into the selected timeframe; fix any prior “~20 bar stall” by ensuring rollover at correct boundaries. Assistant consumes the same timeframe truth as the chart.
+
+K) PERFORMANCE & RELIABILITY TARGETS
+- Tick → spoken callout median <150 ms; target lead time ≥2–5 s for ORB/VWAP conditions when feasible.
+- O(1) bar updates; stream deltas only; memoize to avoid unnecessary chart re-renders.
+- Reconnect with exponential backoff; stale session protection; idempotent handlers; no memory leaks or duplicate WS connections.
+
+L) PRIVACY & SAFETY
+- No order placement; phrasing must be “proposed” not “executed.” No PII in logs. Demo vs Live feature flag respected end-to-end.
+
+M) TESTING & QA
+- Unit tests: timeframe bucketing math; monotonic bar creation; trigger hysteresis/cooldowns; rule evaluation; pattern EV/MAE/MFE aggregation.
+- Playback harness: 6.5-hour intraday simulations (trend, chop, news spike). Measure alert precision/recall, false-alarm ratio, lead time, and decision latency.
+- Voice tests: barge-in responsiveness, single-session integrity, session.update on voice change, no overlapping audio.
+
+N) ACCEPTANCE CRITERIA (manual)
+1) Voice Session
+   - Single session; “shimmer” active by default; voice change via session.update only; no duplicate audio; immediate barge-in.
+   - Bubble: single-click mute/unmute (or connect from idle), double-click disconnect; color states correct and tooltips present.
+
+2) Charts & Timeframes
+   - Selecting 1m/2m/5m/10m/15m/30m/1h reloads history for that timeframe and continues live seamlessly; no frozen last bar.
+
+3) Proposals & Rules
+   - Callouts include: setup tag, 3-bullet rationale, entry zone, stop, T1/T2 with R multiples, invalidation, quality grade (A/B/C), urgency (now/next bar/low), and rule pass/fail with reasons. Accept auto-journals.
+
+4) Pattern Memory Utilization
+   - Callouts cite last-10 stats (EV in R, MAE p50, time-to-T1 p50). Thresholds adapt across the week without manual tuning.
+
+5) Proactive Focus
+   - For top 5–10 favorites, Hint Engine pre-alerts when conditions coalesce and prepares a fast plan (risk, invalidation, targets).
+
+6) Performance
+   - Tick→callout median <150 ms; A-setup false-alarm ratio <10%; ≥60–65% of A-tagged proposals reach ≥1R before stop in matching regimes (measured in playback).
+
+DELIVERY
+- Single focused PR with docs: event schemas, tool contracts, how to run tests and playback harness, manual test checklist.
+- Keep CI green; run full typecheck/lint/tests. Maintain all existing features (alerts, journaling UI, rules engine) unless explicitly adjusted to integrate the copilot.

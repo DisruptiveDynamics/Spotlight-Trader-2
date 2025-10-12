@@ -6,6 +6,7 @@ import { setupSecurity } from './config/security';
 import { initializeMarketPipeline } from './wiring';
 import { setupVoiceProxy } from './realtime/voiceProxy';
 import { setupVoiceTokenRoute } from './routes/voiceToken';
+import { setupNexaKnowledgeRoutes } from './routes/nexaKnowledge';
 import { rulesRouter } from './routes/rules';
 import journalsRouter from './routes/journals';
 import memoryRouter from './routes/memory';
@@ -69,6 +70,7 @@ app.use('/api/admin', adminRouter);
 initializeMarketPipeline(app);
 initializeTelemetryBridge();
 setupVoiceTokenRoute(app);
+setupNexaKnowledgeRoutes(app);
 setupVoiceProxy(app, server);
 
 app.use('/api', rulesRouter);

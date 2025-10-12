@@ -111,6 +111,65 @@ An intelligent trading assistant that provides real-time pattern recognition, pr
 
 **Status**: Phase 1, 2 & 3 complete. Trigger system operational with sub-200ms latency. Voice integration fully wired with tool calling and callout streaming.
 
+### AI Intelligence & Proactive Coaching (Phase 4 Complete)
+Enhanced the AI coach with unrestricted tool usage, memory integration, trader behavior analysis, and proactive market monitoring for maximum intelligence and helpfulness.
+
+**Coach Policy Enhancements:**
+- **Unrestricted Tool Usage**: Removed all restrictions - coach freely calls multiple tools per response for comprehensive market awareness
+- **Proactive Instructions**: Explicit guidelines for using tools proactively, checking data before responding, auto-journaling decisions
+- **Pattern Formation Focus**: Detect setups FORMING (not just formed) for early warnings
+- **Trader Mistake Tracking**: Pre-warn about behavioral patterns before they become problems
+- **Platform Positioning**: Coach is ALONGSIDE trading platform (no execution features)
+
+**Voice Memory Bridge** (`apps/server/src/coach/voiceMemoryBridge.ts`):
+- Auto-captures insights from voice conversations to pgvector memory store
+- Three capture types: setup learnings (A-grade), trader patterns (behavioral), mistakes (lessons)
+- 30-second buffer with automatic flush for efficient batch writes
+- Graceful shutdown handling ensures no data loss
+- Semantic retrieval via OpenAI embeddings for contextual coaching
+
+**Trader Pattern Detector** (`apps/server/src/coach/traderPatternDetector.ts`):
+- Analyzes 7-day journal history with 2+ occurrence threshold
+- Detects 5 behavioral patterns:
+  - **Late Entry**: Entries after ideal setup window
+  - **Chasing**: Pursuing breakouts after momentum shift
+  - **FOMO**: Fear-driven entries without confirmation
+  - **Oversizing**: Position size beyond risk parameters
+  - **Revenge Trading**: Back-to-back trades within 30min after losses
+- Severity scoring (low/medium/high) with specific recommendations
+- Auto-saves patterns to memory for persistent learning
+
+**Proactive Coaching Engine** (`apps/server/src/coach/proactiveCoaching.ts`):
+- Event-driven market monitoring via telemetry bus
+- Real-time alert detection:
+  - **Volume Surge**: >150% of average (potential breakout forming)
+  - **Volume Divergence**: Price rising but volume declining (weakness signal)
+  - **Tape Slowdown**: Volume <70% average AND range <50% ATR (wait for expansion)
+  - **Regime Shift**: Trend/volatility state changes (adjust strategy)
+  - **Pattern Formation**: VWAP approach, EMA pullback (early setup detection)
+- 60-second cooldown per alert type prevents spam
+- Direct integration with copilotBroadcaster → VoiceCalloutBridge → Voice sessions
+
+**Intelligence Flow:**
+```
+Market Ticks → Telemetry Bus → Proactive Coaching Engine → Alerts
+                             ↓
+Journal Events → Trader Pattern Detector → Warnings → Voice Memory
+                             ↓
+Voice Tool Calls → Memory Bridge → Pgvector (semantic retrieval)
+                             ↓
+CopilotBroadcaster → VoiceCalloutBridge → Voice speaks coaching
+```
+
+**Key Features:**
+- Zero restrictions on AI tool usage for maximum intelligence
+- Automatic memory capture from voice interactions
+- Behavioral pattern detection with actionable recommendations
+- Proactive market alerts delivered through voice interface
+- Sub-200ms latency maintained throughout intelligence pipeline
+
+**Status**: Phase 4 complete. AI coach operates with maximum intelligence, proactive awareness, and continuous learning from trader behavior.
+
 ## External Dependencies
 
 ### Third-Party APIs

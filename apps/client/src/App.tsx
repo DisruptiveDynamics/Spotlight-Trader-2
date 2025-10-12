@@ -10,6 +10,7 @@ import type { InsightContext } from '@spotlight/shared';
 import { MarketStatus } from './features/hud/MarketStatus';
 import { useAuthStore } from './stores/authStore';
 import { SignIn } from './features/auth/SignIn';
+import { useChartState } from './state/chartState';
 
 // Lazy load heavy components for code-splitting
 const MultiChart = lazy(() =>
@@ -45,6 +46,7 @@ const LoadingFallback = () => (
 
 function App() {
   const user = useAuthStore((state) => state.user);
+  const { active } = useChartState();
   const [focusMode, setFocusMode] = useState(focusManager.getMode());
   const [explainPanelOpen, setExplainPanelOpen] = useState(false);
   const [explainContext, setExplainContext] = useState<InsightContext | null>(null);
@@ -189,7 +191,7 @@ function App() {
               {/* Time & Sales Tape Panel */}
               <div className="h-96">
                 <Suspense fallback={<LoadingFallback />}>
-                  <TapePanel symbol="SPY" maxTicks={100} />
+                  <TapePanel symbol={active.symbol} maxTicks={100} />
                 </Suspense>
               </div>
 

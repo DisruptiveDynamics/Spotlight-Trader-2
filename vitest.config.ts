@@ -4,7 +4,6 @@ import { fileURLToPath } from 'url';
 export default defineConfig({
   resolve: {
     alias: {
-      // monorepo aliases (adjust if your structure differs)
       '@shared': fileURLToPath(new URL('./packages/shared/src', import.meta.url)),
       '@server': fileURLToPath(new URL('./apps/server/src', import.meta.url)),
       '@client': fileURLToPath(new URL('./apps/client/src', import.meta.url)),
@@ -15,6 +14,7 @@ export default defineConfig({
     css: false,
   },
   projects: [
+    // Server: pure Node
     defineProject({
       test: {
         name: 'server',
@@ -22,11 +22,16 @@ export default defineConfig({
         include: ['apps/server/src/**/*.test.ts'],
       },
     }),
+
+    // Client: jsdom + setup for DOM-ish APIs
     defineProject({
       test: {
         name: 'client',
         environment: 'jsdom',
-        include: ['apps/client/src/**/*.test.ts', 'apps/client/src/**/*.test.tsx'],
+        include: [
+          'apps/client/src/**/*.test.ts',
+          'apps/client/src/**/*.test.tsx'
+        ],
         setupFiles: ['./test/setup.client.ts'],
       },
     }),

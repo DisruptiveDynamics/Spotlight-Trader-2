@@ -68,6 +68,9 @@ export class BarBuilder {
       timeframeMs,
     });
 
+    // Initialize seq counter for this symbol/timeframe
+    this.lastSeq.set(stateKey, 0);
+
     // Create and store tick listener reference for proper cleanup
     const tickListener = (tick: Tick) => this.handleTick(symbol, timeframe, tick);
     this.tickListeners.set(stateKey, tickListener);
@@ -151,8 +154,9 @@ export class BarBuilder {
     if (!state.currentBar) return;
 
     const stateKey = `${symbol}:${timeframe}`;
-    const prevSeq = this.lastSeq.get(stateKey) ?? Math.floor(state.bar_start / state.timeframeMs) - 1;
-    const seq = prevSeq + 1;
+    // Increment seq strictly (initialized to 0 in subscribe)
+    const currentSeq = this.lastSeq.get(stateKey) ?? 0;
+    const seq = currentSeq + 1;
     this.lastSeq.set(stateKey, seq);
 
     const finalizedBar: Bar = {

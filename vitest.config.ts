@@ -9,34 +9,30 @@ export default defineConfig({
       '@client': fileURLToPath(new URL('./apps/client/src', import.meta.url)),
     },
   },
-  // Shared defaults
-  test: {
-    globals: true,
-    css: false,
-  },
+  test: { globals: true, css: false },
+
   projects: [
-    // Server tests (node)
     defineProject({
+      name: 'server',
+      root: fileURLToPath(new URL('./apps/server', import.meta.url)),
       test: {
-        name: 'server',
         environment: 'node',
-        // cover both *.test.* and __tests__ patterns
         include: [
-          'apps/server/src/**/*.{test,spec}.{ts,tsx,js,jsx}',
-          'apps/server/src/**/__tests__/**/*.{ts,tsx,js,jsx}',
+          'src/**/*.{test,spec}.{ts,tsx,js,jsx}',
+          'src/**/__tests__/**/*.{ts,tsx,js,jsx}',
         ],
       },
     }),
 
-    // Client tests (jsdom + setup)
     defineProject({
+      name: 'client',
+      root: fileURLToPath(new URL('./apps/client', import.meta.url)),
       test: {
-        name: 'client',
         environment: 'jsdom',
-        setupFiles: ['./test/setup.client.ts'],
+        setupFiles: ['../../test/setup.client.ts'], // path from apps/client/
         include: [
-          'apps/client/src/**/*.{test,spec}.{ts,tsx,js,jsx}',
-          'apps/client/src/**/__tests__/**/*.{ts,tsx,js,jsx}',
+          'src/**/*.{test,spec}.{ts,tsx,js,jsx}',
+          'src/**/__tests__/**/*.{ts,tsx,js,jsx}',
         ],
       },
     }),

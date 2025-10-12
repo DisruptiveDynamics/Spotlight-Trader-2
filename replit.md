@@ -4,7 +4,16 @@
 Spotlight Trader is a production-grade, real-time trading coach application designed for high-frequency day traders. It provides real-time market data, AI-powered voice coaching, a rule-based trading alert system, and comprehensive journaling. The application focuses on professional trader ergonomics with zero-lag, keyboard-first control, institutional-grade hotkeys, focus modes, latency monitoring, and accessibility. Its primary goal is to deliver immediate insights and coaching to improve trading performance and efficiency, with a business vision to empower traders with cutting-edge AI and real-time analytics.
 
 ## Recent Changes
-**October 12, 2025** - Fixed voice assistant data access and upgraded model:
+**October 12, 2025** - Nexa 2.0: Persistent Memory & Knowledge Upload System:
+- **Nexa Identity**: Voice coach now has persistent identity ("Nexa", she/her pronouns, warm personality) stored in coach_profiles table
+- **Knowledge Upload Pipeline**: Users can teach Nexa via YouTube videos, PDFs, and text notes with semantic chunking and OpenAI embeddings
+- **API Endpoints**: `/api/nexa/upload/*` (YouTube/PDF/text), `/api/nexa/uploads` (history), `/api/nexa/preferences` (GET/PUT/PATCH)
+- **Memory Retrieval**: Session context now includes top-5 knowledge chunks from user uploads, token-budgeted to ~400 tokens
+- **Preferences Sync**: Database-backed user preferences (favoriteSymbols, focusMode, signalDensity, signalAudio, colorVision, highContrast, notifications)
+- **Smart Isolation**: Knowledge memories excluded from playbook/glossary/postmortem retrieval to prevent pollution
+- **Deep Merge Logic**: PATCH endpoint properly merges nested preference objects without data loss
+
+**Earlier (October 12, 2025)** - Fixed voice assistant data access and upgraded model:
 - Wired `get_chart_snapshot` tool to ring buffer for real-time market data
 - Voice assistant now has access to: bars, VWAP, EMAs (9/21), session stats, volatility, regime detection
 - All 7 voice tools properly connected to live data sources
@@ -42,7 +51,14 @@ Built with React 18 and TypeScript, using Lightweight Charts, Zustand for state 
 Facilitates strategy automation and AI explanations through Expression Evaluation, Signal Generation with Risk Governance, and AI Explanation Generation using the OpenAI API.
 
 ### Journaling & Memory System
-Provides structured trade tracking and automated end-of-day summaries. The Coach Memory System uses Pgvector to store and retrieve `playbook`, `glossary`, and `postmortem` memories with OpenAI embeddings.
+Provides structured trade tracking and automated end-of-day summaries. The Coach Memory System uses Pgvector to store and retrieve `playbook`, `glossary`, `postmortem`, and `knowledge` memories with OpenAI embeddings.
+
+**Knowledge Upload System** (Nexa 2.0):
+- **Multi-Source Ingestion**: YouTube transcripts (via @xenova/transformers), PDFs (pdf-parse), and raw text
+- **Processing Pipeline**: Source extraction → semantic chunking (500 tokens, 50 overlap) → batch embeddings → vector storage
+- **Smart Retrieval**: Knowledge queries use cosine similarity search, returning top-k chunks with source metadata
+- **Session Integration**: Voice sessions auto-inject relevant knowledge (token-budgeted ~400 tokens) alongside personal memories
+- **Upload Tracking**: knowledgeUploads table tracks processing status, chunk count, and metadata per source
 
 ### Continuous Learning Loop & Backtesting
 An event-driven system with in-memory feature flags and a database schema for user feedback. A deterministic backtest harness runs historical data against the same evaluator as live trading.
@@ -90,3 +106,4 @@ Enhanced AI coach with unrestricted tool usage, memory integration, trader behav
 - **Communication**: `@openai/agents`, `ws`, `express`.
 - **Frontend**: `react`, `react-dom`, `lightweight-charts`, `tailwindcss`.
 - **Journaling & Memory**: `nanoid`, `node-cron`, `pgvector`.
+- **Knowledge Processing**: `@xenova/transformers`, `pdf-parse`, `multer`, `youtube-transcript`.

@@ -78,10 +78,10 @@ export interface EntryExitProposal {
   price: number;
   stop: number;
   target1: number;
-  target2?: number;
+  target2?: number | undefined;
   rMultiples: {
     target1: number;
-    target2?: number;
+    target2?: number | undefined;
   };
   rationale: string;
   rulesPass: boolean;
@@ -106,11 +106,11 @@ export interface RulesEvaluation {
   rules: Array<{
     name: string;
     pass: boolean;
-    reason?: string;
+    reason?: string | undefined;
   }>;
   circuitBreaker: {
     active: boolean;
-    reason?: string;
+    reason?: string | undefined;
   };
 }
 
@@ -125,6 +125,8 @@ export interface LogJournalEventParams {
     mae?: number;
     mfe?: number;
     realizedR?: number;
+    rulesRef?: string;
+    qualityGrade?: string;
     reasoning: string;
   };
 }

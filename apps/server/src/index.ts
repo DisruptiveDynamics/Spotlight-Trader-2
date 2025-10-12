@@ -26,6 +26,7 @@ import { startEodScheduler } from './journals/eod';
 import { initializeLearningLoop } from './learning/loop';
 import { loadFlags } from './flags/store';
 import { initializeMarketSource } from './market/bootstrap';
+import { initializeTelemetryBridge } from './telemetry/bridge';
 
 const env = validateEnv(process.env);
 const app = express();
@@ -59,6 +60,7 @@ app.use('/api/metrics', metricsRouter);
 app.use('/api/admin', adminRouter);
 
 initializeMarketPipeline(app);
+initializeTelemetryBridge();
 setupVoiceTokenRoute(app);
 setupVoiceProxy(app, server);
 

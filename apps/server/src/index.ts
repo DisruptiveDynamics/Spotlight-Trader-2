@@ -20,6 +20,7 @@ import authRouter from './routes/auth';
 import exportRouter from './routes/export';
 import importRouter from './routes/import';
 import coachSettingsRouter from './routes/coachSettings';
+import { copilotToolsRouter } from './routes/copilotTools';
 import { requireUser } from './middleware/requireUser';
 import { rateLimit } from './middleware/rateLimit';
 import { startEodScheduler } from './journals/eod';
@@ -74,6 +75,7 @@ app.use('/api/signals', signalsRouter);
 app.use('/api/export', exportRouter);
 app.use('/api/import', importRouter);
 app.use('/api/coach', coachSettingsRouter);
+app.use('/api/copilot', copilotToolsRouter);
 
 initializeLearningLoop();
 startEodScheduler();

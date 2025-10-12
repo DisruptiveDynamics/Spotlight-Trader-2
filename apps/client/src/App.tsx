@@ -20,6 +20,9 @@ const TapePanel = lazy(() => import('./components/TapePanel').then((m) => ({ def
 const PresenceBubble = lazy(() =>
   import('./features/coach/PresenceBubble').then((m) => ({ default: m.PresenceBubble }))
 );
+const CalloutsOverlay = lazy(() =>
+  import('./features/copilot/CalloutsOverlay').then((m) => ({ default: m.CalloutsOverlay }))
+);
 const ExplainPanel = lazy(() =>
   import('./features/coach/ExplainPanel').then((m) => ({ default: m.ExplainPanel }))
 );
@@ -227,6 +230,9 @@ function App() {
           />
         </Suspense>
         <MarketStatus />
+        <Suspense fallback={null}>
+          <CalloutsOverlay />
+        </Suspense>
         {showAdminConsole && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
             <div className="relative w-full max-w-7xl max-h-[90vh] overflow-auto">

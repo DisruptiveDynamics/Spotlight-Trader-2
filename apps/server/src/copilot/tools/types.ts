@@ -37,24 +37,24 @@ export interface SubscribeMarketStreamResult {
 }
 
 export interface ProposeCalloutParams {
-  kind: 'setup' | 'warning' | 'info';
+  kind: 'watch' | 'entry' | 'exit' | 'note';
   context: {
     symbol: string;
     timeframe: string;
     setupTag: string;
-    rationale: string[];
+    rationale: string;
     qualityGrade?: 'A' | 'B' | 'C';
-    urgency?: 'now' | 'next-bar' | 'low';
+    urgency?: 'now' | 'soon' | 'watch';
   };
 }
 
 export interface CalloutResult {
   id: string;
-  kind: 'setup' | 'warning' | 'info';
+  kind: 'watch' | 'entry' | 'exit' | 'note';
   setupTag: string;
-  rationale: string[];
+  rationale: string;
   qualityGrade: 'A' | 'B' | 'C';
-  urgency: 'now' | 'next-bar' | 'low';
+  urgency: 'now' | 'soon' | 'watch';
   timestamp: number;
 }
 

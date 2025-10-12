@@ -25,6 +25,7 @@ import { rulesSentinel } from '../sentinel';
 import { nanoid } from 'nanoid';
 import { db } from '@server/db';
 import { callouts, journalEvents } from '@server/db/schema';
+import { copilotBroadcaster } from '../broadcaster';
 
 export async function getChartSnapshot(
   params: GetChartSnapshotParams
@@ -72,8 +73,9 @@ export async function proposeCallout(
     rulesPass: true,
   });
 
-  return {
+  const calloutEvent = {
     id,
+    userId: 'demo-user',
     kind: params.kind,
     setupTag: params.context.setupTag,
     rationale: params.context.rationale,
@@ -81,6 +83,10 @@ export async function proposeCallout(
     urgency,
     timestamp: Date.now(),
   };
+
+  copilotBroadcaster.broadcastCallout(calloutEvent);
+
+  return calloutEvent;
 }
 
 export async function proposeEntryExit(

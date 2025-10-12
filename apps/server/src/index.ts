@@ -32,6 +32,8 @@ import { loadFlags } from './flags/store';
 import { triggerManager } from './copilot/triggers/manager';
 import { initializeMarketSource } from './market/bootstrap';
 import { initializeTelemetryBridge } from './telemetry/bridge';
+import { telemetryBus } from './telemetry/bus';
+import { proactiveCoachingEngine } from './coach/proactiveCoaching';
 
 const env = validateEnv(process.env);
 const app = express();
@@ -90,6 +92,10 @@ loadFlags();
 
 const sessionStartMs = new Date().setHours(9, 30, 0, 0);
 triggerManager.initialize(sessionStartMs);
+
+// Initialize proactive coaching engine
+proactiveCoachingEngine.setupMarketMonitoring(telemetryBus);
+console.log('✅ Proactive coaching engine initialized');
 
 // Error middleware - must be last, catches all route errors
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

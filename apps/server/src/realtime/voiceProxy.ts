@@ -11,6 +11,8 @@ import {
 } from '../metrics/registry';
 import { toolHandlers } from '../copilot/tools/handlers';
 import { voiceCalloutBridge } from './voiceCalloutBridge';
+import { voiceMemoryBridge } from '../coach/voiceMemoryBridge';
+import { traderPatternDetector } from '../coach/traderPatternDetector';
 
 const env = validateEnv(process.env);
 
@@ -274,6 +276,48 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
                     userId
                   }
                 });
+                
+                // Auto-capture insights to memory
+                if (args.reasoning) {
+                  // Capture setup learnings
+                  if (args.qualityGrade === 'A' && args.decision === 'accept') {
+                    await voiceMemoryBridge.captureSetupLearning(
+                      userId,
+                      args.symbol,
+                      args.timeframe,
+                      args.reasoning
+                    );
+                  }
+                  
+                  // Capture mistakes
+                  if (args.decision === 'reject' || args.reasoning.toLowerCase().includes('mistake')) {
+                    await voiceMemoryBridge.captureMistake(
+                      userId,
+                      args.reasoning,
+                      `Avoided on ${args.symbol}`
+                    );
+                  }
+                  
+                  // Check for trader patterns
+                  const patternWarning = await traderPatternDetector.checkForPattern(
+                    userId,
+                    args.symbol,
+                    args.decision,
+                    args.reasoning
+                  );
+                  
+                  if (patternWarning) {
+                    // Inject pattern warning into voice conversation
+                    upstreamWs.send(JSON.stringify({
+                      type: 'conversation.item.create',
+                      item: {
+                        type: 'message',
+                        role: 'user',
+                        content: [{ type: 'input_text', text: patternWarning }],
+                      },
+                    }));
+                  }
+                }
                 break;
               case 'generate_trade_plan':
                 result = await toolHandlers.generate_trade_plan(args);

@@ -26,6 +26,7 @@ import { nanoid } from 'nanoid';
 import { db } from '@server/db';
 import { callouts, journalEvents } from '@server/db/schema';
 import { copilotBroadcaster } from '../broadcaster';
+import { perfMonitor } from '../performance';
 
 export async function getChartSnapshot(
   params: GetChartSnapshotParams
@@ -56,6 +57,7 @@ export async function subscribeMarketStream(
 export async function proposeCallout(
   params: ProposeCalloutParams
 ): Promise<CalloutResult> {
+  const startTime = Date.now();
   const id = nanoid();
   const qualityGrade = params.context.qualityGrade || 'B';
   const urgency = params.context.urgency || 'now';
@@ -85,6 +87,7 @@ export async function proposeCallout(
   };
 
   copilotBroadcaster.broadcastCallout(calloutEvent);
+  perfMonitor.recordLatency('callout-broadcast', startTime);
 
   return calloutEvent;
 }

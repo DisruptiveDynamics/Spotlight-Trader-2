@@ -54,8 +54,36 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
   const handlePreviewVoice = async () => {
     setIsPlayingPreview(true);
-    // TODO: Implement voice preview API
-    setTimeout(() => setIsPlayingPreview(false), 2000);
+    try {
+      const response = await fetch('/api/voice/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voice: settings.voice }),
+      });
+
+      if (response.ok) {
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        
+        audio.onended = () => {
+          setIsPlayingPreview(false);
+          URL.revokeObjectURL(audioUrl);
+        };
+        
+        audio.onerror = () => {
+          setIsPlayingPreview(false);
+          URL.revokeObjectURL(audioUrl);
+        };
+
+        await audio.play();
+      } else {
+        setIsPlayingPreview(false);
+      }
+    } catch (error) {
+      console.error('Failed to preview voice:', error);
+      setIsPlayingPreview(false);
+    }
   };
 
   const getToneDescription = (preset: string) => {

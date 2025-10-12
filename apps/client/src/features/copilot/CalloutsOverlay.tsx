@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface Callout {
   id: string;
@@ -10,23 +10,68 @@ interface Callout {
   timestamp: number;
 }
 
+const MAX_CALLOUTS = 10;
+
 export function CalloutsOverlay() {
   const [callouts, setCallouts] = useState<Callout[]>([]);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
 
   useEffect(() => {
-    const eventSource = new EventSource('/api/copilot/callouts/stream');
+    const connect = () => {
+      if (eventSourceRef.current?.readyState === EventSource.OPEN) {
+        return;
+      }
 
-    eventSource.onmessage = (event) => {
-      const callout = JSON.parse(event.data) as Callout;
-      setCallouts((prev) => [callout, ...prev].slice(0, 5));
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+
+      const eventSource = new EventSource('/api/copilot/callouts/stream');
+      eventSourceRef.current = eventSource;
+
+      eventSource.onopen = () => {
+        console.log('SSE connected');
+      };
+
+      eventSource.onmessage = (event) => {
+        const callout = JSON.parse(event.data) as Callout;
+        setCallouts((prev) => {
+          const newCallouts = [callout, ...prev];
+          
+          if (newCallouts.length > MAX_CALLOUTS) {
+            const watchIndex = newCallouts.findIndex(c => c.urgency === 'watch');
+            if (watchIndex > 0) {
+              newCallouts.splice(watchIndex, 1);
+            } else {
+              newCallouts.pop();
+            }
+          }
+          
+          return newCallouts.slice(0, MAX_CALLOUTS);
+        });
+      };
+
+      eventSource.onerror = (error) => {
+        console.error('SSE error, reconnecting in 3s...', error);
+        eventSource.close();
+        
+        reconnectTimeoutRef.current = setTimeout(() => {
+          connect();
+        }, 3000);
+      };
     };
 
-    eventSource.onerror = () => {
-      eventSource.close();
-    };
+    connect();
 
     return () => {
-      eventSource.close();
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
     };
   }, []);
 

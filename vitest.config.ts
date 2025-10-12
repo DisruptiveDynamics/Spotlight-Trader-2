@@ -2,11 +2,12 @@ import { defineConfig, defineProject } from 'vitest/config';
 import { fileURLToPath } from 'url';
 
 export default defineConfig({
-  // Common (both projects)
   resolve: {
     alias: {
-      // Map @shared/* to your shared src (adjust if your path differs)
+      // monorepo aliases (adjust if your structure differs)
       '@shared': fileURLToPath(new URL('./packages/shared/src', import.meta.url)),
+      '@server': fileURLToPath(new URL('./apps/server/src', import.meta.url)),
+      '@client': fileURLToPath(new URL('./apps/client/src', import.meta.url)),
     },
   },
   test: {
@@ -14,16 +15,13 @@ export default defineConfig({
     css: false,
   },
   projects: [
-    // Server tests -> Node env
     defineProject({
       test: {
         name: 'server',
         environment: 'node',
         include: ['apps/server/src/**/*.test.ts'],
-        setupFiles: [],
       },
     }),
-    // Client tests -> jsdom env with setup shims
     defineProject({
       test: {
         name: 'client',

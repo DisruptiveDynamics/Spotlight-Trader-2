@@ -1,9 +1,9 @@
-// Ensure basic browser-ish APIs exist in jsdom
-// localStorage (jsdom provides one, but guard just in case)
-if (!('localStorage' in window)) {
+// JSDOM is the environment; ensure a few APIs exist for components/services.
+
+if (!('localStorage' in globalThis)) {
   const store = new Map<string,string>();
   // @ts-ignore
-  window.localStorage = {
+  globalThis.localStorage = {
     getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
     setItem: (k: string, v: string) => { store.set(k, String(v)); },
     removeItem: (k: string) => { store.delete(k); },
@@ -13,10 +13,9 @@ if (!('localStorage' in window)) {
   } as Storage;
 }
 
-// matchMedia shim for components that query it
-if (!('matchMedia' in window)) {
+if (!('matchMedia' in globalThis)) {
   // @ts-ignore
-  window.matchMedia = (query: string) => ({
+  globalThis.matchMedia = (query: string) => ({
     matches: false,
     media: query,
     onchange: null,
@@ -28,13 +27,15 @@ if (!('matchMedia' in window)) {
   });
 }
 
-// IdleDetector / Audio APIs used by voice client
+// Voice/idle shims that may be referenced by the voice client
 // @ts-ignore
-if (!('IdleDetector' in window)) window.IdleDetector = class { start(){} stop(){} };
+if (!('IdleDetector' in globalThis)) globalThis.IdleDetector = class { start(){} stop(){} };
 // @ts-ignore
-if (!('AudioWorkletNode' in window)) window.AudioWorkletNode = class {};
+if (!('AudioWorkletNode' in globalThis)) globalThis.AudioWorkletNode = class {};
 // @ts-ignore
-if (!('AudioContext' in window)) window.AudioContext = class { close(){} };
+if (!('AudioContext' in globalThis)) globalThis.AudioContext = class { close(){} };
 
-// Explicit document visibility (some components listen to it)
-Object.defineProperty(document, 'visibilityState', { value: 'visible', writable: true });
+// Some libs check this
+try {
+  Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+} catch {}

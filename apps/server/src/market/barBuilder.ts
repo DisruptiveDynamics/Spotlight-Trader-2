@@ -28,6 +28,8 @@ export class BarBuilder {
   private barFinalizeTimers = new Map<string, NodeJS.Timeout>();
   // Track tick listeners to properly remove them
   private tickListeners = new Map<string, (tick: Tick) => void>();
+  // Track last seq for monotonic sequence numbers
+  private lastSeq = new Map<string, number>();
 
   private floorToExchangeMinute(tsMs: number, barMinutes: number = 1): number {
     const d = toZonedTime(new Date(tsMs), ET);
@@ -135,20 +137,23 @@ export class BarBuilder {
         high: tick.price,
         low: tick.price,
         close: tick.price,
-        volume: tick.size,
+        volume: tick.size ?? 0,
       };
     } else {
       state.currentBar.high = Math.max(state.currentBar.high, tick.price);
       state.currentBar.low = Math.min(state.currentBar.low, tick.price);
       state.currentBar.close = tick.price;
-      state.currentBar.volume += tick.size;
+      state.currentBar.volume += (tick.size ?? 0);
     }
   }
 
   private finalizeBar(symbol: string, timeframe: string, state: SymbolState) {
     if (!state.currentBar) return;
 
-    const seq = Math.floor(state.bar_start / state.timeframeMs);
+    const stateKey = `${symbol}:${timeframe}`;
+    const prevSeq = this.lastSeq.get(stateKey) ?? Math.floor(state.bar_start / state.timeframeMs) - 1;
+    const seq = prevSeq + 1;
+    this.lastSeq.set(stateKey, seq);
 
     const finalizedBar: Bar = {
       symbol,

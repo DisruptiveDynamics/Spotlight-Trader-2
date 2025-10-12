@@ -32,10 +32,20 @@ import { ringBuffer } from '@server/cache/ring';
 export async function getChartSnapshot(
   params: GetChartSnapshotParams
 ): Promise<ChartSnapshot> {
-  const barCount = params.lookback || 50;
+  const barCount = params.barCount || 50;
+  
+  console.log(`[CHART_SNAPSHOT] Request:`, {
+    symbol: params.symbol,
+    timeframe: params.timeframe,
+    barCount,
+  });
+  
   const cachedBars = ringBuffer.getRecent(params.symbol, barCount);
   
+  console.log(`[CHART_SNAPSHOT] Ring buffer returned ${cachedBars.length} bars for ${params.symbol}`);
+  
   if (cachedBars.length === 0) {
+    console.log(`[CHART_SNAPSHOT] No bars found, returning empty snapshot`);
     return {
       symbol: params.symbol,
       timeframe: params.timeframe,
@@ -114,7 +124,7 @@ export async function getChartSnapshot(
     ];
   }
 
-  return {
+  const snapshot = {
     symbol: params.symbol,
     timeframe: params.timeframe,
     bars,
@@ -127,6 +137,17 @@ export async function getChartSnapshot(
     volatility,
     regime,
   };
+
+  console.log(`[CHART_SNAPSHOT] Response for ${params.symbol}:`, {
+    barCount: bars.length,
+    currentPrice: currentClose,
+    session: { high: sessionHigh, low: sessionLow, open: sessionOpen },
+    vwap: currentVWAP,
+    regime,
+    volatility,
+  });
+
+  return snapshot;
 }
 
 // Helper: Calculate Exponential Moving Average

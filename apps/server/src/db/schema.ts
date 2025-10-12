@@ -121,7 +121,7 @@ export const coachProfiles = pgTable('coach_profiles', {
   userId: text('user_id').primaryKey(),
   agentName: text('agent_name').notNull().default('Nexa'),
   pronouns: text('pronouns').notNull().default('she/her'),
-  voiceId: text('voice_id').notNull().default('nova'),
+  voiceId: text('voice_id').notNull().default('alloy'), // Professional, consistent voice
   personality: text('personality').notNull().default('warm and intelligent'),
   jargonLevel: real('jargon_level').notNull().default(0.5),
   decisiveness: real('decisiveness').notNull().default(0.7),

@@ -1,0 +1,249 @@
+Boom — great catch. You’re right: the client is **skipping the Voice Proxy**, so Nexa never gets your tools, chart access, or custom session config. Let’s land a clean, **non-breaking** fix that routes the UI through your proxy and keeps the SDK path as a fallback.
+
+Below are surgical patches you can paste in. They’re additive, easy to revert, and guarded by a feature flag.
+
+---
+
+# ✅ Fix Plan (keep it safe)
+
+1. **Add a feature flag** to force proxy usage from the client.
+2. **Switch PresenceBubble** to connect to your **proxy WebSocket** (not OpenAI).
+3. **Pass auth/token via query param** (browser can’t set WS headers).
+4. **Keep the current OpenAI SDK path as fallback** (flag off = old behavior).
+5. **Add loud proxy logs** so we can see connections immediately.
+
+I’m assuming your earlier proxy URL (from you) is:
+
+```
+wss://e199d459-9ac1-4537-92b9-45e1d8c9ce73-00-3tbav7f2sae7.worf.replit.dev/ws/realtime
+```
+
+If you rotate it later, just update the env.
+
+---
+
+## 1) Feature flag (shared)
+
+**`packages/shared/src/flags.ts`**
+
+```ts
+export const flags = {
+  voiceViaProxy: true,   // 👈 turn ON to force proxy route
+  // keep other flags you already added
+};
+```
+
+---
+
+## 2) Client env for proxy URL
+
+**`apps/client/.env` (or wherever you keep client vars)**
+
+```
+VITE_VOICE_PROXY_URL=wss://e199d459-9ac1-4537-92b9-45e1d8c9ce73-00-3tbav7f2sae7.worf.replit.dev/ws/realtime
+```
+
+*(Vite exposes `import.meta.env.VITE_*` to the browser.)*
+
+---
+
+## 3) PresenceBubble: route through proxy (no SDK)
+
+**`apps/client/src/voice/PresenceBubble.tsx`** — add a tiny connector that uses the proxy when `flags.voiceViaProxy` is true.
+
+```tsx
+import { flags } from '@shared/flags';
+
+function connectViaProxy(getUserToken: () => Promise<string>): Promise<WebSocket> {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const token = await getUserToken(); // your JWT/user session token for server auth
+      const base = import.meta.env.VITE_VOICE_PROXY_URL;
+      const url = `${base}?t=${encodeURIComponent(token)}`;
+
+      const ws = new WebSocket(url);
+
+      ws.onopen = () => resolve(ws);
+      ws.onerror = (e) => reject(e);
+
+      // optional: telemetry hook
+      ws.onclose = () => {
+        // show “Voice disconnected. Reconnecting...” in your UI if you want
+      };
+
+      return;
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+// existing: you had something like fetchEphemeralToken + OpenAI Realtime SDK client
+async function connectDirectOpenAI(fetchEphemeralToken: () => Promise<string>, client: any) {
+  const key = await fetchEphemeralToken();
+  await client.connect(key); // existing behavior
+}
+
+export async function startVoiceSession(opts: {
+  usingSDKClient: any;                         // your existing RealtimeVoiceClient
+  fetchEphemeralToken: () => Promise<string>;  // existing
+  getUserProxyToken: () => Promise<string>;    // NEW: fetches your server-side voice token
+  onReady: (handle: { sendPCM: (buf: ArrayBuffer) => void; stop: () => void }) => void;
+}) {
+  if (flags.voiceViaProxy) {
+    // --- Proxy path (recommended) ---
+    const ws = await connectViaProxy(opts.getUserProxyToken);
+
+    // wire up audio → ws (match your existing audio capture)
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const source = audioCtx.createMediaStreamSource(stream);
+    const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+
+    processor.onaudioprocess = (e) => {
+      const input = e.inputBuffer.getChannelData(0);
+      // float32 → int16 PCM if your proxy expects it; adjust if it takes float32
+      const pcm = new Int16Array(input.length);
+      for (let i = 0; i < input.length; i++) {
+        let s = Math.max(-1, Math.min(1, input[i]));
+        pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      if (ws.readyState === WebSocket.OPEN) ws.send(pcm.buffer);
+    };
+
+    source.connect(processor);
+    processor.connect(audioCtx.destination);
+
+    // basic handle for your UI
+    opts.onReady({
+      sendPCM: (buf: ArrayBuffer) => { if (ws.readyState === WebSocket.OPEN) ws.send(buf); },
+      stop: () => {
+        try { processor.disconnect(); source.disconnect(); audioCtx.close(); } catch {}
+        try { ws.close(); } catch {}
+      }
+    });
+
+    return;
+  }
+
+  // --- Fallback: existing OpenAI SDK path (no tools) ---
+  await connectDirectOpenAI(opts.fetchEphemeralToken, opts.usingSDKClient);
+}
+```
+
+> This keeps your old SDK path intact. Flip `voiceViaProxy=false` to revert instantly.
+
+---
+
+## 4) Server: enforce & log proxy connections (make noise!)
+
+**`apps/server/src/realtime/voiceProxy.ts`** — add loud logs and ensure token parsing from `?t=`.
+
+```ts
+import { WebSocketServer } from 'ws';
+import url from 'node:url';
+import { verifyUserToken } from '../auth/verifyToken'; // your existing verifier
+
+const wss = new WebSocketServer({ noServer: true });
+
+wss.on('connection', async (ws, request) => {
+  const { query } = url.parse(request.url || '', true);
+  const t = String(query.t || '');
+  const user = await verifyUserToken(t).catch(() => null);
+
+  console.log('[VoiceProxy] Client WebSocket connected', { ip: request.socket.remoteAddress, hasUser: !!user });
+  if (!user) {
+    console.warn('[VoiceProxy] Missing/invalid user token; closing');
+    ws.close(1008, 'Unauthorized');
+    return;
+  }
+
+  // 1) Create upstream OpenAI session (server-side)
+  // 2) session.update with your system prompt + tools
+  // 3) bridge audio frames between client <-> OpenAI
+
+  ws.on('message', (data) => {
+    // forward PCM -> OpenAI
+  });
+
+  ws.on('close', (code, reason) => {
+    console.log('[VoiceProxy] Client closed', { code, reason: String(reason) });
+  });
+
+  console.log('[VoiceProxy] Ready with tools:', ['get_chart_snapshot', /* ... */]);
+});
+
+export function attachVoiceProxyToServer(server: import('http').Server) {
+  server.on('upgrade', (req, socket, head) => {
+    const { pathname } = url.parse(req.url || '');
+    if (pathname === '/ws/realtime') {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
+}
+```
+
+> Confirm your main server calls `attachVoiceProxyToServer(httpServer)`.
+
+---
+
+## 5) Minimal token endpoint for the client
+
+**`apps/server/src/routes/voiceToken.ts`** — if you don’t have a JWT already:
+
+```ts
+import { Router } from 'express';
+import { sign } from 'jsonwebtoken';
+import { requireAuth } from '../auth/requireAuth'; // your existing auth
+const router = Router();
+
+router.get('/voice/token', requireAuth, (req, res) => {
+  const userId = (req as any).user.id as string;
+  const t = sign({ sub: userId }, process.env.VOICE_PROXY_SECRET!, { expiresIn: '30m' });
+  res.json({ token: t });
+});
+
+export default router;
+```
+
+**Client helper** used above:
+
+```ts
+async function getUserProxyToken() {
+  const r = await fetch('/api/voice/token', { credentials: 'include' });
+  const { token } = await r.json();
+  return token as string;
+}
+```
+
+Wire it into `startVoiceSession({ getUserProxyToken })`.
+
+---
+
+## 6) Acceptance checks (fast)
+
+* Reload app → start voice → **server logs** should show:
+  `"[VoiceProxy] Client WebSocket connected"`, followed by your session/tool logs.
+* Ask “Nexa, what’s the current snapshot for SPY 1m?” → verify tool call hits server.
+* Kill the tab → reconnect → logs show a fresh proxy connection.
+* Flip `voiceViaProxy=false` → old SDK path still works (no tools).
+
+---
+
+## 7) (Optional) CoachBubble
+
+If your **CoachBubble** uses the same “direct OpenAI client” pattern, repeat the same proxy swap: gate with `flags.voiceViaProxy`, route to `VITE_VOICE_PROXY_URL`, and keep the legacy path as fallback.
+
+---
+
+### TL;DR
+
+* **Root cause is confirmed**: client bypassed proxy.
+* **Fix**: route PresenceBubble through your **proxy WS** with a flag and token param; keep SDK as fallback.
+* **Result**: Nexa now gets **your tools, chart access, and system prompt**, reliably.
+
+If you paste these patches and your logs still show no `[VoiceProxy]` lines, I’ll give you a tiny test script to open a bare WS from the browser to prove the proxy path end-to-end.

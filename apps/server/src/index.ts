@@ -23,11 +23,13 @@ import coachSettingsRouter from './routes/coachSettings';
 import { copilotToolsRouter } from './routes/copilotTools';
 import copilotActionsRouter from './routes/copilotActions';
 import voicePreviewRouter from './routes/voicePreview';
+import triggerTestRouter from './routes/triggerTest';
 import { requireUser } from './middleware/requireUser';
 import { rateLimit } from './middleware/rateLimit';
 import { startEodScheduler } from './journals/eod';
 import { initializeLearningLoop } from './learning/loop';
 import { loadFlags } from './flags/store';
+import { triggerManager } from './copilot/triggers/manager';
 import { initializeMarketSource } from './market/bootstrap';
 import { initializeTelemetryBridge } from './telemetry/bridge';
 
@@ -80,10 +82,14 @@ app.use('/api/coach', coachSettingsRouter);
 app.use('/api/copilot', copilotToolsRouter);
 app.use('/api/copilot', copilotActionsRouter);
 app.use('/api/voice', voicePreviewRouter);
+app.use('/api/triggers', triggerTestRouter);
 
 initializeLearningLoop();
 startEodScheduler();
 loadFlags();
+
+const sessionStartMs = new Date().setHours(9, 30, 0, 0);
+triggerManager.initialize(sessionStartMs);
 
 // Error middleware - must be last, catches all route errors
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

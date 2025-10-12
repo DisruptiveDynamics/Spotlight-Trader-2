@@ -4,11 +4,13 @@
 Spotlight Trader is a production-grade, real-time trading coach application designed for high-frequency day traders. It provides real-time market data, AI-powered voice coaching, a rule-based trading alert system, and comprehensive journaling. The application focuses on professional trader ergonomics with zero-lag, keyboard-first control, institutional-grade hotkeys, focus modes, latency monitoring, and accessibility. Its primary goal is to deliver immediate insights and coaching to improve trading performance and efficiency, with a business vision to empower traders with cutting-edge AI and real-time analytics.
 
 ## Recent Changes
-**October 12, 2025** - Fixed voice assistant data access:
+**October 12, 2025** - Fixed voice assistant data access and upgraded model:
 - Wired `get_chart_snapshot` tool to ring buffer for real-time market data
 - Voice assistant now has access to: bars, VWAP, EMAs (9/21), session stats, volatility, regime detection
 - All 7 voice tools properly connected to live data sources
 - Fixed BarBuilder for monotonic sequence numbers and complete first bar initialization
+- **Upgraded from deprecated `gpt-4o-realtime-preview-2024-12-17` to `gpt-realtime` (GA)** - 30% better function calling, more reliable tool usage
+- Strengthened system prompt to force mandatory tool calls for market questions
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.

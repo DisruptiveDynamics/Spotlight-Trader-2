@@ -88,7 +88,7 @@ export function setupVoiceTokenRoute(app: Express) {
         body: JSON.stringify({
           session: {
             type: 'realtime',
-            model: 'gpt-4o-realtime-preview-2024-12-17',
+            model: 'gpt-realtime',
           },
         }),
       });
@@ -99,7 +99,7 @@ export function setupVoiceTokenRoute(app: Express) {
         return res.status(500).json({ error: 'Failed to generate token' });
       }
 
-      const data = await response.json();
+      const data = await response.json() as { value: string };
       
       // Return the ephemeral token (starts with 'ek_')
       res.json({ 

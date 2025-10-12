@@ -1,0 +1,41 @@
+Yes! That document describes exactly the problem I already fixed earlier today. Let me clarify what's been done vs. what still needs testing:
+
+✅ Already Implemented (Previous Session)
+Created get_chart_snapshot tool ✅ - Located in apps/server/src/copilot/tools/handlers.ts
+Wired it to ring buffer ✅ - Fetches real bars with VWAP, EMAs, session stats, volatility, regime detection
+Registered all 7 tools ✅ - Including get_chart_snapshot, evaluate_rules, propose_entry_exit, etc.
+Tools are passed to OpenAI session ✅ - Via VOICE_COPILOT_TOOLS in sessionContext.ts
+⚠️ The NEW Problem (Just Now)
+The tools exist and data is accessible, but the OpenAI model wasn't calling them. That's why I just:
+
+Massively strengthened the system prompt (5 minutes ago) - Made it MANDATORY to use tools
+Restarted the server - To load the new prompt
+🧪 What You Need to Test NOW
+Checked console and system logs
+
+Planned prompt testing strategy
+Server restarted with the new stronger prompt! Now you need to test it:
+
+Step-by-Step Test Instructions
+Go to your app (refresh the page if needed)
+Click "Try demo mode" button
+Click the voice/microphone button to start a NEW voice session
+Say clearly: "What's SPY doing right now?"
+Watch the server logs - You should now see:
+[VoiceProxy] Function call: get_chart_snapshot
+📊 Using XX bars from ring buffer for SPY
+What Should Happen
+Before (old prompt):
+
+AI: "I don't have real-time chart access" ❌
+After (new prompt):
+
+AI calls get_chart_snapshot tool
+Gets real bars, VWAP, EMAs from ring buffer
+AI: "SPY is at $578.50, trending up above 9EMA and VWAP" ✅
+How to Check if It Worked
+While connected to voice, I can watch the logs for you. Try asking about SPY now, then immediately tell me and I'll check if the tool was called.
+
+The document you shared describes the exact fix I already implemented - but we're now testing if the AI model will actually use the tools with the new forceful prompt.
+
+Try it now and let me know what the AI says! 🎤

@@ -41,7 +41,7 @@ const LoadingFallback = () => (
 );
 
 function App() {
-  const { user } = useAuthStore();
+  const user = useAuthStore((state) => state.user);
   const [focusMode, setFocusMode] = useState(focusManager.getMode());
   const [explainPanelOpen, setExplainPanelOpen] = useState(false);
   const [explainContext, setExplainContext] = useState<InsightContext | null>(null);

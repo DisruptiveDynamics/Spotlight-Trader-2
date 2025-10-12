@@ -6,7 +6,7 @@ interface SignInProps {
 }
 
 export function SignIn({ sessionExpired = false }: SignInProps) {
-  const { setUser } = useAuthStore();
+  const setUser = useAuthStore((state) => state.setUser);
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);

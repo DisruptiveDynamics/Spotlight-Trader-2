@@ -27,19 +27,127 @@ import { db } from '@server/db';
 import { callouts, journalEvents } from '@server/db/schema';
 import { copilotBroadcaster } from '../broadcaster';
 import { perfMonitor } from '../performance';
+import { ringBuffer } from '@server/cache/ring';
 
 export async function getChartSnapshot(
   params: GetChartSnapshotParams
 ): Promise<ChartSnapshot> {
+  const barCount = params.lookback || 50;
+  const cachedBars = ringBuffer.getRecent(params.symbol, barCount);
+  
+  if (cachedBars.length === 0) {
+    return {
+      symbol: params.symbol,
+      timeframe: params.timeframe,
+      bars: [],
+      indicators: {},
+      session: { high: 0, low: 0, open: 0 },
+      volatility: 'medium',
+      regime: 'chop',
+    };
+  }
+
+  // Convert to flat Bar format (shared type)
+  const bars = cachedBars.map((bar) => ({
+    symbol: params.symbol,
+    timestamp: bar.bar_start,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    volume: bar.volume,
+    seq: bar.seq,
+    bar_start: bar.bar_start,
+    bar_end: bar.bar_end,
+  }));
+
+  // Calculate session stats (intraday session high/low/open)
+  const sessionHigh = Math.max(...cachedBars.map((b) => b.high));
+  const sessionLow = Math.min(...cachedBars.map((b) => b.low));
+  const sessionOpen = cachedBars[0]?.open || 0;
+
+  // Calculate VWAP for indicators
+  let sumPV = 0;
+  let sumV = 0;
+  
+  for (const bar of cachedBars) {
+    const typicalPrice = (bar.high + bar.low + bar.close) / 3;
+    sumPV += typicalPrice * bar.volume;
+    sumV += bar.volume;
+  }
+
+  const currentVWAP = sumV > 0 ? sumPV / sumV : 0;
+
+  // Calculate volatility based on price range
+  const avgRange = cachedBars.reduce((sum, b) => sum + (b.high - b.low), 0) / cachedBars.length;
+  const avgPrice = cachedBars.reduce((sum, b) => sum + b.close, 0) / cachedBars.length;
+  const rangePercent = (avgRange / avgPrice) * 100;
+  
+  const volatility = rangePercent > 1.5 ? 'high' : rangePercent > 0.7 ? 'medium' : 'low';
+
+  // Detect regime: trend vs chop based on EMA crossovers and price action
+  const closes = cachedBars.map((b) => b.close);
+  const ema9 = calculateEMA(closes, 9);
+  const ema21 = calculateEMA(closes, 21);
+  
+  const currentClose = closes[closes.length - 1] || 0;
+  const currentEMA9 = ema9[ema9.length - 1] || 0;
+  const currentEMA21 = ema21[ema21.length - 1] || 0;
+  
+  let regime: 'trend-up' | 'trend-down' | 'chop' = 'chop';
+  if (currentEMA9 > currentEMA21 && currentClose > currentEMA9) {
+    regime = 'trend-up';
+  } else if (currentEMA9 < currentEMA21 && currentClose < currentEMA9) {
+    regime = 'trend-down';
+  }
+
+  const indicators: ChartSnapshot['indicators'] = {};
+  
+  if (currentVWAP > 0) {
+    indicators.vwap = { value: currentVWAP, mode: 'session' as const };
+  }
+  
+  if (currentEMA9 > 0 && currentEMA21 > 0) {
+    indicators.emas = [
+      { period: 9, value: currentEMA9 },
+      { period: 21, value: currentEMA21 },
+    ];
+  }
+
   return {
     symbol: params.symbol,
     timeframe: params.timeframe,
-    bars: [],
-    indicators: {},
-    session: { high: 0, low: 0, open: 0 },
-    volatility: 'medium',
-    regime: 'chop',
+    bars,
+    indicators,
+    session: { 
+      high: sessionHigh, 
+      low: sessionLow, 
+      open: sessionOpen 
+    },
+    volatility,
+    regime,
   };
+}
+
+// Helper: Calculate Exponential Moving Average
+function calculateEMA(prices: number[], period: number): number[] {
+  if (prices.length === 0 || prices.length < period) return [];
+  
+  const k = 2 / (period + 1);
+  const emaArray: number[] = [];
+  
+  // Start with SMA
+  const firstPrices = prices.slice(0, period);
+  let ema = firstPrices.reduce((sum, p) => sum + p, 0) / period;
+  emaArray.push(ema);
+  
+  // Calculate EMA for remaining prices
+  for (let i = period; i < prices.length; i++) {
+    ema = prices[i]! * k + ema * (1 - k);
+    emaArray.push(ema);
+  }
+  
+  return emaArray;
 }
 
 export async function subscribeMarketStream(

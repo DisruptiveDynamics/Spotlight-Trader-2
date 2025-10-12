@@ -1,0 +1,352 @@
+Got it — you want an **internal, proactive coach** with **full access to your app state** (charts, data, journaling, metrics), running **inside your server** (no extra ports, no OpenAI calls unless you flip a flag). It should **subscribe to app events**, **mirror the latest state in-memory**, expose a **toolbelt** your AI layer can call, and provide an **SSE stream** your client can listen to for proactive nudges.
+
+Below is a **single copy-paste Replit shell script** that scaffolds a clean, opt-in “Agent Access Layer” inside `apps/server`. It’s inert until you add one line to mount it and set `COACH_ENABLED=1`. No external network calls, no extra ports, no DOM, and it won’t touch your current tests unless you enable it.
+
+---
+
+### Copy-paste into Replit shell
+
+```bash
+bash <<'EOS'
+set -euo pipefail
+
+ROOT="apps/server/src/agent"
+mkdir -p "$ROOT"
+
+# 1) Types and event bus
+cat > "$ROOT/types.ts" <<'TS'
+import type { Request, Response } from 'express';
+
+export type ChartPoint = { t: number; o: number; h: number; l: number; c: number; v?: number };
+export type ChartSnapshot = { symbol: string; timeframe: string; points: ChartPoint[]; lastSeq?: number };
+
+export type JournalEntry = {
+  id: string;
+  ts: number;
+  text: string;
+  tags?: string[];
+  meta?: Record<string, unknown>;
+};
+
+export type MetricEvent =
+  | { type: 'latency'; rtt: number; sseReconnects?: number; source?: string }
+  | { type: 'market'; status: 'open' | 'closed' | 'pre' | 'halted' }
+  | { type: 'custom'; key: string; value: unknown };
+
+export type ChartEvent =
+  | { type: 'chart:update'; snapshot: ChartSnapshot }
+  | { type: 'chart:append'; symbol: string; timeframe: string; point: ChartPoint };
+
+export type JournalEvent = { type: 'journal:append'; entry: JournalEntry };
+
+export type AppEvent = MetricEvent | ChartEvent | JournalEvent;
+
+export type CoachMessage = {
+  id: string;
+  ts: number;
+  level: 'info' | 'warn' | 'error' | 'success';
+  title: string;
+  body?: string;
+  tags?: string[];
+  data?: Record<string, unknown>;
+};
+
+export type Toolbelt = {
+  getSnapshot(): {
+    charts: Record<string, ChartSnapshot>;
+    metrics: { latencyRTT?: number; sseReconnects?: number; market?: string };
+    journalTail: JournalEntry[];
+  };
+  listCoachMessages(since?: number): CoachMessage[];
+  pushEvent(ev: AppEvent): void;
+};
+TS
+
+# 2) In-memory state mirror (no DB, no ports)
+cat > "$ROOT/state.ts" <<'TS'
+import { EventEmitter } from 'node:events';
+import type { AppEvent, ChartSnapshot, CoachMessage, JournalEntry, Toolbelt } from './types';
+
+const bus = new EventEmitter();
+bus.setMaxListeners(50);
+
+// Mirrors
+const charts = new Map<string, ChartSnapshot>();     // key: `${symbol}|${timeframe}`
+const journal: JournalEntry[] = [];
+const metrics: { latencyRTT?: number; sseReconnects?: number; market?: string } = {};
+const coachFeed: CoachMessage[] = [];
+
+function keyOf(symbol: string, timeframe: string) { return `${symbol}|${timeframe}`; }
+
+export function pushEvent(ev: AppEvent) {
+  switch (ev.type) {
+    case 'chart:update': {
+      const k = keyOf(ev.snapshot.symbol, ev.snapshot.timeframe);
+      charts.set(k, ev.snapshot);
+      break;
+    }
+    case 'chart:append': {
+      const k = keyOf(ev.symbol, ev.timeframe);
+      const snap = charts.get(k) ?? { symbol: ev.symbol, timeframe: ev.timeframe, points: [] };
+      snap.points = [...snap.points, ev.point].slice(-2000); // cap
+      charts.set(k, snap);
+      break;
+    }
+    case 'journal:append':
+      journal.push(ev.entry);
+      if (journal.length > 2000) journal.shift();
+      break;
+    case 'latency':
+      metrics.latencyRTT = ev.rtt;
+      if (typeof ev.sseReconnects === 'number') metrics.sseReconnects = ev.sseReconnects;
+      break;
+    case 'market':
+      metrics.market = ev.status;
+      break;
+    case 'custom':
+      // add custom metrics under their key if they’re primitives
+      if (typeof ev.value === 'string' || typeof ev.value === 'number' || typeof ev.value === 'boolean') {
+        // @ts-expect-error index ok
+        metrics[ev.key] = ev.value;
+      }
+      break;
+  }
+  bus.emit('event', ev);
+}
+
+export function publishCoach(msg: CoachMessage) {
+  coachFeed.push(msg);
+  while (coachFeed.length > 1000) coachFeed.shift();
+  bus.emit('coach', msg);
+}
+
+export const toolbelt: Toolbelt = {
+  getSnapshot() {
+    const chartsObj: Record<string, ChartSnapshot> = {};
+    for (const [k, v] of charts) chartsObj[k] = v;
+    const journalTail = journal.slice(-200);
+    return { charts: chartsObj, metrics: { ...metrics }, journalTail };
+  },
+  listCoachMessages(since) {
+    if (!since) return [...coachFeed];
+    return coachFeed.filter(m => m.ts >= since);
+  },
+  pushEvent,
+};
+
+export function onEvent(cb: (e: AppEvent) => void) { bus.on('event', cb); return () => bus.off('event', cb); }
+export function onCoach(cb: (m: CoachMessage) => void) { bus.on('coach', cb); return () => bus.off('coach', cb); }
+TS
+
+# 3) Minimal proactive rules (no AI yet; safe & deterministic)
+cat > "$ROOT/proactive.ts" <<'TS'
+import { randomUUID } from 'node:crypto';
+import { onEvent, publishCoach } from './state';
+import type { AppEvent } from './types';
+
+// Simple, transparent rules that generate coach messages.
+// You can expand/replace with LLM once plumbing is verified.
+export function startProactiveRules() {
+  const off = onEvent((ev: AppEvent) => {
+    if (ev.type === 'latency') {
+      const rtt = ev.rtt;
+      if (rtt > 180) {
+        publishCoach({
+          id: randomUUID(),
+          ts: Date.now(),
+          level: 'warn',
+          title: `High latency: ${rtt}ms`,
+          body: 'Your RTT is above 180ms. Consider switching networks or pausing entries.',
+          tags: ['latency', 'network'],
+          data: { rtt }
+        });
+      }
+    }
+
+    if (ev.type === 'market' && ev.status === 'halted') {
+      publishCoach({
+        id: randomUUID(),
+        ts: Date.now(),
+        level: 'error',
+        title: 'Market Halt Detected',
+        body: 'Order flow paused. Review existing positions and alerts.',
+        tags: ['market', 'halt'],
+        data: { status: ev.status }
+      });
+    }
+
+    if (ev.type === 'chart:append') {
+      // Example: 5-candle momentum poke on the active symbol/timeframe
+      // (toy logic: last 5 closes increasing)
+      // This is intentionally light-weight; replace with your real calc later.
+      // NOTE: We don’t fetch global state here to keep this O(1) — rely on SSE in UI for richer stats.
+    }
+  });
+
+  return () => off();
+}
+TS
+
+# 4) Express router (in-process, no new port) + SSE stream
+cat > "$ROOT/router.ts" <<'TS'
+import { Router } from 'express';
+import { toolbelt } from './state';
+import { onCoach } from './state';
+import type { AppEvent } from './types';
+
+export function buildAgentRouter() {
+  const r = Router();
+
+  // Push events from anywhere in your server (or even the client) into the coach
+  r.post('/event', async (req, res) => {
+    const ev = req.body as AppEvent;
+    if (!ev || typeof ev !== 'object' || !('type' in ev)) return res.status(400).json({ error: 'Invalid event' });
+    toolbelt.pushEvent(ev);
+    res.json({ ok: true });
+  });
+
+  // Pull a consolidated snapshot (charts+metrics+journalTail)
+  r.get('/snapshot', (req, res) => {
+    res.json(toolbelt.getSnapshot());
+  });
+
+  // Stream coach messages (Server-Sent Events)
+  r.get('/stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    // send a hello + initial backlog
+    const backlog = toolbelt.listCoachMessages(Date.now() - 5 * 60_000);
+    for (const m of backlog) {
+      res.write(`event: coach\n`);
+      res.write(`data: ${JSON.stringify(m)}\n\n`);
+    }
+
+    const off = onCoach((m) => {
+      res.write(`event: coach\n`);
+      res.write(`data: ${JSON.stringify(m)}\n\n`);
+    });
+
+    req.on('close', () => off());
+  });
+
+  return r;
+}
+TS
+
+# 5) Agent entrypoint (opt-in mount)
+cat > "$ROOT/index.ts" <<'TS'
+import type { Express } from 'express';
+import { buildAgentRouter } from './router';
+import { startProactiveRules } from './proactive';
+
+let stopRules: (() => void) | null = null;
+
+export function registerAgent(app: Express) {
+  if (process.env.COACH_ENABLED !== '1') {
+    // Not enabled; mount nothing.
+    return;
+  }
+
+  // Use your existing JSON body parser upstream
+  app.use('/api/agent', buildAgentRouter());
+
+  if (!stopRules) stopRules = startProactiveRules();
+}
+
+export function unregisterAgent() {
+  if (stopRules) { stopRules(); stopRules = null; }
+}
+TS
+
+# 6) Optional: tiny client helper (you can wire to your existing SSE bus instead)
+CLIENT_DIR="apps/client/src/agent"
+mkdir -p "$CLIENT_DIR"
+cat > "$CLIENT_DIR/coachClient.ts" <<'TS'
+export function connectCoachStream(onMessage: (m: any) => void) {
+  const es = new EventSource('/api/agent/stream');
+  es.addEventListener('coach', (ev) => {
+    try { onMessage(JSON.parse((ev as MessageEvent).data)); } catch {}
+  });
+  return () => es.close();
+}
+
+export async function pushLatency(rtt: number, sseReconnects?: number) {
+  await fetch('/api/agent/event', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'latency', rtt, sseReconnects }),
+  });
+}
+TS
+
+# 7) Git checkpoint
+git add -A >/dev/null 2>&1 || true
+git commit -m "feat(agent): internal proactive coach layer (opt-in, SSE, no external calls)" >/dev/null 2>&1 || true
+
+echo
+echo "✅ Agent Access Layer scaffolded."
+echo "➊ Add ONE line in your Express bootstrap (server) to mount it when enabled:"
+echo "   import { registerAgent } from './agent';"
+echo "   registerAgent(app); // mount before your other routes is fine"
+echo
+echo "➋ Enable via env: COACH_ENABLED=1 (Replit Secrets or dotenv)."
+echo "➌ (Optional) In client, consume SSE from /api/agent/stream and POST events to /api/agent/event."
+EOS
+```
+
+---
+
+### What this gives you (and why it fixes your “assistant can’t see my app” problem)
+
+* **Full, real-time access**: your app **pushes every relevant event** (chart ticks/snapshots, journal entries, latency/market state) into an **in-process mirror** (`state.ts`). That mirror is what both your **proactive rules** and your **AI layer** read from.
+* **Proactive by default**: the simple rules in `proactive.ts` immediately start generating coach messages (SSE) when `COACH_ENABLED=1`. Swap/extend with LLM later.
+* **Zero external calls**: by default there are **no OpenAI/network calls**. You can add an LLM later behind a hard switch.
+* **Single process, no extra port**: the router mounts under `/api/agent/*` on your **existing Express app** — no extra servers, so you won’t see that “port already in use” WebSocket issue.
+* **Safe to integrate**: nothing is active until you ① import + `registerAgent(app)` and ② set `COACH_ENABLED=1`. If you ever need to disable it, flip the flag off.
+
+---
+
+### Wiring it (two tiny steps)
+
+1. In your server bootstrap (where you create `const app = express()`), add:
+
+```ts
+import { registerAgent } from './agent';
+registerAgent(app);
+```
+
+2. In Replit secrets (or `.env` you already use):
+
+```
+COACH_ENABLED=1
+```
+
+Optional (client): start a listener somewhere central (e.g., layout root) to surface coach messages:
+
+```ts
+import { connectCoachStream } from '@/agent/coachClient';
+
+const stop = connectCoachStream((m) => {
+  // push to your toast/notification system
+  console.log('[COACH]', m.title, m.body, m);
+});
+// call stop() on unmount
+```
+
+And push telemetry you already have (e.g., where you update latency HUD):
+
+```ts
+import { pushLatency } from '@/agent/coachClient';
+pushLatency(rttMs, sseReconnects);
+```
+
+---
+
+### Want the AI to reason over everything?
+
+Once the plumbing above is verified, add a **single tool** that returns `toolbelt.getSnapshot()` plus any derived features (open positions, PnL, regime, etc.). Then call your model with that tool **inside the server** (still no outbound if you route to a local model), or behind a flag if you do use OpenAI.
+
+If you want, I can drop in a minimal **tool-call handler** next that sits on top of `toolbelt` and your existing SSE channel, so the coach can answer questions *and* push nudges — still internal, still privacy-safe.

@@ -16,6 +16,7 @@ export class PolygonWebSocket {
   private lastMessageTime = 0;
   private isConnected = false;
   private useMockData = false;
+  private useWebSocket = false; // Track if WebSocket is active (separate from mock mode)
 
   async connect() {
     try {
@@ -24,10 +25,11 @@ export class PolygonWebSocket {
       const extendedHoursActive = isExtendedHoursActive();
 
       if (!extendedHoursActive) {
-        console.log(`🌙 Outside extended hours (4 AM-8 PM ET) - using simulated data`);
-        this.useMockData = true;
+        console.log(`🌙 Outside extended hours (4 AM-8 PM ET) - WebSocket unavailable, using REST API + mock ticks`);
+        this.useMockData = false; // Don't block REST API - just means we need mock ticks
+        this.useWebSocket = false;
         this.isConnected = true;
-        this.resubscribe(); // Start mock generators
+        this.resubscribe(); // Start mock tick generators (bars will use REST API for history)
         return;
       }
 
@@ -36,6 +38,7 @@ export class PolygonWebSocket {
       console.log(`📡 Connecting to Polygon real-time feed (extended hours active)`);
 
       this.useMockData = false;
+      this.useWebSocket = true;
       this.ws = websocketClient(env.POLYGON_API_KEY, wsUrl).stocks();
 
       if (this.ws) {
@@ -215,9 +218,17 @@ export class PolygonWebSocket {
 
   /**
    * Check if system is currently using mock data
+   * Returns false during overnight hours - we still use Polygon REST API then
    */
   isUsingMockData(): boolean {
     return this.useMockData;
+  }
+
+  /**
+   * Check if WebSocket is actively connected for real-time ticks
+   */
+  isUsingWebSocket(): boolean {
+    return this.useWebSocket && this.isConnected;
   }
 }
 

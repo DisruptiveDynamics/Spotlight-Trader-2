@@ -9,6 +9,7 @@ import {
   recordSSEBackpressure,
 } from "@server/metrics/registry";
 import { getMarketSource, getMarketReason } from "@server/market/bootstrap";
+import { getEpochId, getEpochStartMs } from "./epoch"; // [RESILIENCE] Server restart detection
 
 export async function sseMarketStream(req: Request, res: Response) {
   const symbolsParam = (req.query.symbols as string) || "SPY";
@@ -16,18 +17,29 @@ export async function sseMarketStream(req: Request, res: Response) {
   const timeframe = (req.query.timeframe as string) || "1m"; // Allow client to specify timeframe
   const sinceSeq = req.query.sinceSeq ? parseInt(req.query.sinceSeq as string, 10) : undefined;
 
+  // [RESILIENCE] Include epoch info in headers for client restart detection
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
   res.setHeader("X-Market-Source", getMarketSource());
   res.setHeader("X-Market-Reason", getMarketReason());
+  res.setHeader("X-Epoch-Id", getEpochId());
+  res.setHeader("X-Epoch-Start-Ms", String(getEpochStartMs()));
   res.flushHeaders();
 
   const userId = (req as any).userId || "anonymous";
   recordSSEConnection(userId);
 
   const bpc = new BackpressureController(res, 100);
+
+  // [RESILIENCE] Send epoch info as first event for client restart detection
+  bpc.write("epoch", {
+    epochId: getEpochId(),
+    epochStartMs: getEpochStartMs(),
+    symbols,
+    timeframe,
+  });
 
   if (sinceSeq !== undefined) {
     for (const symbol of symbols) {

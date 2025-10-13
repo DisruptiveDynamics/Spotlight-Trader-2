@@ -7,6 +7,13 @@ interface LatencyMetrics {
   marketStatus: "LIVE" | "HALTED" | "PREMARKET" | "CLOSED";
 }
 
+interface ToolMetrics {
+  count: number;
+  errorRate: number;
+  p50: number;
+  p95: number;
+}
+
 export function LatencyHUD() {
   const [metrics, setMetrics] = useState<LatencyMetrics>({
     voiceRTT: 0,
@@ -14,6 +21,8 @@ export function LatencyHUD() {
     sseReconnects: 0,
     marketStatus: "CLOSED",
   });
+  
+  const [toolMetrics, setToolMetrics] = useState<Record<string, ToolMetrics>>({});
 
   useEffect(() => {
     const handleMetrics = (e: CustomEvent<Partial<LatencyMetrics>>) => {
@@ -22,6 +31,25 @@ export function LatencyHUD() {
 
     window.addEventListener("metrics:update" as any, handleMetrics);
     return () => window.removeEventListener("metrics:update" as any, handleMetrics);
+  }, []);
+
+  // [OBS] Fetch tool metrics every 5 seconds
+  useEffect(() => {
+    const fetchToolMetrics = async () => {
+      try {
+        const res = await fetch("/api/metrics/tools");
+        if (res.ok) {
+          const data = await res.json();
+          setToolMetrics(data.tools || {});
+        }
+      } catch (err) {
+        console.error("Failed to fetch tool metrics:", err);
+      }
+    };
+
+    fetchToolMetrics();
+    const interval = setInterval(fetchToolMetrics, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const getRTTColor = (rtt: number) => {
@@ -70,6 +98,20 @@ export function LatencyHUD() {
         <span className="text-gray-400">Tick→Wick:</span>
         <span>{metrics.tickToWickP95}ms</span>
       </div>
+
+      {/* [OBS] Per-tool execution metrics - p50 and p95 */}
+      {Object.entries(toolMetrics).map(([toolName, metrics]) => (
+        <div
+          key={toolName}
+          className="flex items-center gap-1 text-gray-400"
+          title={`${toolName}: ${metrics.count} calls, ${(metrics.errorRate * 100).toFixed(1)}% errors`}
+        >
+          <span className="text-gray-400">{toolName}:</span>
+          <span className={getLatencyColor(metrics.p50)}>p50:{metrics.p50}ms</span>
+          <span className="text-gray-500">/</span>
+          <span className={getLatencyColor(metrics.p95)}>p95:{metrics.p95}ms</span>
+        </div>
+      ))}
 
       <div className="flex items-center gap-1 text-gray-400">
         <span>SSE:</span>

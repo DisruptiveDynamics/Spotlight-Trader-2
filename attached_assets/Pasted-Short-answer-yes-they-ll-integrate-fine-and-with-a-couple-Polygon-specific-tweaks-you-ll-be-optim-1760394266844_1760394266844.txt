@@ -1,0 +1,106 @@
+Short answer: yes—they’ll integrate fine, and with a couple Polygon-specific tweaks you’ll be *optimal*.
+
+Here’s what I’d layer on so Nexa plays perfectly with Polygon.io and your new prompts:
+
+# Polygon-specific optimizations
+
+1. **Use the right Polygon endpoints for each tool**
+
+* **“What’s SPY’s price?”** → `v3/trades/{ticker}/last` (or `v2/last/trade/{ticker}`)
+
+  * Sub-1s, tiny payload. Cache 1–2s in your micro-tool.
+* **VWAP/EMA (last values)** → prefer your **ring buffer** fed by streaming; if backfilling, hit
+  `v2/aggs/ticker/{ticker}/range/1/minute/{from}/{to}?limit=20`
+
+  * Never request >20 for the fast path.
+* **20-bar snapshot** → same `aggs` minute endpoint or your buffer if warm.
+* **Day context (open, high, low, prevClose)** → `v2/snapshot/locale/us/markets/stocks/tickers/{ticker}`
+* **Market status** → `v1/marketstatus/now` (or cache your own schedule + holiday table and use Polygon only for confirmation).
+
+2. **Prefer streaming for many symbols**
+
+* For your **Favorites Watcher**, move to **Polygon WebSocket v3** (A.*, T.*, Q.*):
+
+  * Subscribe to **A.** (aggregate 1m) for each watched ticker to get rolling bars without REST spam.
+  * If you need tick-level precision for ORB/VWAP, also subscribe to **T.** (last trade) and compute micro-VWAP locally, then reconcile at bar close.
+
+3. **Rate-limit and burst control (critical)**
+
+* Keep the **payload caps** from the prompt; also:
+
+  * Respect `429` with **jittered backoff** and read Polygon’s rate headers; queue low-priority calls (e.g., playbook/glossary) behind market data.
+  * Cap **Favorites Watcher** uplift to at most **N symbols per 10s** (configurable via flag), and **coalesce** multiple requests for the same symbol/timeframe.
+
+4. **Server-side only API key**
+
+* Keep the key only in server env: `POLYGON_API_KEY`.
+
+  * Client never touches it; ToolBridge makes all Polygon calls server-side.
+
+5. **Warm ring buffer → fall back to REST only on cold start**
+
+* On boot, **seed 50–200 1m bars** per primary symbol using `aggs`.
+* Once WebSocket A.* is live, keep bars in memory + DB. If stream drops, your **circuit breaker** kicks in and temporarily uses REST until stream recovers.
+
+6. **Session VWAP + EMAs locally**
+
+* Compute **session VWAP** & **EMA(9/21)** incrementally from your buffer/stream.
+
+  * REST fetch is only for **bootstrap** (first 20 bars) or **resync**.
+
+7. **Epoch + seq reset still applies**
+
+* Tag your streaming session with `epochId`. If WebSocket reconnects or server restarts, the **self-healing** logic you added will safely resync without user seeing stalls.
+
+8. **Time boundaries**
+
+* Use **New York trading calendar** for ORB, session vwap reset, etc.
+
+  * Avoid asking Polygon for pre/post if you don’t need it; when you do, include `adjusted=true` and filter by `session` to keep analytics consistent.
+
+# Config you should add
+
+```env
+# apps/server/.env
+POLYGON_API_KEY=...
+MARKET_STREAM_PROVIDER=polygon
+STREAM_SUBSCRIBE_CHANNELS=A,T       # A=1m aggs, T=last trade (optional)
+FAVORITES_WATCHER_MAX_SYMBOLS=10
+FAVORITES_WATCHER_BASE_PERIOD_MS=120000
+FAVORITES_WATCHER_ALERT_PERIOD_MS=15000
+POLYGON_REST_TIMEOUT_MS=800
+POLYGON_WS_URL=wss://socket.polygon.io/stocks
+POLYGON_REST_BASE=https://api.polygon.io
+```
+
+# Tiny wiring notes (where this touches your prompt)
+
+* **Micro-tools** (`get_last_price`, `get_last_vwap`, `get_last_ema`):
+
+  * If buffer has fresh data (<2s), **serve from buffer**; else:
+
+    * price → `last trade`
+    * vwap/ema → short `aggs` backfill (≤20) then compute.
+* **20-bar review** path (`get_chart_snapshot`):
+
+  * First try buffer; if missing bars, **backfill only the gap** via `aggs`.
+* **Favorites Watcher**:
+
+  * Use **Polygon WS** for live; REST only for **rare backfill** on missed windows.
+* **Circuit breaker**:
+
+  * Maintain **separate breakers** for WS and REST to prevent total lockout.
+* **Observability**:
+
+  * Add Polygon health to `/api/healthz` (REST ping + WS state).
+  * Track per-endpoint p50/p95 + error rate so you can tune limits.
+
+# Will this break the app?
+
+No—these are drop-in *providers* behind your ToolBridge and market pipeline. You’re already abstracting bars and indicators; swapping/optimizing the upstream fetch (Polygon REST/WS) and tightening the cache/window sizes won’t change client contracts. The only migrations you’ll make are:
+
+* add the WS subscriber (v3) and reducer into your existing **barBuilder**,
+* small guards around REST backfill size,
+* environment/config toggles.
+
+If you want, I can produce a **Polygon integration patch list** (files + exact edits) next.

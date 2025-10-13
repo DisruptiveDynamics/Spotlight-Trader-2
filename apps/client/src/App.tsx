@@ -119,6 +119,37 @@ function App() {
     };
   }, []);
 
+  // [RESILIENCE] Debounced splash for market resyncs (avoid flicker on quick resyncs)
+  useEffect(() => {
+    let debounceTimer: number | null = null;
+    
+    const handleResyncStart = () => {
+      // Only show splash if resync takes > 250ms (debounce to avoid flicker)
+      debounceTimer = window.setTimeout(() => {
+        setShowSplash(true);
+      }, 250);
+    };
+    
+    const handleResyncComplete = () => {
+      // Cancel debounce if resync completed quickly
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
+      }
+      // Hide splash immediately when resync completes
+      setShowSplash(false);
+    };
+    
+    window.addEventListener("market:resync-start", handleResyncStart);
+    window.addEventListener("market:resync-complete", handleResyncComplete);
+    
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener("market:resync-start", handleResyncStart);
+      window.removeEventListener("market:resync-complete", handleResyncComplete);
+    };
+  }, []);
+
   const opacity = focusManager.getNonPriceOpacity();
 
   // Show sign-in page if not authenticated

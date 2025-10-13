@@ -45,6 +45,12 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
   let isManualClose = false;
   let currentState: SSEStatus = "connecting";
   let processingPromise = Promise.resolve();
+  
+  // [RESILIENCE] Track server epoch for restart detection
+  let currentEpochId: string | null = null;
+  
+  // [RESILIENCE] Track duplicate rejections to force resync
+  let duplicateRejections: number[] = []; // Timestamps of rejections
 
   const maxReconnectDelay = opts?.maxReconnectDelay || 30000;
 
@@ -59,6 +65,61 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
   const emitStatus = (status: SSEStatus) => {
     currentState = status;
     listeners.status.forEach((fn) => fn(status));
+  };
+
+  // [RESILIENCE] Soft reset and resync when server restarts or sequence is stale
+  const performResync = async (reason: string) => {
+    try {
+      console.log(`🔄 Performing resync (${reason})`);
+      
+      // [RESILIENCE] Emit resync event for debounced splash overlay
+      window.dispatchEvent(new CustomEvent("market:resync-start", { detail: { reason } }));
+      
+      emitStatus("replaying_gap");
+      
+      const symbol = symbols[0] || "SPY";
+      const params = new URLSearchParams({
+        symbol,
+        timeframe: "1m",
+        limit: "50", // Fetch 50-bar snapshot for resync
+      });
+      
+      const res = await fetch(`/api/history?${params.toString()}`);
+      if (!res.ok) {
+        throw new Error(`Resync failed: ${res.status} ${res.statusText}`);
+      }
+      
+      const rawBars = await res.json();
+      
+      // Transform and emit bars
+      const bars: Bar[] = rawBars.map((b: any) => ({
+        symbol: b.symbol || symbol,
+        timeframe: b.timeframe || "1m",
+        seq: Math.floor(b.bar_end / 60000),
+        bar_start: b.bar_end - 60000,
+        bar_end: b.bar_end,
+        ohlcv: b.ohlcv,
+      })).sort((a: Bar, b: Bar) => a.seq - b.seq);
+      
+      // Update lastSeq to highest from snapshot
+      if (bars.length > 0) {
+        lastSeq = bars[bars.length - 1]!.seq;
+        console.log(`✅ Resynced ${bars.length} bars, lastSeq now: ${lastSeq}`);
+        
+        bars.forEach((bar) => {
+          listeners.bar.forEach((fn) => fn(bar));
+        });
+      }
+      
+      emitStatus("live");
+      // [RESILIENCE] Emit completion event
+      window.dispatchEvent(new CustomEvent("market:resync-complete"));
+    } catch (error) {
+      console.error("Resync error:", error);
+      emitStatus("error");
+      // [RESILIENCE] Emit completion even on error
+      window.dispatchEvent(new CustomEvent("market:resync-complete"));
+    }
   };
 
   const backfillGap = async (fromSeq: number, toSeq: number, previousLastSeq: number) => {
@@ -147,12 +208,54 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       }
     });
 
+    // [RESILIENCE] Listen for epoch events to detect server restarts
+    es.addEventListener("epoch", (e) => {
+      const data = JSON.parse((e as MessageEvent).data) as { 
+        epochId: string; 
+        epochStartMs: number; 
+        symbols: string[]; 
+        timeframe: string;
+      };
+      
+      if (currentEpochId && currentEpochId !== data.epochId) {
+        console.log(`🔄 Server restarted: epoch ${currentEpochId.slice(0,8)} → ${data.epochId.slice(0,8)}`);
+        currentEpochId = data.epochId;
+        // Perform resync on next bar
+      } else {
+        currentEpochId = data.epochId;
+        console.log(`✅ Epoch established: ${data.epochId.slice(0,8)}`);
+      }
+    });
+
     es.addEventListener("bar", (e) => {
       processingPromise = processingPromise.then(async () => {
         const b = JSON.parse((e as MessageEvent).data) as Bar;
 
+        // [RESILIENCE] Detect server restart: seq is much lower than lastSeq
+        const isStaleSequence = lastSeq > 0 && b.seq < lastSeq - 1000;
+        
+        if (isStaleSequence) {
+          console.log(`🔄 Stale sequence detected: seq=${b.seq}, lastSeq=${lastSeq}`);
+          await performResync("stale sequence");
+          return;
+        }
+
         if (b.seq <= lastSeq) {
-          console.warn(`Duplicate bar detected: seq=${b.seq}, lastSeq=${lastSeq}`);
+          // [RESILIENCE] Track duplicate rejections for forced resync
+          const now = Date.now();
+          duplicateRejections.push(now);
+          
+          // Keep only rejections from last 2 seconds
+          duplicateRejections = duplicateRejections.filter(ts => now - ts < 2000);
+          
+          if (duplicateRejections.length >= 5) {
+            console.warn(`❌ Too many duplicate rejections (${duplicateRejections.length}), forcing resync`);
+            duplicateRejections = []; // Reset counter
+            await performResync("excessive duplicates");
+            return;
+          }
+          
+          console.warn(`Duplicate bar detected: seq=${b.seq}, lastSeq=${lastSeq} (${duplicateRejections.length}/5)`);
           return;
         }
 

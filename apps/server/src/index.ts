@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import { validateEnv } from "@shared/env";
 import { setupSecurity } from "./config/security";
 import { initializeMarketPipeline } from "./wiring";
+import { getEpochInfo } from "./stream/epoch"; // [OBS] For health endpoint
 import { setupVoiceProxy } from "./realtime/voiceProxy";
 import { setupVoiceTokenRoute } from "./routes/voiceToken";
 import { setupToolsBridge } from "./voice/toolsBridge";
@@ -54,8 +55,28 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: Date.now() });
 });
 
+// [OBS] Comprehensive health endpoint with epoch tracking
+app.get("/api/healthz", (_req, res) => {
+  const epoch = getEpochInfo();
+  res.json({
+    ok: true,
+    epochId: epoch.epochId,
+    startedAt: new Date(epoch.epochStartMs).toISOString(),
+    uptimeMs: epoch.uptime,
+    version: "1.0.0", // TODO: Read from package.json
+    timestamp: Date.now(),
+  });
+});
+
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, timestamp: Date.now() });
+  const epoch = getEpochInfo();
+  res.json({
+    ok: true,
+    epochId: epoch.epochId,
+    startedAt: new Date(epoch.epochStartMs).toISOString(),
+    uptimeMs: epoch.uptime,
+    timestamp: Date.now(),
+  });
 });
 
 app.get("/api/voice/health", (_req, res) => {

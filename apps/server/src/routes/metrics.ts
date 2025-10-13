@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { recordWebVital, recordFPS } from "../metrics/registry";
+import { getAllToolMetrics } from "../voice/toolMetrics"; // [OBS] Tool execution metrics
 
 const router: Router = Router();
 
@@ -40,6 +41,16 @@ router.post("/fps", async (req, res) => {
       res.status(500).json({ error: "Internal server error" });
     }
   }
+});
+
+// [OBS] Tool execution metrics - per-tool count, error rate, p50, p95 latency
+router.get("/tools", (_req, res) => {
+  const metrics = getAllToolMetrics();
+  res.json({
+    ok: true,
+    tools: metrics,
+    timestamp: Date.now(),
+  });
 });
 
 export { router as metricsRouter };

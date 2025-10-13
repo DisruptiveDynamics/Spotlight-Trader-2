@@ -1,3 +1,11 @@
+export interface Tick {
+  symbol: string;
+  ts: number;
+  price: number;
+  size: number;
+  side?: 'buy' | 'sell' | 'unknown';
+}
+
 export interface Bar {
   symbol: string;
   timestamp: number;

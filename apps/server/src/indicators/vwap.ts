@@ -3,6 +3,7 @@
 
 import { eventBus } from '@server/market/eventBus';
 import type { Tick } from '@shared/types';
+import type { Bar } from '@shared/types';
 
 interface VWAPState {
   sumPriceVolume: number;

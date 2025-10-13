@@ -78,10 +78,35 @@ export const useChartState = create<ChartState>()(
           active: { ...state.active, symbol: symbol.toUpperCase() },
         })),
 
-      setTimeframe: (timeframe: Timeframe) =>
+      setTimeframe: async (timeframe: Timeframe) => {
+        const symbol = useChartState.getState().active.symbol;
+        
+        // Optimistically update UI
         set((state) => ({
           active: { ...state.active, timeframe },
-        })),
+        }));
+
+        try {
+          // Call server API for authoritative timeframe switch
+          const response = await fetch('/api/chart/timeframe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ symbol, timeframe }),
+          });
+
+          if (!response.ok) {
+            console.error('[ChartState] Timeframe switch failed:', response.status);
+            // Rollback UI on error (keep optimistic value for now)
+          } else {
+            const data = await response.json();
+            console.log(`[ChartState] ✅ Server switched to ${timeframe}, ${data.barsCount} bars`);
+          }
+        } catch (error) {
+          console.error('[ChartState] Timeframe switch error:', error);
+          // Keep optimistic update on network errors
+        }
+      },
 
       setLayout: (layout: Layout) => set({ layout }),
 

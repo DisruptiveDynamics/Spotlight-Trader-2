@@ -114,6 +114,8 @@ export async function getInitialSessionUpdate(userId: string) {
       },
       voice: voiceId,
       tools: VOICE_COPILOT_TOOLS,
+      temperature: 0.1,  // Low temperature for factual market responses
+      max_response_output_tokens: 150,  // Keep responses concise
     },
   };
 }

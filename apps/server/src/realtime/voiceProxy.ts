@@ -13,6 +13,8 @@ import { toolHandlers } from '../copilot/tools/handlers';
 import { voiceCalloutBridge } from './voiceCalloutBridge';
 import { voiceMemoryBridge } from '../coach/voiceMemoryBridge';
 import { traderPatternDetector } from '../coach/traderPatternDetector';
+import { ensureMarketContext } from '../coach/ensureMarketContext.js';
+import { ToolCallTracker } from '../coach/responseGuard.js';
 
 const env = validateEnv(process.env);
 
@@ -141,6 +143,9 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
     let upstreamSessionId: string | null = null;
     let clientHeartbeat: NodeJS.Timeout | null = null;
     let upstreamHeartbeat: NodeJS.Timeout | null = null;
+    
+    // Tool call tracker for anti-hallucination enforcement
+    const toolTracker = new ToolCallTracker();
 
     upstreamWs.on('open', () => {
       console.log('[VoiceProxy] Upstream OpenAI connection opened for user:', userId);
@@ -230,6 +235,21 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
         if (message.type === 'session.updated') {
           openaiErrorCount = 0;
           openaiCooldownUntil = 0;
+        }
+        
+        // Monitor response completion to detect hallucinations
+        if (message.type === 'response.completed') {
+          const hasRecentTool = toolTracker.hasRecentToolCall();
+          if (!hasRecentTool) {
+            console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.warn('[ANTI-HALLUCINATION] ⚠️  Response completed WITHOUT tool call in last 3s');
+            console.warn('[ANTI-HALLUCINATION] If response contained market numbers, it was likely HALLUCINATED');
+            console.warn('[ANTI-HALLUCINATION] User:', userId);
+            console.warn('[ANTI-HALLUCINATION] Response ID:', message.response?.id || 'unknown');
+            console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          } else {
+            console.log(`[ANTI-HALLUCINATION] ✅ Response completed WITH fresh tool call - data is REAL`);
+          }
         }
         
         // Handle function calls from voice assistant
@@ -337,6 +357,10 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
               default:
                 result = { error: `Unknown function: ${functionName}` };
             }
+            
+            // Mark tool as successfully called (anti-hallucination tracking)
+            toolTracker.markToolCalled();
+            console.log(`[VOICE TOOL] 🔒 Tool execution tracked - responses with market numbers now ALLOWED for 3s`);
             
             // Send function result back to OpenAI
             const functionOutput = {

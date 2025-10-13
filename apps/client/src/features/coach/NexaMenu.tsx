@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { KnowledgeUploadModal } from './KnowledgeUploadModal';
 import { MemoryViewer } from './MemoryViewer';
+import { VoiceSelector } from './VoiceSelector';
 
 interface NexaMenuProps {
   isConnected: boolean;
@@ -11,6 +12,8 @@ export function NexaMenu({ isConnected, onDisconnect }: NexaMenuProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showMemoryViewer, setShowMemoryViewer] = useState(false);
+  const [showVoiceSelector, setShowVoiceSelector] = useState(false);
+  const [currentVoice, setCurrentVoice] = useState('nova'); // Default voice
 
   return (
     <>
@@ -76,13 +79,16 @@ export function NexaMenu({ isConnected, onDisconnect }: NexaMenuProps) {
               </button>
 
               <button
-                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left text-gray-300 rounded hover:bg-gray-800 transition-colors opacity-50 cursor-not-allowed"
-                disabled
+                onClick={() => {
+                  setShowVoiceSelector(true);
+                  setShowMenu(false);
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left text-gray-300 rounded hover:bg-gray-800 transition-colors"
               >
                 <span className="text-lg">🎙️</span>
                 <div>
                   <div className="font-medium">Change Voice</div>
-                  <div className="text-xs text-gray-500">Coming soon</div>
+                  <div className="text-xs text-gray-500">Select from 6 voices</div>
                 </div>
               </button>
 
@@ -111,6 +117,15 @@ export function NexaMenu({ isConnected, onDisconnect }: NexaMenuProps) {
 
       <KnowledgeUploadModal isOpen={showUploadModal} onClose={() => setShowUploadModal(false)} />
       <MemoryViewer isOpen={showMemoryViewer} onClose={() => setShowMemoryViewer(false)} />
+      <VoiceSelector
+        isOpen={showVoiceSelector}
+        onClose={() => setShowVoiceSelector(false)}
+        currentVoice={currentVoice}
+        onVoiceChange={(voiceId) => {
+          setCurrentVoice(voiceId);
+          alert(`Voice changed to ${voiceId}! Disconnect and reconnect to hear the new voice.`);
+        }}
+      />
     </>
   );
 }

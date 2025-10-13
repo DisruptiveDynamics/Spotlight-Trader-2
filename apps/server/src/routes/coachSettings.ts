@@ -101,4 +101,50 @@ function mapToneToPreset(tone: string): string {
   return reverseMap[tone] || 'balanced';
 }
 
+// PATCH /api/coach/voice - Update voice only
+router.patch('/voice', requireUser, async (req: AuthRequest, res) => {
+  const userId = req.user!.userId;
+  const { voiceId } = req.body;
+
+  if (!voiceId) {
+    return res.status(400).json({ error: 'voiceId is required' });
+  }
+
+  const validVoices = ['alloy', 'echo', 'shimmer', 'fable', 'onyx', 'nova'];
+  if (!validVoices.includes(voiceId)) {
+    return res.status(400).json({ error: 'Invalid voice. Must be one of: ' + validVoices.join(', ') });
+  }
+
+  try {
+    // Check if profile exists
+    const existing = await db
+      .select()
+      .from(coachProfiles)
+      .where(eq(coachProfiles.userId, userId))
+      .limit(1);
+
+    if (existing.length === 0) {
+      // Create new profile with just the voice
+      await db.insert(coachProfiles).values({
+        userId,
+        agentName: 'Nexa',
+        voiceId,
+        tone: 'supportive',
+        jargonLevel: 0.5,
+        decisiveness: 0.7,
+        personality: 'warm and intelligent',
+        pronouns: 'she/her',
+      });
+    } else {
+      // Update just the voice
+      await db.update(coachProfiles).set({ voiceId }).where(eq(coachProfiles.userId, userId));
+    }
+
+    res.json({ success: true, voiceId });
+  } catch (error) {
+    console.error('Failed to update voice:', error);
+    res.status(500).json({ error: 'Failed to update voice' });
+  }
+});
+
 export default router;

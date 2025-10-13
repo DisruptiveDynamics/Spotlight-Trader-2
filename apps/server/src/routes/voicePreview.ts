@@ -4,11 +4,17 @@ const router: ExpressRouter = Router();
 
 const PREVIEW_TEXT = "Hey there! This is what I sound like. Ready to crush the markets together?";
 
-router.post('/preview', async (req, res) => {
-  const { voice } = req.body;
+// GET /api/voice/preview?voice={voiceId}
+router.get('/preview', async (req, res) => {
+  const voice = req.query.voice as string;
 
   if (!voice) {
     return res.status(400).json({ error: 'Voice parameter required' });
+  }
+
+  const validVoices = ['alloy', 'echo', 'shimmer', 'fable', 'onyx', 'nova'];
+  if (!validVoices.includes(voice)) {
+    return res.status(400).json({ error: 'Invalid voice' });
   }
 
   try {

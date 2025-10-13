@@ -238,7 +238,12 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
           const functionName = message.name;
           const argsString = message.arguments;
           
-          console.log('[VoiceProxy] Function call:', { functionName, callId, userId, args: argsString });
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          console.log('[VOICE TOOL] ✅ Tool call intercepted (NO BYPASS - routed through proxy)');
+          console.log(`[VOICE TOOL] Function: ${functionName}`);
+          console.log(`[VOICE TOOL] Call ID: ${callId}`);
+          console.log(`[VOICE TOOL] User: ${userId}`);
+          console.log(`[VOICE TOOL] Raw Args: ${argsString}`);
           
           try {
             const args = JSON.parse(argsString);
@@ -247,7 +252,14 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
             // Call the appropriate copilot tool handler with userId context
             switch (functionName) {
               case 'get_chart_snapshot':
+                console.log(`[VOICE TOOL] Parsed Params: symbol=${args.symbol}, timeframe=${args.timeframe}, barCount=${args.barCount || args.lookback || 50}`);
+                console.log(`[VOICE TOOL] Data Source: Ring Buffer (in-memory, fed by BarBuilder)`);
                 result = await toolHandlers.get_chart_snapshot(args);
+                const latestBar = result.bars[result.bars.length - 1];
+                console.log(`[VOICE TOOL] Response: ${result.bars.length} bars retrieved`);
+                console.log(`[VOICE TOOL] Latest Price: ${latestBar?.close || 'N/A'} (symbol: ${result.symbol})`);
+                console.log(`[VOICE TOOL] Market State: regime=${result.regime}, volatility=${result.volatility}`);
+                console.log(`[VOICE TOOL] VWAP: ${result.indicators.vwap?.value || 'N/A'}`);
                 break;
               case 'propose_entry_exit':
                 result = await toolHandlers.propose_entry_exit(args);
@@ -341,7 +353,9 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
             // Trigger response generation
             upstreamWs.send(JSON.stringify({ type: 'response.create' }));
             
-            console.log('[VoiceProxy] Function result sent:', { callId, functionName, userId, success: true });
+            console.log(`[VOICE TOOL] ✅ Response sent back to OpenAI (via proxy)`);
+            console.log(`[VOICE TOOL] AI will now speak the result to user`);
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
           } catch (error) {
             console.error('[VoiceProxy] Function call error:', { userId, functionName, error: error instanceof Error ? error.message : 'Unknown error' });
             

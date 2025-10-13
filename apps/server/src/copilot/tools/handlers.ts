@@ -32,7 +32,8 @@ import { ringBuffer } from '@server/cache/ring';
 export async function getChartSnapshot(
   params: GetChartSnapshotParams
 ): Promise<ChartSnapshot> {
-  const barCount = params.lookback || 50;
+  // Support both 'barCount' (voice tool) and 'lookback' (legacy) parameter names
+  const barCount = params.barCount || params.lookback || 50;
   const cachedBars = ringBuffer.getRecent(params.symbol, barCount);
   
   if (cachedBars.length === 0) {

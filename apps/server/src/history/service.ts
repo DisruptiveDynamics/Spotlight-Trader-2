@@ -1,6 +1,7 @@
 import { validateEnv } from "@shared/env";
 import { ringBuffer } from "@server/cache/ring";
 import type { Bar, Timeframe } from "@server/market/eventBus";
+import { polygonWs } from "@server/market/polygonWs";
 
 const env = validateEnv(process.env);
 
@@ -75,11 +76,17 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
     }));
   }
 
-  // Priority 3: Fetch from Polygon REST API
-  const polygonBars = await fetchPolygonHistory(symbol, timeframe, limit, before);
-  if (polygonBars.length > 0) {
-    ringBuffer.putBars(symbol, polygonBars);
-    return polygonBars;
+  // Priority 3: Fetch from Polygon REST API (skip if using mock data)
+  const isUsingMockData = polygonWs.isUsingMockData();
+  
+  if (!isUsingMockData) {
+    const polygonBars = await fetchPolygonHistory(symbol, timeframe, limit, before);
+    if (polygonBars.length > 0) {
+      ringBuffer.putBars(symbol, polygonBars);
+      return polygonBars;
+    }
+  } else {
+    console.log(`🎭 Skipping Polygon API (mock mode active) - generating realistic bars for ${symbol}`);
   }
 
   // Priority 4: Use ring buffer even if sparse

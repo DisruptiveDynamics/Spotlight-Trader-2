@@ -211,6 +211,13 @@ export class PolygonWebSocket {
       this.ws = null;
     }
   }
+
+  /**
+   * Check if system is currently using mock data
+   */
+  isUsingMockData(): boolean {
+    return this.useMockData;
+  }
 }
 
 export const polygonWs = new PolygonWebSocket();

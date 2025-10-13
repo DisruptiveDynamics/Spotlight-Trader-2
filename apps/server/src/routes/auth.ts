@@ -80,9 +80,10 @@ router.get('/callback', async (req, res) => {
 
     res.cookie('sid', jwt, {
       httpOnly: true,
-      secure: env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'none',
       maxAge: sessionTtl * 1000,
+      path: '/',
     });
 
     res.redirect('/');
@@ -124,8 +125,8 @@ router.post('/demo', async (req, res) => {
 
     res.cookie('sid', jwt, {
       httpOnly: true,
-      secure: env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'none',
       maxAge: sessionTtl * 1000,
       path: '/',
     });

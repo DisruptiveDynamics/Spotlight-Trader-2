@@ -2,7 +2,7 @@
 // Atomic transition: stop old aggregation → backfill history → start new aggregation
 
 import { bars1m } from './bars1m';
-import { rollupFrom1m } from './rollups';
+import { rollupFrom1m, apply1mCloseToRollup } from './rollups';
 import { type Timeframe } from '@shared/types/market';
 import { eventBus } from '@server/market/eventBus';
 import { barBuilder } from '@server/market/barBuilder';
@@ -116,8 +116,6 @@ function setupIncrementalRollup(userId: string, symbol: string, timeframe: Timef
     }
 
     // Apply the closed 1m bar to the current rolled bar
-    const { apply1mCloseToRollup } = require('./rollups');
-    
     const result = apply1mCloseToRollup(
       symbol,
       timeframe,

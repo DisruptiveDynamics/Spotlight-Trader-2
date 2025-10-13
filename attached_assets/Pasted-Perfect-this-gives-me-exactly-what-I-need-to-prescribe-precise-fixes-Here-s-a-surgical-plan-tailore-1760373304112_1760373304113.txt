@@ -1,0 +1,266 @@
+Perfect—this gives me exactly what I need to prescribe precise fixes. Here’s a surgical plan tailored to your shell output, with copy-paste patches per file, installs you’re missing, and a short validation checklist.
+
+⸻
+
+0) Install what your code already expects
+
+You’re calling require('jsonwebtoken') but don’t have it in deps, and you’re in ESM mode.
+
+pnpm add jsonwebtoken pdf-parse
+pnpm add -D @types/jsonwebtoken
+
+(Keep date-fns / date-fns-tz — we’ll use those for ET/DST.)
+
+⸻
+
+1) Kill all remaining CommonJS require() in src (leave dist/ alone)
+
+You’re "type": "module", so these crash in runtime:
+	•	apps/server/src/routes/voiceToken.ts:100  const jwt = require('jsonwebtoken');
+	•	apps/server/src/flags.ts:19/32         const { isEnabled|getFlags } = require('./flags/store');
+	•	apps/server/src/knowledge/pdf.ts:3     const pdfParse = require('pdf-parse');
+	•	apps/server/src/chart/switchTimeframe.ts:119  const { apply1mCloseToRollup } = require('./rollups');
+
+A) apps/server/src/routes/voiceToken.ts
+
+Replace the require and any commonjs usage:
+
+// top of file
+import jwt from 'jsonwebtoken';
+
+// … later where you used `require('jsonwebtoken')`:
+const token = jwt.sign(payload, env.JWT_SECRET, { expiresIn: '1h' });
+
+If you generate a JWT for your “tools bridge” as well, convert those to jwt.sign with the ESM import.
+
+B) apps/server/src/flags.ts
+
+// BEFORE (lines 19/32)
+// const { isEnabled } = require('./flags/store');
+// const { getFlags } = require('./flags/store');
+
+// AFTER
+import { isEnabled, getFlags } from './flags/store.js';
+
+Note the .js extension — with Node ESM+TS builds this avoids resolution hiccups at runtime. If your tsconfig is moduleResolution: "node16", this is the safest.
+
+C) apps/server/src/knowledge/pdf.ts
+
+// BEFORE
+// const pdfParse = require('pdf-parse');
+
+// AFTER (pdf-parse is CJS; Node ESM default import maps to the CJS export)
+import pdfParse from 'pdf-parse';
+
+export async function extractPdf(buffer: Buffer) {
+  const result = await pdfParse(buffer);
+  return result.text ?? '';
+}
+
+If your runtime balks, alternate:
+
+const { default: pdfParse } = await import('pdf-parse');
+
+D) apps/server/src/chart/switchTimeframe.ts
+
+You already have an ESM import for rollups at line 5:
+
+import { rollupFrom1m } from './rollups';
+
+But at line 119 you still have a require. Replace line 119 with a normal import at top of file and use it:
+
+// add to the imports at the top:
+import { apply1mCloseToRollup } from './rollups.js';
+
+// … later remove:
+// const { apply1mCloseToRollup } = require('./rollups');
+
+
+⸻
+
+2) Bind the server correctly (fix the “listen” warning)
+
+Your scan warned: “app.listen may not bind 0.0.0.0/PORT”. On Replit you must bind to the platform port and 0.0.0.0.
+
+In apps/server/src/index.ts (or whatever boots Express):
+
+const PORT = Number(process.env.PORT ?? 8080);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[server] listening on http://0.0.0.0:${PORT}`);
+});
+
+
+⸻
+
+3) Make iPhone/Safari auth reliable (cookie flags + Bearer fallback)
+
+Your cookies are set in apps/server/src/routes/auth.ts. Update both spots (lines ~81 and ~125) to iOS-safe flags:
+
+res.cookie('sid', jwt, {
+  httpOnly: true,
+  sameSite: 'none',   // <-- critical for iOS cross-site
+  secure: true,       // <-- must be true when SameSite=None
+  path: '/',
+  maxAge: 1000 * 60 * 60 * 24 * 7,
+});
+
+Confirm middleware fallback in apps/server/src/middleware/requireUser.ts:
+	•	Your repo already references Authorization all over, but make sure it accepts Authorization: Bearer <sid> if cookie missing.
+
+If not already present, minimally:
+
+export function requireUser(req: AuthRequest, res: Response, next: NextFunction): void {
+  let token = req.cookies?.sid;
+
+  if (!token) {
+    const auth = req.headers.authorization || '';
+    if (auth.startsWith('Bearer ')) token = auth.slice(7).trim();
+  }
+  if (!token) return res.status(401).json({ error: 'Authentication required' });
+
+  // … your existing session/user lookup
+  next();
+}
+
+Client: when /api/voice/token 401s, retry with Bearer using stored sid:
+
+let r = await fetch('/api/voice/token', { method: 'POST', credentials: 'include' });
+if (r.status === 401) {
+  const sid = localStorage.getItem('sid');
+  if (sid) {
+    r = await fetch('/api/voice/token', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${sid}` },
+    });
+  }
+}
+
+CORS already shows allowedHeaders: ['Content-Type', 'Authorization'] in config/security.ts — good. Ensure credentials: true with your cors() setup.
+
+⸻
+
+4) Voice token route correctness
+
+Your scan shows both:
+	•	GET /api/voice/token (no auth)
+	•	POST /api/voice/token (with requireUser)
+
+That split is fine if the client uses the POST path when logged in. Make sure the iOS client requests POST (the guarded route) so your tools-bridge JWT logic (line 104 expiresIn: '1h') runs under auth.
+
+If you truly want GET for guests, ensure it never tries to call protected tools and only returns a plain ephemeral Realtime token.
+
+⸻
+
+5) Candle timeframes are already everywhere — align behavior
+
+Good news: the constants are defined broadly in both server and client for:
+
+'1m','2m','5m','10m','15m','30m','1h'
+
+What to check so they work:
+	1.	Server rollups / bar builder
+In apps/server/src/history/service.ts you already map minutes:
+
+'1m':1, '2m':2, '5m':5, '10m':10, '15m':15, '30m':30, '1h':60
+
+Ensure your runtime rollup code aligns buckets to exact multiples of the timeframe:
+
+const bucket = (t:number, ms:number) => Math.floor(t/ms)*ms;
+
+If barBuilder pushes “microbars” and then finalizes, guarantee the finalize timer calls on exact minute boundaries (00:01:00.000, 00:02:00.000, etc.) for each TF. The functions startMicrobarTimer/startBarFinalizeTimer in your scan are the right place to enforce that alignment (use setTimeout to the next boundary, then setInterval in multiples of TF ms).
+
+	2.	Client Toolbar
+You already have TIMEFRAMES in apps/client/src/features/chart/Toolbar.tsx. Make sure clicking re-subscribes:
+
+function onSelect(tf: Timeframe) {
+  dispatch(setActiveTimeframe(tf));
+  marketStream.rebind({ symbol: active.symbol, timeframe: tf }); // ensure this triggers SSE/WS resubscribe
+}
+
+
+	3.	Voice tools
+apps/server/src/voice/tools.ts already has timeframe enum. Keep defaults ('5m') but accept all 7.
+
+⸻
+
+6) Fix date/time & “market closed” (use date-fns-tz you already ship)
+
+Create a tiny helper (shared or server):
+
+packages/shared/src/time.ts (or similar)
+
+import { formatInTimeZone, zonedTimeToUtc } from 'date-fns-tz';
+
+// Exchange = New York
+export const EX_TZ = 'America/New_York';
+
+export function bucket(tsMs: number, sizeMs: number): number {
+  return Math.floor(tsMs / sizeMs) * sizeMs;
+}
+
+export function labelET(tsMs: number): string {
+  return formatInTimeZone(new Date(tsMs), EX_TZ, 'MMM dd, HH:mm');
+}
+
+export function marketIsOpen(nowMs: number = Date.now()): boolean {
+  const now = new Date(nowMs);
+  const day = formatInTimeZone(now, EX_TZ, 'i'); // 1–7 (Mon–Sun)
+  if (day === '6' || day === '7') return false;
+
+  const open = zonedTimeToUtc(`${formatInTimeZone(now, EX_TZ, 'yyyy-MM-dd')} 09:30:00`, EX_TZ).getTime();
+  const close = zonedTimeToUtc(`${formatInTimeZone(now, EX_TZ, 'yyyy-MM-dd')} 16:00:00`, EX_TZ).getTime();
+  const nowUtcMs = now.getTime();
+
+  return nowUtcMs >= open && nowUtcMs < close;
+}
+
+	•	Use labelET for x-axis labels so they always display exchange time.
+	•	Use marketIsOpen() for the status badge; it will honor DST via date-fns-tz.
+
+If you already have a health route at /api/health (you do), your “Server Down” should only show when:
+	•	/api/health fails and
+	•	your SSE/WS stream is offline.
+
+Otherwise display Degraded. You already expose /api/voice/health — plug that into your status reducer too.
+
+⸻
+
+7) Quick patch commands (optional helper)
+
+If you prefer a fast replace for those four require() lines:
+
+# voiceToken.ts
+gsed -i "s/const jwt = require('jsonwebtoken');/import jwt from 'jsonwebtoken';/" apps/server/src/routes/voiceToken.ts
+
+# flags.ts (import from flags/store)
+gsed -i "s/const { isEnabled } = require('\\.\\/flags\\/store');/import { isEnabled } from '.\\/flags\\/store.js';/" apps/server/src/flags.ts
+gsed -i "s/const { getFlags } = require('\\.\\/flags\\/store');/import { getFlags } from '.\\/flags\\/store.js';/" apps/server/src/flags.ts
+
+# knowledge/pdf.ts
+gsed -i "s/const pdfParse = require('pdf-parse');/import pdfParse from 'pdf-parse';/" apps/server/src/knowledge/pdf.ts
+
+# switchTimeframe.ts (remove inline require; ensure ESM import at top)
+gsed -i "s/const { apply1mCloseToRollup } = require('\\.\\/rollups');/\/\/ moved to ESM import at top/" apps/server/src/chart/switchTimeframe.ts
+
+(Use sed -i '' on macOS if gsed isn’t available.)
+
+⸻
+
+8) Rebuild & verify
+
+pnpm install
+pnpm run typecheck || tsc -p tsconfig.json --noEmit
+pnpm run build || true
+pnpm run start
+
+Checklist (fast):
+	•	✅ No more ReferenceError: require is not defined
+	•	✅ /api/voice/token POST works on desktop; on iPhone if 401, client retry with Authorization: Bearer <sid> succeeds
+	•	✅ Cookies show SameSite=None; Secure
+	•	✅ Chart shows ET labels; “Market OPEN/CLOSED” matches real ET session times
+	•	✅ Selecting 1m / 2m / 5m / 10m / 15m / 30m / 1h rebinds stream and aligns candles to clean bucket boundaries
+	•	✅ Status only shows DOWN if both /api/health fails and streams are dead; DEGRADED if mixed
+
+⸻
+
+If you paste back any remaining file+line errors from your console after this pass, I’ll hand you the exact next patch (line-level).

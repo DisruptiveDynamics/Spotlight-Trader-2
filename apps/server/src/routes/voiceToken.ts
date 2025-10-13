@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import { signVoiceToken } from '../realtime/auth';
 import { requireUser, AuthRequest } from '../middleware/requireUser.js';
 import { validateEnv } from '@shared/env';
+import jwt from 'jsonwebtoken';
 
 const env = validateEnv(process.env);
 
@@ -97,7 +98,6 @@ export function setupVoiceTokenRoute(app: Express) {
       const openaiData = await openaiResponse.json() as { value: string };
 
       // Generate JWT for Tool Bridge (signed with AUTH_JWT_SECRET, contains userId)
-      const jwt = require('jsonwebtoken');
       const toolsBridgeToken = jwt.sign(
         { userId, sessionId },
         env.AUTH_JWT_SECRET,

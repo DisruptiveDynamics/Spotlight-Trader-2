@@ -41,8 +41,9 @@ export async function switchTimeframe(params: {
       console.log(`[TimeframeSwitch] Stopping old aggregation for ${oldState.timeframe}`);
       oldState.isLive = false;
       
-      // Unsubscribe from old timeframe bar events if we were listening
-      barBuilder.unsubscribe(symbol, oldState.timeframe);
+      // NEVER unsubscribe from 1m - it's the authoritative source for all timeframes
+      // Only unsubscribe if switching FROM a non-1m timeframe
+      // (1m stays subscribed at all times to feed bars1m buffer and rollups)
     }
 
     // Step 2: Backfill history from 1m buffer
@@ -93,13 +94,16 @@ export async function switchTimeframe(params: {
 
 // Setup incremental rollup: listen to 1m bar closes and update rolled state
 function setupIncrementalRollup(userId: string, symbol: string, timeframe: Timeframe): void {
+  // ALWAYS ensure 1m is subscribed - it's the authoritative source for ALL timeframes
+  // This feeds bars1m buffer, VWAP, voice tools, and rollups
+  barBuilder.subscribe(symbol, '1m');
+  
   if (timeframe === '1m') {
-    // No rollup needed for 1m, subscribe directly to bar builder
-    barBuilder.subscribe(symbol, '1m');
+    // No rollup needed for 1m, just use 1m bars directly
     return;
   }
 
-  // Listen to 1m bar closes from the bar builder
+  // Listen to 1m bar closes from the bar builder for incremental rollups
   const eventName = `bar:new:${symbol}:1m` as const;
   
   const handler = (bar1m: any) => {

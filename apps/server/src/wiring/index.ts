@@ -24,27 +24,17 @@ const activeSubscriptions = new Map<string, string>();
 const barListeners = new Map<string, (bar: any) => void>();
 
 function subscribeSymbolTimeframe(symbol: string, timeframe: string) {
-  // Unsubscribe from old timeframe if exists
-  const oldTimeframe = activeSubscriptions.get(symbol);
-  if (oldTimeframe) {
-    barBuilder.unsubscribe(symbol, oldTimeframe);
-    
-    // Remove old bar listener using stored reference
-    const oldListener = barListeners.get(symbol);
-    if (oldListener) {
-      eventBus.off(`bar:new:${symbol}:${oldTimeframe}` as any, oldListener);
-    }
-  }
-
-  // Subscribe to new timeframe
-  barBuilder.subscribe(symbol, timeframe);
+  // CRITICAL: Always ensure 1m barBuilder subscription exists
+  // The 1m feed is authoritative and feeds bars1m, VWAP, voice tools, and rollups
+  // This MUST stay active regardless of user's selected timeframe
+  barBuilder.subscribe(symbol, '1m');
   
-  // Create and store bar listener reference for proper cleanup
-  const barListener = (bar: any) => {
-    ringBuffer.putBars(symbol, [bar]);
-    
-    // Feed 1m bars into authoritative buffer (single source of truth)
-    if (timeframe === '1m') {
+  // CRITICAL: Always listen to 1m bars for bars1m buffer (single source of truth)
+  // This listener NEVER gets removed - it's the foundation of the entire system
+  const bars1mKey = `${symbol}:1m:bars1m`;
+  if (!barListeners.has(bars1mKey)) {
+    const bars1mListener = (bar: any) => {
+      // Feed ALL 1m bars into authoritative buffer
       bars1m.append(symbol, {
         symbol: bar.symbol,
         seq: bar.seq,
@@ -56,12 +46,54 @@ function subscribeSymbolTimeframe(symbol: string, timeframe: string) {
         c: bar.ohlcv.c,
         v: bar.ohlcv.v,
       });
-    }
-  };
-  barListeners.set(symbol, barListener);
+    };
+    barListeners.set(bars1mKey, bars1mListener);
+    eventBus.on(`bar:new:${symbol}:1m` as any, bars1mListener);
+    console.log(`📊 [CRITICAL] Subscribed ${symbol} to 1m authoritative feed (never removed)`);
+  }
   
-  // Listen to bar events for this timeframe
-  eventBus.on(`bar:new:${symbol}:${timeframe}` as any, barListener);
+  // Now handle user-specific timeframe subscription for SSE streaming
+  // Remove ALL old timeframe listeners (including 1m ring listener)
+  const oldTimeframe = activeSubscriptions.get(symbol);
+  if (oldTimeframe) {
+    // Remove old non-1m listener
+    if (oldTimeframe !== '1m') {
+      const oldKey = `${symbol}:${oldTimeframe}`;
+      const oldListener = barListeners.get(oldKey);
+      if (oldListener) {
+        eventBus.off(`bar:new:${symbol}:${oldTimeframe}` as any, oldListener);
+        barListeners.delete(oldKey);
+      }
+    } else {
+      // Remove old 1m ring listener
+      const oldRingKey = `${symbol}:1m:ring`;
+      const oldRingListener = barListeners.get(oldRingKey);
+      if (oldRingListener) {
+        eventBus.off(`bar:new:${symbol}:1m` as any, oldRingListener);
+        barListeners.delete(oldRingKey);
+      }
+    }
+  }
+  
+  // Subscribe to user's selected timeframe for SSE streaming
+  if (timeframe !== '1m') {
+    // For higher timeframes, listen to rolled bar events
+    const timeframeKey = `${symbol}:${timeframe}`;
+    const timeframeListener = (bar: any) => {
+      // Feed rolled bars to ring buffer for SSE streaming
+      ringBuffer.putBars(symbol, [bar]);
+    };
+    barListeners.set(timeframeKey, timeframeListener);
+    eventBus.on(`bar:new:${symbol}:${timeframe}` as any, timeframeListener);
+  } else {
+    // For 1m, add separate ring buffer listener (distinct from bars1m listener)
+    const ringKey = `${symbol}:1m:ring`;
+    const ringListener = (bar: any) => {
+      ringBuffer.putBars(symbol, [bar]);
+    };
+    barListeners.set(ringKey, ringListener);
+    eventBus.on(`bar:new:${symbol}:1m` as any, ringListener);
+  }
 
   activeSubscriptions.set(symbol, timeframe);
   console.log(`📊 Subscribed ${symbol} to ${timeframe} timeframe`);

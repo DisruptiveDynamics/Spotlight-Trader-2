@@ -218,9 +218,13 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       };
       
       if (currentEpochId && currentEpochId !== data.epochId) {
-        console.log(`🔄 Server restarted: epoch ${currentEpochId.slice(0,8)} → ${data.epochId.slice(0,8)}`);
+        console.log(`🔄 Server restarted: epoch ${currentEpochId.slice(0,8)} → ${data.epochId.slice(0,8)}, triggering resync`);
         currentEpochId = data.epochId;
-        // Perform resync on next bar
+        duplicateRejections = []; // Reset duplicate counter
+        // Trigger immediate resync to rebuild state from server
+        performResync("epoch change").catch(err => {
+          console.error("Epoch resync failed:", err);
+        });
       } else {
         currentEpochId = data.epochId;
         console.log(`✅ Epoch established: ${data.epochId.slice(0,8)}`);

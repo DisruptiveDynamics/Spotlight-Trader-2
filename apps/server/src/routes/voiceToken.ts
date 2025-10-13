@@ -105,7 +105,6 @@ export function setupVoiceTokenRoute(app: Express) {
       res.json({ 
         token: openaiData.value,           // OpenAI ephemeral token for audio
         toolsBridgeToken,                  // JWT for Tool Bridge
-        apiKey: env.OPENAI_API_KEY,       // For SDK initialization
         sessionId,
         expiresIn: 60,
       });

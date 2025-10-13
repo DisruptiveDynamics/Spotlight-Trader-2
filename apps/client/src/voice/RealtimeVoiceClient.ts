@@ -20,7 +20,6 @@ export class RealtimeVoiceClient {
   private connectionState: ConnectionState = 'idle';
   private isMuted = false;
   private sessionId: string | null = null;
-  private currentApiKey: string | null = null;
   private toolBridge: ToolBridge | null = null;
 
   constructor(config: VoiceClientConfig) {
@@ -52,8 +51,7 @@ export class RealtimeVoiceClient {
         throw new Error('Failed to get voice token');
       }
 
-      const { token, toolsBridgeToken, apiKey, sessionId } = await tokenRes.json();
-      this.currentApiKey = apiKey;
+      const { token, toolsBridgeToken, sessionId } = await tokenRes.json();
       this.sessionId = sessionId;
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -62,7 +60,8 @@ export class RealtimeVoiceClient {
       this.toolBridge = new ToolBridge(toolBridgeUrl, () => toolsBridgeToken);
       this.toolBridge.connect();
 
-      this.session = await this.agent.connect(apiKey);
+      // Connect to OpenAI with ephemeral token (not API key)
+      this.session = await this.agent.connect(token);
 
       this.session.on('function_call', async (call: any) => {
         console.log('[RealtimeVoiceClient] Function call:', call.name, call.arguments);

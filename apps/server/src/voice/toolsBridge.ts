@@ -127,7 +127,12 @@ function capPayload(output: any): any {
   // Truncate and add metadata
   console.warn(`[ToolsBridge] Payload exceeds ${MAX_PAYLOAD_BYTES} bytes (${byteSize}), truncating`);
   
-  const truncated = json.slice(0, MAX_PAYLOAD_BYTES);
+  // [FIX] Truncate by bytes, not characters, to ensure hard 80KB limit
+  const buffer = Buffer.from(json, 'utf8');
+  const truncatedBuffer = buffer.slice(0, MAX_PAYLOAD_BYTES);
+  // Ensure we don't split multi-byte UTF-8 characters
+  const truncated = truncatedBuffer.toString('utf8').replace(/\uFFFD+$/, ''); // Remove replacement chars at end
+  
   return {
     truncated: true,
     originalSize: byteSize,

@@ -52,14 +52,14 @@ export class RealtimeVoiceClient {
         throw new Error('Failed to get voice token');
       }
 
-      const { token, apiKey, sessionId } = await tokenRes.json();
+      const { token, toolsBridgeToken, apiKey, sessionId } = await tokenRes.json();
       this.currentApiKey = apiKey;
       this.sessionId = sessionId;
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const toolBridgeUrl = `${protocol}//${window.location.host}/ws/tools`;
       
-      this.toolBridge = new ToolBridge(toolBridgeUrl, () => token);
+      this.toolBridge = new ToolBridge(toolBridgeUrl, () => toolsBridgeToken);
       this.toolBridge.connect();
 
       this.session = await this.agent.connect(apiKey);

@@ -52,11 +52,67 @@ export function setupVoiceTokenRoute(app: Express) {
     res.status(400).json({ error: 'Demo mode required for GET requests' });
   });
 
-  // POST /api/voice/token - Generate voice session token
-  app.post('/api/voice/token', requireUser, (req: AuthRequest, res) => {
-    const userId = req.user!.userId;
-    const token = signVoiceToken(userId, 60);
-    res.json({ token });
+  // POST /api/voice/token - Generate voice session token and tools bridge JWT
+  app.post('/api/voice/token', requireUser, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.userId;
+      const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
+
+      // Apply rate limiting per user
+      const rateLimit = checkRateLimit(`user:${userId}`);
+      if (!rateLimit.allowed) {
+        console.warn(`[VOICE SECURITY] Rate limit exceeded for user: ${userId}`);
+        return res.status(429).json({ 
+          error: 'Rate limit exceeded. Max 10 tokens per hour.',
+          retryAfter: 3600
+        });
+      }
+
+      console.log(`[VOICE] Token requested by user: ${userId} from IP: ${clientIp}`);
+
+      // Generate ephemeral token for OpenAI audio
+      const openaiResponse = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          session: {
+            type: 'realtime',
+            model: 'gpt-realtime',
+          },
+        }),
+      });
+
+      if (!openaiResponse.ok) {
+        const error = await openaiResponse.text();
+        console.error('Failed to generate ephemeral token:', error);
+        return res.status(500).json({ error: 'Failed to generate OpenAI token' });
+      }
+
+      const openaiData = await openaiResponse.json() as { value: string };
+
+      // Generate JWT for Tool Bridge (signed with AUTH_JWT_SECRET, contains userId)
+      const jwt = require('jsonwebtoken');
+      const toolsBridgeToken = jwt.sign(
+        { userId, sessionId },
+        env.AUTH_JWT_SECRET,
+        { expiresIn: '1h' }
+      );
+
+      res.json({ 
+        token: openaiData.value,           // OpenAI ephemeral token for audio
+        toolsBridgeToken,                  // JWT for Tool Bridge
+        apiKey: env.OPENAI_API_KEY,       // For SDK initialization
+        sessionId,
+        expiresIn: 60,
+      });
+    } catch (error) {
+      console.error('Error generating voice tokens:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
   // POST /api/voice/ephemeral-token - Generate ephemeral token for WebRTC (AUTHENTICATED)

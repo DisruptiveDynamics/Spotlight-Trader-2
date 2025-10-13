@@ -1,0 +1,155 @@
+You are operating in a pnpm monorepo for Spotlight Trader with these workspaces:
+- apps/server
+- apps/client
+- packages/shared
+
+Your job: Implement clean, non-breaking improvements that align with Thinkorswim/TradingView:
+- Single source of truth: ticks → 1m bars → roll-ups (2/5/10/15/30/60)
+- Server is authoritative for timeframe, client requests/acknowledges
+- VWAP basis consistent across Chart, Tape, and Nexa
+- Voice runs THROUGH our proxy (not direct to OpenAI) and MUST use tools for market numbers
+- Add a light audit tap (optional flag) for bars vs tape vs vwap
+- All changes are additive, small, feature-flagged, pass lint/typecheck/build
+
+────────────────────────────────────────────────────────────────────────────
+
+### 0) Feature flags (packages/shared/src/flags.ts)
+Create or update with:
+export const flags = {
+  voiceViaProxy: true,          // Client routes voice through our proxy by default
+  timeframeServerSource: true,  // Server owns timeframe state
+  timeframeRollups: true,       // Build higher TFs from 1m
+  marketAudit: false            // Optional logging-only audit
+};
+
+Add/confirm packages/shared/src/types/market.ts:
+export type Timeframe = '1m'|'2m'|'5m'|'10m'|'15m'|'30m'|'1h';
+export const TIMEFRAME_TO_BUCKET_MIN = { '1m':1,'2m':2,'5m':5,'10m':10,'15m':15,'30m':30,'1h':60 } as const;
+
+────────────────────────────────────────────────────────────────────────────
+
+### 1) Server – 1m authoritative + roll-ups (apps/server)
+
+A) Authoritative 1m buffer
+- Ensure we have an in-memory ring buffer per symbol for 1m bars (bars1m[symbol]).
+- If not present, create src/chart/bars1m.ts with ring buffer helpers (append/close/peek).
+
+B) Deterministic roll-ups (2/5/10/15/30/60) from 1m
+Create src/chart/rollups.ts
+- Export functions:
+  - rollupFrom1m(bars1m: Bar[], k: number): Bar[]  // initial backfill
+  - apply1mCloseToRollup(state, symbol, k, closed1mBar): void // incremental update
+- Rules:
+  - Only roll from **CLOSED 1m bars**.
+  - No mutation of closed higher-TF bars (immutable once emitted).
+  - Use TIMEFRAME_TO_BUCKET_MIN map for k.
+
+C) Timeframe switch (server is source of truth)
+Create src/chart/switchTimeframe.ts
+- export async function switchTimeframe({ userId, symbol, timeframe }: {userId:string;symbol:string;timeframe:Timeframe})
+  Steps (atomic):
+  1) Stop live aggregation for the old timeframe (if any).
+  2) Backfill history for the new TF by rolling from existing 1m buffer (choose N=500 bars).
+  3) Reset the (symbol,timeframe) ring buffer with the rolled-up history.
+  4) Start live incremental roll-up: on each 1m close, call apply1mCloseToRollup for this TF.
+  5) Emit a "bar:reset" event followed by initial history for the client to redraw.
+
+D) API: POST /api/chart/timeframe
+Create/modify src/routes/chartTimeframe.ts
+- Validate body `{ symbol: string, timeframe: Timeframe }`, reject others with 400.
+- Call switchTimeframe({ userId:req.user.id, symbol, timeframe }) and return `{ ok: true }`.
+- Guard behind flags.timeframeServerSource.
+
+E) Chart snapshots tool (auth + consistent output)
+Update src/agent/tools/chartTools.ts
+- Ensure `get_chart_snapshot(symbol,timeframe)` reads from the correct ring buffer keyed by (symbol,timeframe).
+- Return shape:
+  type ChartPoint = { t:number; o:number; h:number; l:number; c:number; v:number };
+  type Snapshot = { symbol:string; timeframe:Timeframe; points:ChartPoint[]; lastSeq?:number; vwap?:number };
+- vwap must match chart’s basis (see VWAP section below).
+
+────────────────────────────────────────────────────────────────────────────
+
+### 2) VWAP basis consistency (apps/server)
+
+A) Choose basis and keep it everywhere:
+- Preferred: session tick VWAP = sum(price*size) / sum(size) on the same tick stream (Tape).
+- Acceptable fallback: bar VWAP = sum(vwap_bar*vol_bar)/sum(vol_bar) using 1m bars.
+
+B) Implement src/indicators/vwap.ts
+- Export getSessionVWAPForSymbol(symbol): number | undefined
+- Use the SAME bus used by Tape and 1m builder; expose the value for chart and for Snapshot.vwap.
+
+C) Ensure get_chart_snapshot attaches this vwap value.
+
+────────────────────────────────────────────────────────────────────────────
+
+### 3) Voice through proxy + tool enforcement (apps/server)
+
+A) Proxy connection logs and handler (src/realtime/voiceProxy.ts)
+- Confirm our HTTP server attaches a WS upgrade handler at /ws/realtime.
+- On connection: log
+  [VoiceProxy] Client WebSocket connected { user:..., ip:... }
+- Create/refresh OpenAI Realtime session server-side.
+- Immediately send session.update with:
+  - system prompt reinforcing: “For ANY market metric (price, VWAP, volume, high/low, ATR/RSI, entries/stops/targets), you MUST call tools to fetch real data. If tools fail, say so; never guess.”
+  - temperature: 0.1, top_p: 0.8
+  - register the tools array, including get_chart_snapshot
+
+B) Server-side “numeric guard”
+- Track `lastToolCallAt` timestamp; whenever a tool completes, update it.
+- When streaming assistant text, if text appears to assert a numeric market claim and Date.now()-lastToolCallAt>3000ms:
+  - intercept and replace with “Let me pull the live data first…”
+  - trigger a tool call for the relevant symbol/timeframe, then continue stream.
+
+C) Market context nudge (optional but recommended)
+- On user utterance that looks like a market question (contains terms like vwap/price/high/low/volume):
+  - Pre-fetch the latest snapshot (symbol,timeframe) from the ring buffer and inject a brief system note:
+    “Active chart: ${symbol} ${timeframe}. Here’s the latest snapshot JSON: … Use tools to confirm before stating numbers.”
+
+────────────────────────────────────────────────────────────────────────────
+
+### 4) Client – timeframe picker → server authority (apps/client)
+
+A) Safe setter in state (src/stores/chartState.ts)
+- Implement setTimeframeSafe(symbol,timeframe):
+  1) Optimistically set UI with spinner/disabled buttons.
+  2) POST /api/chart/timeframe {symbol,timeframe}.
+  3) On 200: clear chart; GET /api/chart/history?symbol=...&tf=...; resume live stream on that tf.
+  4) On non-200: rollback UI and show toast.
+
+B) UI (src/components/TimeframePicker.tsx)
+- Buttons for primary: 1m, 5m, 15m, 1h; “More” dropdown for 2m, 10m, 30m.
+- Debounce clicks by 300–500ms.
+
+C) Voice (src/voice/PresenceBubble.tsx)
+- When flags.voiceViaProxy=true, connect to import.meta.env.VITE_VOICE_PROXY_URL with ?t={userToken}; keep the current OpenAI SDK path as fallback when flag=false.
+- Add loud console logs on connect/disconnect for quick diagnostics.
+
+────────────────────────────────────────────────────────────────────────────
+
+### 5) Optional audit tap (apps/server) — logs only, off by default
+- src/market/auditTap.ts: passive hook on the SAME tick bus and on bar-close:
+  - Compare bar.close ≈ last trade price (within $0.03)
+  - Compare vwap_calc ≈ vwap_app (within $0.05)
+  - Log “[Audit] Ok …” or “[Audit] Mismatch …”
+- Guard behind flags.marketAudit.
+
+────────────────────────────────────────────────────────────────────────────
+
+### 6) Testing & acceptance (must pass)
+
+- Switch symbol timeframe 1m → 5m → 15m → 1h: chart emits bar:reset, loads correct history, resumes live with NO mixed bars.
+- VWAP shown on chart equals Snapshot.vwap and matches tape within a few cents.
+- Ask “What’s VWAP on SPY 5m?”: server logs a get_chart_snapshot tool call; no numeric claim passes without a recent tool call.
+- Kill/reconnect WS: client resumes and fills gaps via catch-up (no duplicates).
+- `pnpm -r lint`, `pnpm -r typecheck`, `pnpm -r build` succeed with zero TypeScript errors.
+
+Constraints:
+- DO NOT rename existing public APIs or remove env vars.
+- Keep all changes additive and behind the listed flags.
+- Keep files small, commented, and idiomatic TypeScript.
+
+Deliverables:
+- List of files added/modified with 1–2 line summaries.
+- Any new env vars (e.g., VITE_VOICE_PROXY_URL) documented at the end of your output.

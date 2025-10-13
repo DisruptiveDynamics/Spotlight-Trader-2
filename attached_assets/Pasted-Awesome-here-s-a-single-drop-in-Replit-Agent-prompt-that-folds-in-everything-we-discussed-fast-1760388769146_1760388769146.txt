@@ -1,0 +1,406 @@
+Awesome—here’s a single, drop-in **Replit Agent prompt** that folds in everything we discussed: fast micro-tools (price/VWAP/EMA), smart intent routing (micro vs 20-bar snapshot), caching, bar-count safety, plus a few fixes your shell surfaced (ESM import, 0.0.0.0 binding, tsconfig composite).
+
+Copy–paste this whole block into your Replit agent and run it.
+
+---
+
+# 🚀 Nexa “Speed & Smarts” Upgrade — Replit Agent Prompt
+
+## Goals
+
+* **Sub-second answers** for single metrics (“price”, “VWAP”, “9 EMA”, etc.) using **micro-tools**.
+* **20-bar snapshot** for setup/analysis asks (“how is SPY setting up?”).
+* **Auto-watcher ready** (short-interval polling, escalating frequency).
+* Cap data volume (no 500-bar payloads), add 5s caches, and ensure timeouts & graceful fallbacks.
+* Fix build blockers from shell: ESM `pdf-parse`, server bind, TypeScript project refs.
+
+## SLAs (enforced by code/timeout)
+
+* **Micro-tools** TTFB ≤ **1.2s** (target 300–800ms).
+* **Snapshot(20)** TTFB ≤ **3.0s**.
+* Tool call timeout: **1200ms** (micro) / **2000ms** (snapshot) -> degrade gracefully.
+
+---
+
+## 0) Pre-flight: create branch, run checks
+
+1. Create a feature branch `feat/nexa-speed-microtools`.
+2. After each step, run: `pnpm -r typecheck && pnpm -r build || true`, then `pnpm -r test || true`.
+
+---
+
+## 1) Server: add 5s TTL cache + micro-tools
+
+**File:** `apps/server/src/voice/tools.ts`
+
+* Add fast endpoints:
+
+  * `get_last_price(symbol)`
+  * `get_last_vwap(symbol)`
+  * `get_last_ema(symbol, period)` with period ∈ {9,21,50,200}
+* Each returns `{ symbol, value, ts }` (minimal payload).
+* Reuse latest **1 bar** from ring (`getRing(symbol,'1m').peekLast()`).
+* Add **5s TTL cache** per (symbol, metric).
+* Enforce tool-level timeout wrappers (micro 1200ms, snapshot 2000ms).
+
+**Patch (append/update in file):**
+
+```ts
+// --- add near top ---
+import { z } from "zod";
+// If you already have a cache util, use that instead; else:
+const ttlCache = <T>(ttlMs: number) => {
+  const m = new Map<string, { v: T; t: number }>();
+  return async (key: string, fn: () => Promise<T>) => {
+    const now = Date.now();
+    const hit = m.get(key);
+    if (hit && now - hit.t < ttlMs) return hit.v;
+    const v = await fn();
+    m.set(key, { v, t: now });
+    return v;
+  };
+};
+const cache5s = ttlCache<any>(5000);
+
+function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => T): Promise<T> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const t = setTimeout(() => {
+      if (!settled) { settled = true; resolve(onTimeout()); }
+    }, ms);
+    p.then((v) => { if (!settled) { settled = true; clearTimeout(t); resolve(v); } })
+     .catch(() => { if (!settled) { settled = true; clearTimeout(t); resolve(onTimeout()); } });
+  });
+}
+
+// You likely already have a ring accessor; adjust import/location as needed
+import { getRing } from "../chart/bars1m";
+
+// small helper
+async function latestBar(symbol: string) {
+  const ring = getRing(symbol, "1m");
+  const b = ring?.peekLast?.();
+  if (!b) throw new Error(`No data for ${symbol}`);
+  return b; // expect fields: t, close (or c), vwap?, ema9?, ema21? ...
+}
+
+// --- inside export const voiceTools = { ... } add:
+async get_last_price(input: unknown) {
+  const { symbol } = z.object({ symbol: z.string().min(1) }).parse(input);
+  const exec = async () => cache5s(`price:${symbol}`, async () => {
+    const b = await latestBar(symbol);
+    const price = b.close ?? b.c;
+    return { symbol, value: price, ts: b.t };
+  });
+  return withTimeout(exec(), 1200, () => ({ symbol, value: null, ts: null, stale: true }));
+},
+
+async get_last_vwap(input: unknown) {
+  const { symbol } = z.object({ symbol: z.string().min(1) }).parse(input);
+  const exec = async () => cache5s(`vwap:${symbol}`, async () => {
+    const b = await latestBar(symbol);
+    if (b.vwap == null) throw new Error("VWAP not available on latest bar");
+    return { symbol, value: b.vwap, ts: b.t };
+  });
+  return withTimeout(exec(), 1200, () => ({ symbol, value: null, ts: null, stale: true }));
+},
+
+async get_last_ema(input: unknown) {
+  const EMA_OK = [9, 21, 50, 200] as const;
+  const { symbol, period } = z.object({
+    symbol: z.string().min(1),
+    period: z.enum(EMA_OK.map(String) as [string, ...string[]]).transform(Number),
+  }).parse(input);
+
+  const exec = async () => cache5s(`ema:${symbol}:${period}`, async () => {
+    const b = await latestBar(symbol);
+    const field = `ema${period}`;
+    const val = (b as any)[field];
+    if (val == null) throw new Error(`EMA ${period} not available on latest bar`);
+    return { symbol, value: val, ts: b.t, period };
+  });
+  return withTimeout(exec(), 1200, () => ({ symbol, value: null, ts: null, period, stale: true }));
+},
+```
+
+**Bar-count safety in snapshot**
+Still in `apps/server/src/voice/tools.ts`, enforce **cap & default**:
+
+```ts
+// find get_chart_snapshot handler; ensure:
+const params = z.object({
+  symbol: z.string(),
+  timeframe: z.enum(['1m','2m','5m','10m','15m','30m','1h']).default('1m'),
+  barCount: z.number().int().min(1).max(100).default(20), // 👈 cap at 100, default 20
+}).parse(input);
+
+// later, BEFORE fetching: clamp again defensively
+const barCount = Math.max(1, Math.min(params.barCount ?? 20, 100));
+```
+
+**Add 5s cache for snapshot:**
+
+```ts
+return cache5s(`snap:${params.symbol}:${params.timeframe}:${barCount}`, async () => {
+  // existing code fetching from ring & computing indicators...
+});
+```
+
+---
+
+## 2) Client: expose micro-tools to the model
+
+**File:** `apps/client/src/voice/toolSchemas.ts`
+
+Append three schemas:
+
+```ts
+export const toolSchemas = [
+  // ...existing...
+  {
+    name: "get_last_price",
+    description: "Return the most recent traded price for a symbol.",
+    parameters: {
+      type: "object",
+      properties: { symbol: { type: "string" } },
+      required: ["symbol"]
+    }
+  },
+  {
+    name: "get_last_vwap",
+    description: "Return the most recent session VWAP for a symbol.",
+    parameters: {
+      type: "object",
+      properties: { symbol: { type: "string" } },
+      required: ["symbol"]
+    }
+  },
+  {
+    name: "get_last_ema",
+    description: "Return the most recent EMA value for a symbol and period (9,21,50,200).",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: { type: "string" },
+        period: { type: "integer", enum: [9, 21, 50, 200] }
+      },
+      required: ["symbol", "period"]
+    }
+  }
+];
+```
+
+---
+
+## 3) Client: smart intent routing
+
+**File:** `apps/client/src/voice/RealtimeVoiceClient.ts`
+
+* If the model calls a tool explicitly, you already route it.
+* Add **heuristic** pre-bias: when user utterance matches **single-metric** patterns, encourage the model by **priming** with a system hint (or pass guidance in `instructions`) or by **intercepting** the tool call arguments to set `barCount=20` only for snapshot.
+
+**Patch — add phrase router just before/at message send:**
+
+```ts
+// Pseudo-snippet: when you create the agent/session, add a short bias
+const FAST_HINT = `
+If the user asks for a single metric (price, vwap, "9 ema", "21 ema"), prefer calling
+get_last_price/get_last_vwap/get_last_ema. For broader asks like "how is X setting up?"
+use get_chart_snapshot with barCount=20.
+`;
+
+// when constructing RealtimeAgent / session:
+instructions: `${config.instructions}\n\n${FAST_HINT}`;
+
+// Optional: intercept function call args for snapshot and force barCount default to 20
+session.on("response.function_call.arguments.done", async (ev) => {
+  // existing…
+  let args = {};
+  try { args = JSON.parse(ev.arguments || "{}"); } catch {}
+  if (ev.name === "get_chart_snapshot") {
+    args = { barCount: 20, timeframe: args.timeframe ?? "1m", ...args };
+  }
+  const result = await toolBridge.exec(ev.name, args, ev.name.startsWith("get_last_") ? 1200 : 2000);
+  session.sendFunctionCallOutput(ev.id, result.output ?? result);
+});
+```
+
+---
+
+## 4) ToolBridge: timeouts + small payloads
+
+**File:** `apps/client/src/voice/ToolBridge.ts`
+
+* Ensure `exec(name,args,timeoutMs)` uses **1200ms** for micro-tools, **2000ms** for snapshot.
+* If timed out, return `{ok:false, timeout:true}` and let the model read that to respond “as of N seconds ago…”.
+
+**Patch:**
+
+```ts
+const DEFAULT_TIMEOUT = 1500;
+export async function exec(name: string, args: any, timeoutMs?: number) {
+  const to = timeoutMs ?? (name.startsWith("get_last_") ? 1200 : 2000);
+  // existing websocket send + await result logic…
+  // on timeout, resolve with { ok:false, timeout:true }
+}
+```
+
+---
+
+## 5) Voice policy nudge
+
+**File:** `packages/shared/src/voicePolicy.ts` (or wherever your instructions live)
+
+* Ensure policy text explicitly instructs:
+
+  * Single metric → micro-tool.
+  * Setup/overview → snapshot with barCount=20.
+  * Offer “deeper look?” and, if user agrees, widen to `barCount=50` or `100`.
+
+Add (concise):
+
+```
+For single metrics (price, vwap, 9/21/50/200 EMA), call micro-tools get_last_price/get_last_vwap/get_last_ema.
+For setup/overview, call get_chart_snapshot with barCount=20.
+Offer: "Want me to pull the last 50–100 bars for deeper context?"
+```
+
+---
+
+## 6) Server: bind to 0.0.0.0 and PORT
+
+**File:** `apps/server/src/index.ts` (or your server entry)
+
+```ts
+const PORT = Number(process.env.PORT ?? 3000);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server listening on 0.0.0.0:${PORT}`);
+});
+```
+
+---
+
+## 7) ESM import for pdf-parse
+
+**File:** `apps/server/src/knowledge/pdf.ts`
+
+```ts
+// replace require with ESM
+// const pdfParse = require('pdf-parse');
+import pdfParse from "pdf-parse";
+```
+
+---
+
+## 8) TypeScript project reference fix
+
+**File:** `packages/shared/tsconfig.json`
+
+```json
+{
+  "compilerOptions": {
+    "composite": true,
+    // … rest unchanged
+  }
+}
+```
+
+**File:** `apps/client/tsconfig.json`
+
+* Keep `"references": [{ "path": "../../packages/shared" }]` as-is; with `composite: true` this will build.
+
+---
+
+## 9) Health endpoints (optional but helpful)
+
+**File:** `apps/server/src/index.ts`
+
+```ts
+app.get("/api/health", (_req, res) => res.json({ ok: true, t: Date.now() }));
+app.get("/api/voice/health", (_req, res) => res.json({ ok: true, t: Date.now() }));
+```
+
+---
+
+## 10) Logging you can grep
+
+* **Server (tools)**: log a single line per tool:
+
+```ts
+const t0 = Date.now();
+// after success/fail
+console.log(`[tool] ${name} ok=${ok} ms=${Date.now()-t0} sym=${symbol ?? ''} size=${jsonSize ?? 0}`);
+```
+
+* Snapshot: log barCount **actually used** (post-clamp).
+
+---
+
+## 11) Tests: smoke micro-tools
+
+**File:** `apps/server/src/voice/__tests__/microtools.test.ts`
+
+```ts
+import { describe, it, expect } from "vitest";
+import { voiceTools } from "../tools";
+
+describe("micro-tools", () => {
+  it("get_last_price returns minimal payload fast", async () => {
+    const t0 = Date.now();
+    const r = await voiceTools.get_last_price({ symbol: "SPY" });
+    expect(r.symbol).toBe("SPY");
+    expect(r.value).toBeDefined();
+    expect(Date.now() - t0).toBeLessThan(1200);
+  });
+});
+```
+
+---
+
+## 12) Build, lint, typecheck, run
+
+```bash
+pnpm install --no-frozen-lockfile
+pnpm -r typecheck || true
+pnpm -r build || true
+pnpm -r lint || true
+pnpm -r test || true
+
+# run server & client as you normally do
+```
+
+---
+
+## Acceptance checklist
+
+* Ask: “**What’s SPY price?**” → voice answers in **~0.3–0.8s** (micro-tool).
+* Ask: “**What’s SPY VWAP?**” → similar speed.
+* Ask: “**What’s SPY 21 EMA?**” → similar speed (if EMA present on bar).
+* Ask: “**How is SPY setting up?**” → runs **get_chart_snapshot(barCount=20)**, speaks **≤3s**.
+* Logs show `barCount=20` (not 500) and `[tool] get_last_price ok=true ms=…`.
+
+---
+
+## Rollback switches (env flags)
+
+In `packages/shared/src/flags.ts` (or your flags system), add:
+
+```ts
+export const flags = {
+  voiceFastMicroTools: true,
+  voiceSnapshotDefaultBars: 20,
+};
+```
+
+Check in server & client to toggle behavior without code churn.
+
+---
+
+## Notes
+
+* If latest bar lacks computed EMA/VWAP fields, compute or precompute them in your bar builder; micro-tools expect values ready to read for speed.
+* If OpenAI occasionally returns function-call errors due to size, your snapshot clamp + cache keeps payloads under ~10–15KB.
+
+---
+
+That’s it. This gives Nexa the “instant answers when simple, deeper when needed” behavior—and you can grow from here (watchlists/escalation already slot right in).

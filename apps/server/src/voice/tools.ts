@@ -4,25 +4,155 @@ import { db } from "../db";
 import { rules, journalEvents, signals } from "../db/schema";
 import { desc, eq } from "drizzle-orm";
 import { retrieveTopK } from "../memory/store";
+import { bars1m } from "../chart/bars1m";
+import { getSessionVWAPForSymbol } from "../indicators/vwap";
 
 const symbolSchema = z.string().min(1).max(10);
 const timeframeSchema = z.enum(["1m", "2m", "5m", "10m", "15m", "30m", "1h"]);
+
+// 5-second TTL cache for micro-tools and snapshots
+const ttlCache = <T>(ttlMs: number) => {
+  const m = new Map<string, { v: T; t: number }>();
+  return async (key: string, fn: () => Promise<T>) => {
+    const now = Date.now();
+    const hit = m.get(key);
+    if (hit && now - hit.t < ttlMs) {
+      return hit.v;
+    }
+    const v = await fn();
+    m.set(key, { v, t: now });
+    return v;
+  };
+};
+
+const cache5s = ttlCache<any>(5000);
+
+// Timeout wrapper for tools
+function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => T): Promise<T> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const t = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve(onTimeout());
+      }
+    }, ms);
+    p.then((v) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(t);
+        resolve(v);
+      }
+    }).catch(() => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(t);
+        resolve(onTimeout());
+      }
+    });
+  });
+}
 
 export const voiceTools = {
   async get_chart_snapshot(input: unknown, userId: string) {
     const params = z
       .object({
         symbol: symbolSchema,
-        timeframe: timeframeSchema.default("5m"),
-        barCount: z.number().int().min(1).max(500).optional().default(50),
+        timeframe: timeframeSchema.default("1m"),
+        barCount: z.number().int().min(1).max(100).optional().default(20),
       })
       .parse(input);
 
-    return getChartSnapshot({
+    // Clamp bar count defensively (cap at 100, default 20)
+    const barCount = Math.max(1, Math.min(params.barCount ?? 20, 100));
+
+    const exec = async () =>
+      cache5s(`snap:${params.symbol}:${params.timeframe}:${barCount}`, async () => {
+        return getChartSnapshot({
+          symbol: params.symbol,
+          timeframe: params.timeframe,
+          barCount,
+        });
+      });
+
+    return withTimeout(exec(), 2000, () => ({
       symbol: params.symbol,
       timeframe: params.timeframe,
-      barCount: params.barCount,
-    });
+      bars: [],
+      indicators: {},
+      session: { high: 0, low: 0, open: 0 },
+      volatility: "medium",
+      regime: "chop",
+      stale: true,
+    }));
+  },
+
+  async get_last_price(input: unknown, userId: string) {
+    const { symbol } = z.object({ symbol: symbolSchema }).parse(input);
+
+    const exec = async () =>
+      cache5s(`price:${symbol}`, async () => {
+        const b = bars1m.peekLast(symbol);
+        if (!b) throw new Error(`No data for ${symbol}`);
+        const price = b.c;
+        return { symbol, value: price, ts: b.bar_end };
+      });
+
+    return withTimeout(exec(), 1200, () => ({
+      symbol,
+      value: null,
+      ts: null,
+      stale: true,
+    }));
+  },
+
+  async get_last_vwap(input: unknown, userId: string) {
+    const { symbol } = z.object({ symbol: symbolSchema }).parse(input);
+
+    const exec = async () =>
+      cache5s(`vwap:${symbol}`, async () => {
+        const vwap = getSessionVWAPForSymbol(symbol);
+        if (vwap == null) throw new Error("VWAP not available");
+        const b = bars1m.peekLast(symbol);
+        return { symbol, value: vwap, ts: b?.bar_end ?? Date.now() };
+      });
+
+    return withTimeout(exec(), 1200, () => ({
+      symbol,
+      value: null,
+      ts: null,
+      stale: true,
+    }));
+  },
+
+  async get_last_ema(input: unknown, userId: string) {
+    const EMA_PERIODS = ["9", "21", "50", "200"] as const;
+    const { symbol, period } = z
+      .object({
+        symbol: symbolSchema,
+        period: z.enum(EMA_PERIODS).transform(Number),
+      })
+      .parse(input);
+
+    const exec = async () =>
+      cache5s(`ema:${symbol}:${period}`, async () => {
+        const b = bars1m.peekLast(symbol);
+        if (!b) throw new Error(`No data for ${symbol}`);
+
+        const field = `ema${period}` as keyof typeof b;
+        const val = b[field];
+        if (val == null) throw new Error(`EMA ${period} not available on latest bar`);
+
+        return { symbol, value: val, ts: b.bar_end, period };
+      });
+
+    return withTimeout(exec(), 1200, () => ({
+      symbol,
+      value: null,
+      ts: null,
+      period,
+      stale: true,
+    }));
   },
 
   async get_market_regime(input: unknown, userId: string) {

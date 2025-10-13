@@ -53,3 +53,10 @@ export function getMarketHours(timestamp: number = Date.now()): MarketHours {
 export function isMarketOpen(timestamp: number = Date.now()): boolean {
   return getMarketHours(timestamp).isOpen;
 }
+
+// Check if ANY extended trading session is active (pre-market, regular, or after-hours)
+// Polygon WebSocket provides real-time data during all of these periods (4 AM - 8 PM ET)
+export function isExtendedHoursActive(timestamp: number = Date.now()): boolean {
+  const hours = getMarketHours(timestamp);
+  return hours.isPreMarket || hours.isOpen || hours.isAfterHours;
+}

@@ -1,7 +1,7 @@
 import { websocketClient } from "@polygon.io/client-js";
 import { validateEnv } from "@shared/env";
 import { eventBus } from "./eventBus";
-import { isMarketOpen } from "./marketHours";
+import { isExtendedHoursActive } from "./marketHours";
 import { mockTickGenerator } from "./mockTickGenerator";
 
 const env = validateEnv(process.env);
@@ -19,11 +19,12 @@ export class PolygonWebSocket {
 
   async connect() {
     try {
-      // Check if markets are open
-      const marketIsOpen = isMarketOpen();
+      // Check if ANY extended hours trading is active (pre-market, regular, or after-hours)
+      // Polygon WebSocket provides real-time data 4 AM - 8 PM ET
+      const extendedHoursActive = isExtendedHoursActive();
 
-      if (!marketIsOpen) {
-        console.log(`🌙 Markets closed - using simulated data for demo`);
+      if (!extendedHoursActive) {
+        console.log(`🌙 Outside extended hours (4 AM-8 PM ET) - using simulated data`);
         this.useMockData = true;
         this.isConnected = true;
         this.resubscribe(); // Start mock generators
@@ -32,7 +33,7 @@ export class PolygonWebSocket {
 
       // Stock Advanced plan uses real-time feed
       const wsUrl = "wss://socket.polygon.io";
-      console.log(`📡 Connecting to Polygon real-time feed (markets OPEN)`);
+      console.log(`📡 Connecting to Polygon real-time feed (extended hours active)`);
 
       this.useMockData = false;
       this.ws = websocketClient(env.POLYGON_API_KEY, wsUrl).stocks();

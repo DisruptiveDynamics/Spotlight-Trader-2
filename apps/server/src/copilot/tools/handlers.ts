@@ -28,13 +28,54 @@ import { callouts, journalEvents } from '@server/db/schema';
 import { copilotBroadcaster } from '../broadcaster';
 import { perfMonitor } from '../performance';
 import { ringBuffer } from '@server/cache/ring';
+import { bars1m } from '@server/chart/bars1m';
+import { rollupFrom1m } from '@server/chart/rollups';
+import { flags } from '@shared/flags';
+import type { Timeframe } from '@shared/types/market';
+import { getSessionVWAPForSymbol } from '@server/indicators/vwap';
 
 export async function getChartSnapshot(
   params: GetChartSnapshotParams
 ): Promise<ChartSnapshot> {
   // Support both 'barCount' (voice tool) and 'lookback' (legacy) parameter names
   const barCount = params.barCount || params.lookback || 50;
-  const cachedBars = ringBuffer.getRecent(params.symbol, barCount);
+  
+  let cachedBars: any[];
+  
+  // Use new rollup system if enabled
+  if (flags.timeframeRollups && params.timeframe !== '1m') {
+    // Get more 1m bars to ensure we have enough for rollup
+    const bars1mData = bars1m.getRecent(params.symbol, barCount * 5);
+    const rolled = rollupFrom1m(bars1mData, params.timeframe as Timeframe);
+    
+    // Convert rolled bars to cached bar format
+    cachedBars = rolled.slice(-barCount).map(bar => ({
+      seq: bar.seq,
+      bar_start: bar.bar_start,
+      bar_end: bar.bar_end,
+      open: bar.ohlcv.o,
+      high: bar.ohlcv.h,
+      low: bar.ohlcv.l,
+      close: bar.ohlcv.c,
+      volume: bar.ohlcv.v,
+    }));
+  } else if (params.timeframe === '1m') {
+    // For 1m, use bars1m buffer directly
+    const bars1mData = bars1m.getRecent(params.symbol, barCount);
+    cachedBars = bars1mData.map(bar => ({
+      seq: bar.seq,
+      bar_start: bar.bar_start,
+      bar_end: bar.bar_end,
+      open: bar.o,
+      high: bar.h,
+      low: bar.l,
+      close: bar.c,
+      volume: bar.v,
+    }));
+  } else {
+    // Fallback to old ring buffer system
+    cachedBars = ringBuffer.getRecent(params.symbol, barCount);
+  }
   
   if (cachedBars.length === 0) {
     return {
@@ -67,17 +108,8 @@ export async function getChartSnapshot(
   const sessionLow = Math.min(...cachedBars.map((b) => b.low));
   const sessionOpen = cachedBars[0]?.open || 0;
 
-  // Calculate VWAP for indicators
-  let sumPV = 0;
-  let sumV = 0;
-  
-  for (const bar of cachedBars) {
-    const typicalPrice = (bar.high + bar.low + bar.close) / 3;
-    sumPV += typicalPrice * bar.volume;
-    sumV += bar.volume;
-  }
-
-  const currentVWAP = sumV > 0 ? sumPV / sumV : 0;
+  // Get session VWAP from the same tick stream as Tape (consistent!)
+  const currentVWAP = getSessionVWAPForSymbol(params.symbol) || 0;
 
   // Calculate volatility based on price range
   const avgRange = cachedBars.reduce((sum, b) => sum + (b.high - b.low), 0) / cachedBars.length;

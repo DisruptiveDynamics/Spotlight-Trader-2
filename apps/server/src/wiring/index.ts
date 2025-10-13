@@ -6,6 +6,7 @@ import { getHistory } from '@server/history/service';
 import { eventBus } from '@server/market/eventBus';
 import { ringBuffer } from '@server/cache/ring';
 import { bars1m } from '@server/chart/bars1m';
+import { sessionVWAP } from '@server/indicators/vwap';
 import { rulesEngineService } from '@server/rules/service';
 import { signalsService } from '@server/signals/service';
 import { coachAdvisor } from '@server/coach/advisor';
@@ -74,6 +75,9 @@ export function initializeMarketPipeline(app: Express) {
   for (const symbol of DEFAULT_FAVORITES) {
     polygonWs.subscribe(symbol);
     subscribeSymbolTimeframe(symbol, DEFAULT_TIMEFRAME);
+    
+    // Subscribe to session VWAP (same tick stream as Tape)
+    sessionVWAP.subscribe(symbol);
   }
 
   app.get('/api/history', async (req, res) => {

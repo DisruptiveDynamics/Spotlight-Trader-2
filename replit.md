@@ -4,6 +4,17 @@
 Spotlight Trader is a production-grade, real-time trading coach application designed for high-frequency day traders. It provides real-time market data, AI-powered voice coaching, a rule-based trading alert system, and comprehensive journaling. The application focuses on professional trader ergonomics with zero-lag, keyboard-first control, institutional-grade hotkeys, focus modes, latency monitoring, and accessibility. Its primary goal is to deliver immediate insights and coaching to improve trading performance and efficiency, with a business vision to empower traders with cutting-edge AI and real-time analytics.
 
 ## Recent Changes
+**October 13, 2025** - Server-Authoritative Timeframe System with Multi-Timeframe Rollups:
+- **1m Authoritative Buffer**: Single source of truth for all bar data, continuously fed regardless of user's selected timeframe
+- **Deterministic Roll-ups**: Real-time aggregation from 1m→2/5/10/15/30/60m with UTC-aligned bucket boundaries (TradingView/TOS standard)
+- **Server-Side Timeframe Switching**: POST /api/chart/timeframe endpoint with atomic transitions, optimistic UI updates
+- **Unified VWAP Calculator**: Session tick-level VWAP using same data stream as Tape for consistency across charts/voice/UI
+- **Voice AI Multi-Timeframe Support**: get_chart_snapshot tool now queries bars1m buffer with timeframe parameter
+- **SSE Streaming Fix**: Dynamic listener lifecycle ensures ringBuffer receives ONLY active timeframe bars (no mixed data)
+- **Dual Listener Architecture**: Permanent listener for bars1m buffer + dynamic listener for SSE streaming per user timeframe
+- **Optional Market Audit Tap**: Passive validation system (disabled by default via flag) for debugging bar/tape/vwap consistency
+- **Critical Fix**: 1m barBuilder subscription never removed, ensuring continuous data flow to all downstream systems
+
 **October 12, 2025** - Nexa 2.0: Persistent Memory & Knowledge Upload System:
 - **Nexa Identity**: Voice coach now has persistent identity ("Nexa", she/her pronouns, warm personality) stored in coach_profiles table
 - **Knowledge Upload Pipeline**: Users can teach Nexa via YouTube videos, PDFs, and text notes with semantic chunking and OpenAI embeddings

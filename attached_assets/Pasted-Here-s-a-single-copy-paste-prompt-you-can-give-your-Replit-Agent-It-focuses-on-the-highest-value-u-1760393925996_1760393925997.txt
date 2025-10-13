@@ -1,0 +1,214 @@
+Here’s a single, copy-paste prompt you can give your Replit Agent. It focuses on the highest-value upgrades: ultra-fast “micro-tools”, self-healing streams, proactive favorites watcher, circuit-breaker/retry, payload caps + caching, observability (p50/p95, corr-ids), and a small QA/CI sweep. It’s written so the agent can execute step-by-step with clear acceptance tests.
+
+---
+
+**PROMPT FOR REPLIT AGENT (COPY/PASTE BELOW THIS LINE)**
+
+You are an expert senior full-stack developer working on the Spotlight Trader monorepo. Apply the following upgrades WITHOUT breaking existing behavior. Keep changes feature-flagged where appropriate. Touch only the files noted unless necessary.
+
+## 0) Guardrails
+
+* Respect ESM; no `require()`.
+* Keep OpenAI Realtime integration as-is; we’re adding fast paths and resilience, not re-architecting.
+* Any change that increases data pulled or sent must be behind a feature flag with defaults preserving current behavior.
+
+## 1) “Micro-tools” Fast Path (price/vwap/ema) — sub-second answers
+
+**Goal:** When the user asks a single metric (e.g., “What’s SPY price/VWAP/EMA(9)/(21)?”), bypass full snapshot and return within ~1s using ≤5 most recent bars + live tick.
+
+### Server
+
+* **File:** `apps/server/src/voice/tools.ts`
+
+  * Add three tools: `get_price_fast`, `get_vwap_fast`, `get_ema_fast`.
+  * Inputs:
+
+    * `get_price_fast({symbol})`
+    * `get_vwap_fast({symbol, windowMinutes?: number=20})`
+    * `get_ema_fast({symbol, periods: 9 | 21, windowBars?: number=20})`
+  * Implementation:
+
+    * Pull last ≤5 bars from the ring buffer + current in-progress bar/tick if available.
+    * Compute VWAP/EMA on the small window (duplicate existing EMA/VWAP util or extract from indicators to reuse).
+    * Enforce **payload cap** < 8KB (trim fields: return only `price`, `ts`, and the metric; omit history unless `debug: true`).
+    * Add **sticky 2s cache** per `(tool,symbol,periods/window)` to absorb micro-bursts.
+
+* **File:** `apps/server/src/voice/toolsBridge.ts`
+
+  * Register the new tools and ensure Zod validation on inputs.
+  * Add server-side **circuit-breaker** (see §4) and timeouts (700ms default) for these micro-tools.
+
+### Client
+
+* **File:** `apps/client/src/voice/toolSchemas.ts`
+
+  * Define schemas for the three micro-tools above (names must match server).
+* **File:** `apps/client/src/voice/RealtimeVoiceClient.ts`
+
+  * Teach the intent router to map simple utterances (“price”, “vwap”, “ema 9/21”) to micro-tools first.
+  * Keep existing 20-bar review for broader prompts (“How is SPY setting up?”).
+
+**Acceptance:**
+
+* Asking “What’s SPY price” yields a spoken answer in ≤1.2s p95 with payload < 8KB.
+* Broader prompts still use `get_chart_snapshot` (20 bars).
+
+## 2) Self-healing live stream: epoch/seq reset + auto resync
+
+**Goal:** If client has stale `lastSeq` after a server restart, it must automatically recover (no manual storage clear).
+
+### Client
+
+* **File:** `apps/client/src/lib/marketStream.ts`
+
+  * Add `epochId` + `epochStartMs` header/field handling (already present server-side if available; if not, add on server per below).
+  * On receiving a delta with sequence << `lastSeq` OR a new `epochId`, **reset** per-symbol state: clear `lastSeq`, re-request a 50-bar snapshot, then resume deltas.
+  * Maintain a **duplicate-delta rejection counter**; after N(=5) rejections in 2s, force a soft resync (fetch snapshot + reset).
+
+* **File:** `apps/server/src/stream/sse.ts` (or WS path if used)
+
+  * Include `epochId` (UUID per server boot) and `epochStartMs` in stream headers or first event.
+  * Persist the ring buffer across restart if available; otherwise the client logic above is sufficient.
+
+**Acceptance:**
+
+* With dev server restart, the chart resumes within ~1–2s without user action; no “Duplicate bar” spam.
+
+## 3) Splash debounce + graceful UI loading
+
+**Goal:** Show existing splash overlay only when resyncs will exceed ~250ms; otherwise avoid flicker.
+
+### Client
+
+* **File:** `apps/client/src/components/Splash.tsx` and/or the splash controller you already use
+
+  * Add a debounced trigger (`setTimeout` ~250ms). If resync completes before the timeout, cancel the splash.
+  * On full resync (epoch change), show splash for the minimal duration; hide immediately when snapshot applied.
+
+**Acceptance:**
+
+* Short resyncs don’t flash the splash; longer ones show it briefly.
+
+## 4) Circuit-breaker, retries, and timeouts (Tool Bridge)
+
+**Goal:** No single flaky call should hang or cascade.
+
+### Client
+
+* **File:** `apps/client/src/voice/ToolBridge.ts`
+
+  * Add `execWithResilience(name, args, {timeoutMs, retries, backoffBaseMs})`.
+  * Pattern: timeout (AbortController) → retry w/ jittered backoff → open small circuit after 5 consecutive failures for 20s; fall back to last cached value if present.
+
+### Server
+
+* **File:** `apps/server/src/voice/toolsBridge.ts`
+
+  * Wrap handler dispatch with timeout + try/catch.
+  * Emit structured errors back to client with `corrId` (see §5).
+
+**Acceptance:**
+
+* Intentionally inject a 500ms delay in one handler in dev; client retries and succeeds. After repeated failures the breaker opens and we answer with “Last known … (t-Xs)”.
+
+## 5) Observability: p50/p95 latency, correlation IDs, health
+
+**Goal:** Make issues obvious and traceable end-to-end.
+
+### Server
+
+* **Files:**
+
+  * `apps/server/src/telemetry/bridge.ts` (or central telemetry)
+  * `apps/server/src/realtime/voiceTools.ts` (or toolsBridge)
+  * Add `corrId` propagation: accept `x-corr-id` from client, generate if missing; include in all logs.
+  * Measure tool latency and export a small in-memory counter of p50/p95 per tool over last N(=200) calls.
+  * Expose `/api/metrics` JSON snippet including: per-tool {count, errorRate, p50, p95}.
+  * Add `/api/healthz` returning { ok: true, epochId, startedAt, version }.
+
+### Client
+
+* **File:** `apps/client/src/components/LatencyHUD.tsx`
+
+  * Add p50/p95 for each tool + reconnect count; keep compact.
+
+**Acceptance:**
+
+* `/api/healthz` and `/api/metrics` respond.
+* HUD renders aggregates and updates during usage.
+
+## 6) Proactive “Favorites Watcher” (feature-flagged)
+
+**Goal:** Background watch on top N favorites; escalate sampling & notify when setups appear.
+
+### Server
+
+* **File:** `apps/server/src/coach/proactiveCoaching.ts`
+
+  * Add `favoritesWatcher` behind flag `features.favoritesWatcher=true`.
+  * Strategy:
+
+    * Poll top N(=5) favorite symbols every 2 min: get **light snapshot** (20 bars).
+    * If quick heuristics trip (e.g., price crossing EMA9/21, VWAP reclaim/reject, ORB vicinity), increase cadence to every 10–15s for 2–3 minutes.
+    * Send **callout** via existing broadcaster with a human-readable summary and a link to open chart.
+
+### Client
+
+* Ensure callouts show up as toasts or in the coach UI (it looks like you already have a Callouts stream; wire the new event type if needed).
+
+**Acceptance:**
+
+* With flag ON and mock feed, you see periodic callouts when conditions trigger. With flag OFF, no background load.
+
+## 7) Payload caps + safe defaults
+
+**Goal:** Keep responses small and fast.
+
+* In all tool handlers returning bars, strip fields to the minimum needed (e.g., price, ts, ohlcv limited to N bars, indicators summary).
+* Enforce hard limit: if serialized payload > 80KB, truncate to the most recent data and add `{ truncated: true }`.
+
+**Acceptance:**
+
+* Large requests do not exceed 80KB; micro-tools remain < 8KB.
+
+## 8) Tests & scripts
+
+**Goal:** Catch regressions quickly.
+
+### Tests
+
+* **Server:** Add unit tests for micro-tools, payload caps, and circuit-breaker wrapper.
+* **Client:** Add unit test for epoch reset logic (simulate stale `lastSeq` then deliver a low seq + new `epochId`).
+
+### Scripts
+
+* Root `package.json`: add
+
+  * `"diag": "pnpm -r typecheck && pnpm -r lint && pnpm -r test --run || true"`
+  * `"smoke": "node -e \\"console.log('healthz')\\" && curl -sf http://localhost:8080/api/healthz && echo OK"`
+
+**Acceptance:**
+
+* `pnpm diag` prints results; tests for new logic pass.
+
+## 9) Lint cleanup (only high-value)
+
+* Fix the “act() not supported in production builds” tests by ensuring test env uses `jsdom` and development build mode for client component tests (adjust vitest config if needed).
+* Add descriptions to critical `@ts-expect-error` uses or remove them if unnecessary.
+
+## 10) Final checklist
+
+* Build and run:
+
+  * `pnpm build` (ensure `packages/shared` is `composite: true`), then `pnpm dev`.
+* Verify:
+
+  * Price/VWAP/EMA micro-questions respond in ≤1.2s p95.
+  * “How is SPY setting up?” triggers 20-bar snapshot flow.
+  * Restart server; client auto-recovers (no manual storage clear).
+  * `/api/healthz` and `/api/metrics` OK.
+  * Favorites watcher works with flag ON; silent with flag OFF.
+
+Make all changes with clear comments `// [FAST-PATH]`, `// [RESILIENCE]`, `// [OBS]`, `// [WATCHER]` so future diffs are easy to scan. Provide a concise summary of files changed and key decisions after implementation.
+
+**END OF PROMPT**

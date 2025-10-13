@@ -1,0 +1,75 @@
+Go with Option A first (ship the critical fixes fast), then queue Option B.
+
+Phase 1 — IMPLEMENT NOW (highest priority)
+
+Self-healing streams (Epoch + Seq Reset)
+
+Server (apps/server/src/stream/sse.ts or WS): include epochId (UUID per boot) + epochStartMs on first event and in headers.
+
+Client (apps/client/src/lib/marketStream.ts):
+
+If incoming epochId differs OR seq << stored lastSeq, soft-reset symbol: clear lastSeq, fetch 50-bar snapshot, resume deltas.
+
+If >5 duplicate rejections in 2s, force soft-resync.
+
+Use our existing Splash overlay with 250ms debounce to avoid flicker during resync.
+
+Acceptance: Restart server while client is open → chart recovers in ≤2s, no “duplicate bar” spam, minimal splash.
+
+Tool-Bridge Resilience
+
+Client (apps/client/src/voice/ToolBridge.ts): add execWithResilience(name, args, { timeoutMs: 700, retries: 2, backoffBaseMs: 200 }) using AbortController + jittered backoff. Open a 20s circuit after 5 consecutive failures; return cached “last known” value when open.
+
+Server (apps/server/src/voice/toolsBridge.ts): wrap dispatch with timeout + try/catch and return structured error including corrId.
+
+Acceptance: Inject 500ms delay in one handler → client retries and succeeds; after repeated failures breaker opens and we answer with cached data + notice.
+
+Observability (p50/p95, corrId, health)
+
+Server:
+
+Add corrId propagation; log it on each tool call.
+
+Export /api/healthz → { ok:true, epochId, startedAt, version }
+
+Export /api/metrics → per-tool {count,errorRate,p50,p95} over last 200 calls.
+
+Client HUD: show p50/p95 and reconnect count (compact).
+
+Acceptance: /api/healthz & /api/metrics respond; HUD reflects metrics.
+
+Payload caps (hard limit)
+
+Enforce ≤80KB on any tool response; if exceeding, truncate to most recent + { truncated:true }.
+
+Micro-responses should remain <8KB.
+
+Acceptance: Over-large requests are trimmed, no oversized payloads.
+
+Do NOT change current micro-tools behavior now; keep fast path as is.
+
+Phase 2 — QUEUE AFTER PHASE 1
+
+Refine micro-tools (price/vwap/ema) with ≤5 bars + sticky 2s cache and sub-1.2s p95.
+
+Favorites Watcher behind flag features.favoritesWatcher=true with 2-min cadence escalating to 10–15s on heuristics (VWAP reclaim/reject, EMA cross, ORB vicinity), sending callouts.
+
+Add unit tests for epoch reset, circuit breaker, payload cap.
+
+Clean up critical @ts-expect-error descriptions only (no broad refactors).
+
+General rules
+
+ESM only; no require().
+
+Feature-flag anything that increases data pulled.
+
+Comment tags: // [RESILIENCE], // [OBS], // [CAP], // [WATCHER].
+
+After Phase 1, post:
+
+Files changed + diffs summary
+
+Demo steps and timings (p50/p95 for price tool, resync time)
+
+Any follow-ups needed for Phase 2

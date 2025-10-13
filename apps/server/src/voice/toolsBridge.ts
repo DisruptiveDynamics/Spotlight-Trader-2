@@ -3,6 +3,7 @@ import type { IncomingMessage } from "http";
 import type { Server } from "http";
 import jwt from "jsonwebtoken";
 import { voiceTools } from "./tools";
+import { toolHandlers as copilotHandlers } from "../copilot/tools/handlers";
 import { randomUUID } from "crypto"; // [RESILIENCE] For correlation IDs
 import { recordToolExecution } from "./toolMetrics"; // [OBS] Metrics tracking
 
@@ -141,11 +142,23 @@ function capPayload(output: any): any {
   };
 }
 
+// [FIX] Convert snake_case to camelCase for tool name lookup
+function snakeToCamel(str: string): string {
+  return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+}
+
 async function dispatchTool(name: string, args: Record<string, unknown>, userId: string) {
-  const tool = (voiceTools as any)[name];
+  // [FIX] Try voice tools first (snake_case), then copilot handlers (camelCase)
+  let tool = (voiceTools as any)[name];
+  
+  if (!tool) {
+    // Try copilot handlers with camelCase conversion (propose_entry_exit → proposeEntryExit)
+    const camelName = snakeToCamel(name);
+    tool = (copilotHandlers as any)[camelName];
+  }
 
   if (!tool) {
-    throw new Error(`Unknown tool: ${name}`);
+    throw new Error(`Unknown tool: ${name} (also tried ${snakeToCamel(name)})`);
   }
 
   const result = await tool(args, userId);

@@ -25,11 +25,12 @@ export class RealtimeVoiceClient {
   constructor(config: VoiceClientConfig) {
     this.config = config;
 
-    // Don't pass tools here - we'll configure them on the session
+    // Configure agent with tools upfront (SDK requires this)
     this.agent = new RealtimeAgent({
       name: "Nexa",
       instructions: config.instructions,
       voice: config.voice || "alloy",
+      tools: toolSchemas as any, // Pass tool schemas to agent constructor
     });
   }
 
@@ -70,15 +71,10 @@ export class RealtimeVoiceClient {
       await session.connect({ apiKey: token });
       this.session = session;
 
-      // Configure session with tool schemas (Realtime API pattern)
+      console.log("[RealtimeVoiceClient] Agent configured with", toolSchemas.length, "tools");
+
+      // Access session for event listeners
       const s = this.session as any;
-      if (typeof s.update === "function") {
-        await s.update({
-          tool_choice: "auto",
-          tools: toolSchemas,
-        });
-        console.log("[RealtimeVoiceClient] Configured tools:", toolSchemas.length);
-      }
 
       // Track pending function calls
       type PendingCall = { name: string; argsJson: string[] };

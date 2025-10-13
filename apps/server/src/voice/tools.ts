@@ -126,11 +126,12 @@ export const voiceTools = {
   },
 
   async get_last_ema(input: unknown, userId: string) {
-    const EMA_PERIODS = ["9", "21", "50", "200"] as const;
     const { symbol, period } = z
       .object({
         symbol: symbolSchema,
-        period: z.enum(EMA_PERIODS).transform(Number),
+        period: z.number().int().refine((p) => [9, 21, 50, 200].includes(p), {
+          message: "EMA period must be 9, 21, 50, or 200",
+        }),
       })
       .parse(input);
 

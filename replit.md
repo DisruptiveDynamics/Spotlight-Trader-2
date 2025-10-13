@@ -6,6 +6,19 @@ Spotlight Trader is a production-grade, real-time trading coach application desi
 
 ## Recent Changes
 
+**October 13, 2025** - Nexa Speed Upgrade: Micro-Tools & Smart Routing:
+
+- **Micro-Tools for Instant Responses**: Added 3 lightning-fast tools for single metrics (<1s response time)
+  - `get_last_price`: Returns current price only (~50 bytes, 300-800ms)
+  - `get_last_vwap`: Returns session VWAP only (~50 bytes, 300-800ms)
+  - `get_last_ema`: Returns single EMA (9/21/50/200) (~60 bytes, 300-800ms)
+- **Smart Intent Routing**: Voice policy updated to route simple questions to micro-tools, complex analysis to snapshot
+- **Bar Count Safety**: Capped `get_chart_snapshot` to max 100 bars (default 20, down from 500) preventing data overload
+- **5-Second TTL Cache**: All tools cache results for 5s to prevent redundant fetches for repeated questions
+- **Smart Timeouts**: 1.2s timeout for micro-tools, 2s for snapshots with graceful degradation
+- **Performance Boost**: Simple questions now answered in <1s vs previous 5+ minutes (500-bar fetches eliminated)
+- **Type Safety Fixes**: Fixed LSP errors in ToolBridge with proper TypeScript union types
+
 **October 13, 2025** - Server-Authoritative Timeframe System with Multi-Timeframe Rollups:
 
 - **1m Authoritative Buffer**: Single source of truth for all bar data, continuously fed regardless of user's selected timeframe

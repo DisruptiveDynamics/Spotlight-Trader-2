@@ -6,6 +6,16 @@ Spotlight Trader is a production-grade, real-time trading coach application desi
 
 ## Recent Changes
 
+**October 13, 2025** - Mock Data Pricing Fix: Eliminated Historical Data Pollution:
+
+- **Root Cause Fix**: Voice tools were returning stale historical prices (~$431) instead of current mock prices (~$580)
+- **Mock Mode Detection**: Added `isUsingMockData()` method to PolygonWebSocket for system-wide mock mode awareness
+- **Historical Backfill Prevention**: Modified `getHistory()` to skip Polygon REST API when in mock mode
+- **Clean Data Flow**: Mock ticks → BarBuilder → bars1m buffer now flows without historical data contamination
+- **Price Accuracy**: Voice tools (`get_last_price`, `get_chart_snapshot`) now return correct current mock prices
+- **Type Safety**: Fixed TypeScript strict mode error in mockTickGenerator (NodeJS.Timeout type)
+- **Verified Pipeline**: Confirmed mock data flows end-to-end: ticks generate → bars build → voice tools query correct prices
+
 **October 13, 2025** - Nexa Speed Upgrade: Micro-Tools & Smart Routing:
 
 - **Micro-Tools for Instant Responses**: Added 3 lightning-fast tools for single metrics (<1s response time)

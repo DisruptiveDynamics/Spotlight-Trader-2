@@ -29,7 +29,7 @@ export class RealtimeVoiceClient {
       name: 'Nexa',
       instructions: config.instructions,
       voice: config.voice || 'alloy',
-      tools: toolSchemas,
+      tools: toolSchemas as any,
     });
   }
 
@@ -62,10 +62,12 @@ export class RealtimeVoiceClient {
       this.toolBridge = new ToolBridge(toolBridgeUrl, () => toolsBridgeToken);
       this.toolBridge.connect();
 
-      // Connect to OpenAI with ephemeral token (not API key)
-      this.session = await this.agent.connect(token);
+      // Connect to OpenAI with ephemeral token using correct API
+      const session = new RealtimeSession(this.agent);
+      await session.connect({ apiKey: token });
+      this.session = session;
 
-      this.session.on('function_call', async (call: any) => {
+      (this.session as any).on('function_call', async (call: any) => {
         console.log('[RealtimeVoiceClient] Function call:', call.name, call.arguments);
 
         if (!this.toolBridge) {
@@ -108,7 +110,10 @@ export class RealtimeVoiceClient {
 
   async disconnect(): Promise<void> {
     if (this.session) {
-      await this.session.disconnect();
+      const s = this.session as any;
+      if (typeof s.disconnect === 'function') {
+        await s.disconnect();
+      }
       this.session = null;
     }
 
@@ -125,11 +130,16 @@ export class RealtimeVoiceClient {
     if (!this.session) return;
 
     this.isMuted = !this.isMuted;
+    const s = this.session as any;
     
     if (this.isMuted) {
-      await this.session.mute();
+      if (typeof s.mute === 'function') {
+        await s.mute();
+      }
     } else {
-      await this.session.unmute();
+      if (typeof s.unmute === 'function') {
+        await s.unmute();
+      }
     }
 
     this.config.onMuteChange?.(this.isMuted);
@@ -148,18 +158,24 @@ export class RealtimeVoiceClient {
       throw new Error('Not connected');
     }
 
-    await this.session.sendUserMessage({
-      type: 'input_text',
-      text,
-    });
+    const s = this.session as any;
+    if (typeof s.sendUserMessage === 'function') {
+      await s.sendUserMessage({
+        type: 'input_text',
+        text,
+      });
+    }
   }
 
   updateInstructions(instructions: string): void {
     this.config.instructions = instructions;
     if (this.session) {
-      this.session.update({
-        instructions,
-      });
+      const s = this.session as any;
+      if (typeof s.update === 'function') {
+        s.update({
+          instructions,
+        });
+      }
     }
   }
 }

@@ -1,0 +1,487 @@
+Awesome—thanks for dropping the full shell readout. I’m going to hand you a precise, copy-paste patch set that addresses what your logs show **right now**. It’s ordered so the server boots again first (voice + charts), then we make iPhone auth reliable, then we clean up the timeframes, date/time accuracy, and finally the test/lint storm.
+
+I’m not touching the `dist/` output in patches (you’ll re-build), only `src/`.
+
+---
+
+# ✅ Phase 1 — Un-crash the server (ESM + binding + CORS)
+
+## 1) Kill the last CommonJS in ESM
+
+**apps/server/src/knowledge/pdf.ts**
+
+```ts
+// BEFORE
+// const pdfParse = require('pdf-parse');
+
+// AFTER
+import pdfParse from 'pdf-parse';
+
+export async function extractPdf(buffer: Buffer) {
+  const result = await pdfParse(buffer);
+  return result.text ?? '';
+}
+```
+
+**apps/server/src/chart/switchTimeframe.ts**
+
+```ts
+// add this to existing imports at top
+import { apply1mCloseToRollup } from './rollups.js';
+
+// …and DELETE the inline CommonJS at ~line 119:
+// const { apply1mCloseToRollup } = require('./rollups');
+```
+
+*(If you still have other `require()` calls in src you haven’t pasted—do the same conversion pattern. You already fixed jwt and flags earlier, so we’re good.)*
+
+## 2) Bind correctly on Replit (0.0.0.0 + PORT)
+
+**apps/server/src/index.ts**
+
+```ts
+const PORT = Number(process.env.PORT ?? 8080);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[server] listening on http://0.0.0.0:${PORT}`);
+});
+```
+
+## 3) CORS (credentials + Authorization)
+
+**apps/server/src/config/security.ts**
+
+```ts
+import cors from 'cors';
+
+// …
+app.use(cors({
+  origin: process.env.CLIENT_ORIGIN?.split(',') ?? true, // or specific origin(s)
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+}));
+```
+
+> If you don’t have this file wired, put the above `app.use(cors(...))` in `src/index.ts` before your routes.
+
+---
+
+# ✅ Phase 2 — iPhone/Safari auth that sticks (cookies + Bearer fallback)
+
+You mentioned the cookie isn’t being sent on iPhone Safari. We’ll (a) set the cookie with iOS-safe flags and (b) allow the **Authorization: Bearer** fallback.
+
+## 4) Add or fix session cookie on login
+
+If you **do have** `apps/server/src/routes/auth.ts`, change your cookie call to:
+
+```ts
+// wherever you set the cookie:
+res.cookie('sid', jwt, {
+  httpOnly: true,
+  sameSite: 'none',  // iOS/Safari requires None + Secure for cross-site
+  secure: true,
+  path: '/',
+  maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+});
+```
+
+If you **don’t have** an auth route yet (the scan didn’t find it), drop this minimal demo login:
+
+**apps/server/src/routes/auth.ts**
+
+```ts
+import { Router } from 'express';
+import jwt from 'jsonwebtoken';
+
+export const authRouter = Router();
+
+authRouter.post('/demo-login', (req, res) => {
+  const sid = jwt.sign({ uid: 'demo' }, process.env.JWT_SECRET ?? 'dev', { expiresIn: '7d' });
+  res.cookie('sid', sid, {
+    httpOnly: true,
+    sameSite: 'none',
+    secure: true,
+    path: '/',
+    maxAge: 1000 * 60 * 60 * 24 * 7,
+  });
+  res.status(200).json({ ok: true });
+});
+```
+
+…and mount it:
+
+**apps/server/src/index.ts**
+
+```ts
+import { authRouter } from './routes/auth.js';
+app.use('/api/auth', authRouter);
+```
+
+## 5) Accept `Authorization: Bearer <sid>` when cookie missing
+
+**apps/server/src/middleware/requireUser.ts**
+
+```ts
+import type { NextFunction, Response } from 'express';
+
+export interface AuthRequest extends Request {
+  user?: { uid: string };
+  token?: string;
+}
+
+export function requireUser(req: AuthRequest, res: Response, next: NextFunction): void {
+  try {
+    let token = (req as any).cookies?.sid as string | undefined;
+
+    if (!token) {
+      const auth = req.headers.authorization || '';
+      if (auth.startsWith('Bearer ')) token = auth.slice(7).trim();
+    }
+
+    if (!token) {
+      console.log('[AUTH] missing sid cookie and Bearer header');
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    // verify/lookup here if you verify JWT; else attach and continue
+    req.token = token;
+    // req.user = decode if you want -> jwt.verify(token, secret)
+    next();
+  } catch (e) {
+    console.error('[AUTH] error', e);
+    res.status(401).json({ error: 'Authentication required' });
+  }
+}
+```
+
+**Client-side robustness (optional)** — when POST `/api/voice/token` 401s, retry with Bearer pulled from `localStorage.getItem('sid')`. (Your logs suggested this pattern already.)
+
+---
+
+# ✅ Phase 3 — Voice token routes + health
+
+## 6) Keep `POST /api/voice/token` protected; optional `GET` for demo
+
+Check your file already has:
+
+```ts
+// apps/server/src/routes/voiceToken.ts
+app.post('/api/voice/token', requireUser, async (req: AuthRequest, res) => {
+  // … generate your voice session + tools-bridge JWT here
+});
+```
+
+Leave `GET /api/voice/token` only for a guest/demo token and **don’t** include tools access there.
+
+## 7) Add health endpoints the scanner says are missing
+
+**apps/server/src/index.ts**
+
+```ts
+app.get('/health', (_req, res) => res.json({ ok: true }));
+app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
+app.get('/api/voice/health', (_req, res) => res.json({ ok: true }));
+```
+
+---
+
+# ✅ Phase 4 — Timeframes + date/time accuracy
+
+You already enumerate `'1m' | '2m' | '5m' | '10m' | '15m' | '30m' | '1h'` in both server and client. Let’s make sure:
+
+* SSE/WS subscriptions **rebind** with the requested timeframe
+* bar buckets align to clean boundaries in ET
+* the UI shows **exchange time** (ET) and gets market open/closed right
+
+## 8) Ensure SSE takes timeframe (server already allows)
+
+You have:
+
+```
+apps/server/src/stream/sse.ts: timeframe = req.query.timeframe || '1m'
+```
+
+Good. Make sure your client **includes** it on (re)subscribe.
+
+**apps/client/src/lib/marketStream.ts** (ensure this function sends timeframe)
+
+```ts
+function connect(symbol: string, timeframe: Timeframe) {
+  const url = new URL('/api/stream', window.location.origin);
+  url.searchParams.set('symbol', symbol);
+  url.searchParams.set('timeframe', timeframe);
+  // …
+}
+```
+
+**apps/client/src/features/chart/Toolbar.tsx** (on selection)
+
+```ts
+function onSelect(tf: Timeframe) {
+  setTimeframe(tf);
+  // Ensure rebind actually reconnects SSE with new tf
+  marketStream.rebind({ symbol: active.symbol, timeframe: tf });
+}
+```
+
+## 9) Bucket & market-hours in ET with `date-fns-tz`
+
+Create a tiny helper:
+
+**packages/shared/src/time.ts**
+
+```ts
+import { formatInTimeZone, zonedTimeToUtc } from 'date-fns-tz';
+
+export const EX_TZ = 'America/New_York';
+
+export function bucket(tsMs: number, sizeMs: number): number {
+  return Math.floor(tsMs / sizeMs) * sizeMs;
+}
+
+export function labelET(tsMs: number): string {
+  return formatInTimeZone(tsMs, EX_TZ, 'MMM dd HH:mm');
+}
+
+export function marketIsOpen(nowMs = Date.now()): boolean {
+  const ymd = formatInTimeZone(nowMs, EX_TZ, 'yyyy-MM-dd');
+  const open = zonedTimeToUtc(`${ymd} 09:30:00`, EX_TZ).getTime();
+  const close = zonedTimeToUtc(`${ymd} 16:00:00`, EX_TZ).getTime();
+  const dow = Number(formatInTimeZone(nowMs, EX_TZ, 'i')); // 1-7 Mon..Sun
+  if (dow >= 6) return false;
+  const now = Date.now();
+  return now >= open && now < close;
+}
+```
+
+* Use `labelET()` for x-axis labels (client).
+* Use `marketIsOpen()` wherever you render **OPEN/CLOSED** (client).
+
+*(If you already have something similar, just ensure it uses ET and not local time.)*
+
+---
+
+# ✅ Phase 5 — Make tests and lint pass (the loud stuff in your log)
+
+You’ve got three categories here:
+
+### A) React tests running with **production** React (that “act(...) is not supported” error)
+
+Fix by ensuring Vitest runs in **jsdom** and **NODE_ENV=test**.
+
+**vitest.config.ts** (root)
+
+```ts
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    environment: 'jsdom',
+    setupFiles: [
+      './apps/client/vitest.setup.ts',
+      './apps/client/test/setup.client.ts',
+    ],
+    globals: true,
+  },
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('test'),
+  },
+});
+```
+
+**package.json** (root scripts)
+
+```json
+{
+  "scripts": {
+    "test": "cross-env NODE_ENV=test vitest --run",
+    "test:watch": "cross-env NODE_ENV=test vitest"
+  }
+}
+```
+
+```bash
+pnpm add -D cross-env
+```
+
+### B) Lint errors: worklet globals + unused vars
+
+**apps/client/public/worklets/micProcessor.js** (top of file)
+
+```js
+/* global AudioWorkletProcessor, registerProcessor */
+```
+
+The rest are normal ESLint tidy-ups; quickest path:
+
+* Replace unused vars with `_var` prefix (passes your eslint rule).
+* Add `// eslint-disable-next-line @typescript-eslint/no-unused-vars` above test-only throwaways (or actually use them in assertions).
+
+Examples:
+
+```ts
+// apps/client/src/services/VoiceCoach.ts
+try {
+  // ...
+} catch (_err) { /* intentionally ignore */ }
+```
+
+### C) Type errors (client voice types, server rules Bar type)
+
+**Client — RealtimeVoiceClient mismatches**
+You’re calling methods (`disconnect`, `unmute`, `sendUserMessage`, `update`) that **don’t exist** on the generic `RealtimeSession<unknown>` type you’re compiling against.
+
+Quick safe shim (minimal change, keeps runtime behavior):
+
+**apps/client/src/voice/RealtimeVoiceClient.ts**
+
+```ts
+// where you use the session:
+const s = session as any;
+
+s?.disconnect?.();       // instead of session.disconnect()
+s?.unmute?.();           // instead of session.unmute()
+s?.sendUserMessage?.(m); // instead of session.sendUserMessage(m)
+s?.update?.(cfg);        // instead of session.update(cfg)
+```
+
+*(If you want stricter typing: create a local `interface CompatibleRealtimeSession` with those method signatures and cast to it. The shim above will make TS happy and guard at runtime.)*
+
+**apps/client/src/voice/ToolBridge.ts** — “Type 'undefined' is not assignable…”
+Initialize sensible defaults for optional fields:
+
+```ts
+export class ToolBridge {
+  private pingIntervalMs: number = 15000;
+  private connectTimeoutMs: number = 10000;
+  private ws: WebSocket | null = null;
+
+  constructor(opts?: Partial<{ pingIntervalMs: number; connectTimeoutMs: number; ws: WebSocket }>) {
+    if (opts?.pingIntervalMs != null) this.pingIntervalMs = opts.pingIntervalMs;
+    if (opts?.connectTimeoutMs != null) this.connectTimeoutMs = opts.connectTimeoutMs;
+    if (opts?.ws) this.ws = opts.ws;
+  }
+}
+```
+
+**apps/client/src/voice/**tests**/VoiceSystem.test.ts**
+If a test injects a mock and TS complains, cast the mock to the expected interface, or relax the type in the SUT to the minimal shape it actually uses. (The error says a Jest/Vitest `Mock` didn’t satisfy some interface—cast to `unknown as Whatever` in the test.)
+
+**Server — rules/service.ts “Bar.open/high/low/close/volume does not exist”**
+You’re likely importing `Bar` as a narrower type. Define a local trading bar shape and use it:
+
+**apps/server/src/rules/service.ts**
+
+```ts
+type OHLCV = { open: number; high: number; low: number; close: number; volume: number };
+
+function toOHLCV(bar: any): OHLCV {
+  return {
+    open: Number(bar.open ?? bar.o ?? 0),
+    high: Number(bar.high ?? bar.h ?? 0),
+    low: Number(bar.low ?? bar.l ?? 0),
+    close: Number(bar.close ?? bar.c ?? 0),
+    volume: Number(bar.volume ?? bar.v ?? 0),
+  };
+}
+
+// wherever you access bar.open etc:
+const b = toOHLCV(bar);
+// use b.open / b.close ...
+```
+
+That will satisfy both TS and your backtest expectations.
+
+**BarBuilder tests: “open is undefined”, “seq not strictly increasing”**
+Two fixes:
+
+1. Initialize a new bar with **all** fields when first tick arrives.
+2. Guarantee `seq` increments **monotonically** on every finalize.
+
+**apps/server/src/market/barBuilder.ts**
+
+```ts
+// when starting a new live bar:
+state.current = {
+  open: price, high: price, low: price, close: price,
+  volume: size ?? 0,
+  t0: bucketTs, timeframe, seq: (state.lastSeq ?? 0) + 1,
+};
+
+// on every update:
+state.current.high = Math.max(state.current.high, price);
+state.current.low = Math.min(state.current.low, price);
+state.current.close = price;
+state.current.volume += size ?? 0;
+
+// when finalizing:
+const finalized = { ...state.current };
+state.lastSeq = finalized.seq;
+state.bars.push(finalized); // never mutate later
+state.current = undefined;
+```
+
+If you already do similar, the failing test means either `finalized.open` wasn’t set on first tick, or `seq` was reused between bars—ensure `seq` is set **once** per bar at creation and bumped from `lastSeq`.
+
+**HotkeyManager test (“disable” didn’t stop)**
+Make sure you remove listeners on `disable` and they’re not auto-reinstalled by side effects.
+
+**apps/client/src/services/HotkeyManager.ts**
+
+```ts
+private handler = (e: KeyboardEvent) => { /* ... */ };
+
+enable() {
+  if (this.enabled) return;
+  document.addEventListener('keydown', this.handler);
+  this.enabled = true;
+}
+
+disable() {
+  if (!this.enabled) return;
+  document.removeEventListener('keydown', this.handler);
+  this.enabled = false;
+}
+```
+
+---
+
+# ✅ Phase 6 — Clean build to align `dist/` with `src/`
+
+Your scan shows `dist` still lists old timeframes like `D`. Do a clean build.
+
+**package.json (root)**
+
+```json
+{
+  "scripts": {
+    "clean": "rimraf apps/**/dist packages/**/dist",
+    "build": "pnpm run clean && pnpm -r --filter ./packages/* build && pnpm -r --filter ./apps/* build"
+  }
+}
+```
+
+```bash
+pnpm add -D rimraf
+pnpm run build
+```
+
+---
+
+# ✅ Phase 7 — Quick verification checklist
+
+* Start server → no `ReferenceError: require is not defined`
+* `/health` and `/api/health` return `{ ok: true }`
+* Demo login (or your auth) sets `sid` with `SameSite=None; Secure`
+* On iPhone: POST `/api/voice/token` succeeds; if 401, retry with Bearer works
+* Toolbar lets you flip `1m / 2m / 5m / 10m / 15m / 30m / 1h`; SSE reconnects with that tf
+* Candles align to clean minute buckets; x-axis labels in **ET**
+* Market status uses ET and matches actual open/closed
+* `pnpm -r typecheck` shows only expected strictness (no hard errors)
+* `pnpm -r lint` is clean (or only intentional `// eslint-disable-next-line`)
+* `pnpm test` no longer shows the React “act(...)” production error
+
+---
+
+If you paste **any** new errors after applying these patches (especially exact file:line), I’ll hand you the next diff right away.

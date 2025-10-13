@@ -1,0 +1,92 @@
+Short answer: **yes**—the fixes I gave are exactly what unblocks the voice feature, and with one small addition in your `/api/voice/token` route they also give your voice session access to tools.
+
+Here’s how it maps:
+
+## What gets voice working again
+
+1. **Server crash** → fixed by removing the stray `require()` and binding `0.0.0.0:PORT`.
+2. **iPhone/Safari 401** → fixed by setting cookie flags (`SameSite=None; Secure`) **and** accepting a `Bearer <sid>` header as fallback in `requireUser`.
+3. **CORS** → enabled with `credentials:true` and `Authorization` allowed; Safari will otherwise drop the cookie.
+4. **Client TS mismatches** → the tiny type shims I listed keep the Realtime client compiling so it can actually connect.
+
+Once those are in, the client can **successfully POST `/api/voice/token`** and open the realtime WS.
+
+## One small addition gives the voice AI access to tools
+
+Add a **tools JWT** to the same route response and teach the client to include it when opening the voice session or the tools bridge WS.
+
+### Minimal server patch (add to your existing `apps/server/src/routes/voiceToken.ts`)
+
+```ts
+import jwt from 'jsonwebtoken';
+import { requireUser, AuthRequest } from '../middleware/requireUser.js';
+
+export default function voiceTokenRoutes(app: any, env: any) {
+  // Protected: real token + tools bridge grant
+  app.post('/api/voice/token', requireUser, async (req: AuthRequest, res) => {
+    try {
+      // 1) Create ephemeral realtime token (your code already does a fetch with OPENAI_API_KEY)
+      // const realtime = await fetch('https://api.openai.com/v1/realtime/sessions', { ... });
+
+      // 2) Sign a short-lived tools JWT to authorize server-side tool calls on behalf of the user
+      const toolsJwt = jwt.sign(
+        {
+          sub: req.user?.uid ?? 'demo',
+          scopes: ['tools:quotes', 'tools:history', 'tools:orders', 'tools:journal'], // ← pick your tool scopes
+        },
+        env.JWT_SECRET ?? 'dev',
+        { expiresIn: '1h' }
+      );
+
+      // 3) Return both to the client (plus the ws/url your client expects)
+      res.json({
+        // pass through whatever your realtime session creation returned:
+        // realtime: { client_secret: realtime.client_secret, url: realtime.url, model: realtime.model },
+        tools: { jwt: toolsJwt, expiresIn: 3600 },
+      });
+    } catch (e) {
+      console.error('[voice] token error', e);
+      res.status(500).json({ error: 'voice token failed' });
+    }
+  });
+}
+```
+
+### Minimal client usage
+
+Where you open the voice session / tools bridge:
+
+```ts
+// after POST /api/voice/token
+const { tools /*, realtime */ } = await fetch('/api/voice/token', { method: 'POST', credentials: 'include' }).then(r => r.json());
+
+// (A) If your tools run over a dedicated WS (ToolBridge):
+toolBridge.connect({
+  url: '/api/tools-bridge',
+  headers: { Authorization: `Bearer ${tools.jwt}` }
+});
+
+// (B) If tools are attached to the realtime voice session, include the JWT in metadata:
+session.update?.({
+  instructions: 'You can call tools when helpful.',
+  metadata: { tools_jwt: tools.jwt } // your side reads this before executing tool calls
+});
+```
+
+> If your tools bridge already looks for `Authorization: Bearer <jwt>`, you’re done—this matches the middleware I added.
+
+## Quick verification checklist (voice + tools)
+
+* **Login** (demo or real) sets `sid` cookie with `SameSite=None; Secure`.
+* On iPhone Safari, **POST** `/api/voice/token` returns 200 (if not, client retries with `Authorization: Bearer <sid>`).
+* Client opens the realtime WS; you see `[voice] connected` in logs.
+* Tools bridge connects with `Authorization: Bearer <toolsJwt>`; server logs show the user id/scopes.
+* Say “what’s SPY on the 5-minute chart?” → the model can call your chart/market tools; you see tool invocations server-side.
+
+## About the “market closed” + timestamps
+
+That’s separate from voice. The ET helpers I gave (bucket in **America/New_York** + `marketIsOpen`) fix the wrong status + inaccurate labels, and your toolbar already includes **1m, 2m, 5m, 10m, 15m, 30m, 1h**—the SSE reconnect just needs to pass the selected timeframe (covered in my earlier message).
+
+---
+
+If you want, paste your **current** `apps/server/src/routes/voiceToken.ts` (just that file), and I’ll tailor the exact diff so it drops into your codebase with zero guessing.

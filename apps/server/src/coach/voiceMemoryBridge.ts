@@ -1,4 +1,4 @@
-import { saveMemory, MemoryKind } from '../memory/store';
+import { saveMemory, MemoryKind } from "../memory/store";
 
 interface ConversationInsight {
   userId: string;
@@ -21,7 +21,7 @@ class VoiceMemoryBridge {
     userId: string,
     text: string,
     kind: MemoryKind,
-    tags: string[] = []
+    tags: string[] = [],
   ): Promise<void> {
     const insight: ConversationInsight = {
       userId,
@@ -37,7 +37,7 @@ class VoiceMemoryBridge {
 
     this.insightBuffer.get(userId)!.push(insight);
 
-    console.log('[VoiceMemoryBridge] Captured insight:', {
+    console.log("[VoiceMemoryBridge] Captured insight:", {
       userId,
       kind,
       tags,
@@ -51,32 +51,24 @@ class VoiceMemoryBridge {
     }
   }
 
-  async captureTraderPattern(
-    userId: string,
-    pattern: string,
-    context: string
-  ): Promise<void> {
+  async captureTraderPattern(userId: string, pattern: string, context: string): Promise<void> {
     const text = `Trader pattern: ${pattern}. Context: ${context}`;
-    await this.captureInsight(userId, text, 'postmortem', ['pattern', 'behavior']);
+    await this.captureInsight(userId, text, "postmortem", ["pattern", "behavior"]);
   }
 
   async captureSetupLearning(
     userId: string,
     symbol: string,
     setup: string,
-    learning: string
+    learning: string,
   ): Promise<void> {
     const text = `${symbol} ${setup}: ${learning}`;
-    await this.captureInsight(userId, text, 'playbook', [symbol, setup, 'learning']);
+    await this.captureInsight(userId, text, "playbook", [symbol, setup, "learning"]);
   }
 
-  async captureMistake(
-    userId: string,
-    mistake: string,
-    lesson: string
-  ): Promise<void> {
+  async captureMistake(userId: string, mistake: string, lesson: string): Promise<void> {
     const text = `Mistake: ${mistake}. Lesson: ${lesson}`;
-    await this.captureInsight(userId, text, 'postmortem', ['mistake', 'lesson']);
+    await this.captureInsight(userId, text, "postmortem", ["mistake", "lesson"]);
   }
 
   private async flushUserInsights(userId: string): Promise<void> {
@@ -86,8 +78,8 @@ class VoiceMemoryBridge {
     console.log(`[VoiceMemoryBridge] Flushing ${insights.length} insights for user ${userId}`);
 
     // Save each insight to memory store
-    const savePromises = insights.map(insight =>
-      saveMemory(insight.userId, insight.kind, insight.text, insight.tags)
+    const savePromises = insights.map((insight) =>
+      saveMemory(insight.userId, insight.kind, insight.text, insight.tags),
     );
 
     try {
@@ -95,14 +87,14 @@ class VoiceMemoryBridge {
       this.insightBuffer.set(userId, []); // Clear buffer after successful save
       console.log(`[VoiceMemoryBridge] Successfully saved ${insights.length} insights`);
     } catch (error) {
-      console.error('[VoiceMemoryBridge] Failed to save insights:', error);
+      console.error("[VoiceMemoryBridge] Failed to save insights:", error);
       // Keep insights in buffer for retry
     }
   }
 
   private async flushAllInsights(): Promise<void> {
     const userIds = Array.from(this.insightBuffer.keys());
-    
+
     for (const userId of userIds) {
       await this.flushUserInsights(userId);
     }
@@ -110,8 +102,8 @@ class VoiceMemoryBridge {
 
   private startFlushTimer(): void {
     this.flushTimer = setInterval(() => {
-      this.flushAllInsights().catch(err => {
-        console.error('[VoiceMemoryBridge] Flush timer error:', err);
+      this.flushAllInsights().catch((err) => {
+        console.error("[VoiceMemoryBridge] Flush timer error:", err);
       });
     }, this.FLUSH_INTERVAL_MS);
   }
@@ -134,7 +126,7 @@ class VoiceMemoryBridge {
 export const voiceMemoryBridge = new VoiceMemoryBridge();
 
 // Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('[VoiceMemoryBridge] Shutting down, flushing insights...');
+process.on("SIGTERM", async () => {
+  console.log("[VoiceMemoryBridge] Shutting down, flushing insights...");
   await voiceMemoryBridge.shutdown();
 });

@@ -1,7 +1,7 @@
-import cors from 'cors';
-import helmet from 'helmet';
-import { type Express } from 'express';
-import { validateEnv } from '@shared/env';
+import cors from "cors";
+import helmet from "helmet";
+import { type Express } from "express";
+import { validateEnv } from "@shared/env";
 
 const env = validateEnv(process.env);
 
@@ -15,13 +15,13 @@ export function setupSecurity(app: Express) {
           defaultSrc: ["'self'"],
           connectSrc: ["'self'", ...Array.from(allowedOrigins)],
           frameSrc: ["'none'"],
-          imgSrc: ["'self'", 'data:', 'https:'],
+          imgSrc: ["'self'", "data:", "https:"],
           scriptSrc: ["'self'"],
           styleSrc: ["'self'", "'unsafe-inline'"],
         },
       },
       crossOriginEmbedderPolicy: false,
-    })
+    }),
   );
 
   app.use(
@@ -33,15 +33,15 @@ export function setupSecurity(app: Express) {
         if (allowedOrigins.has(origin)) {
           return callback(null, true);
         }
-        const isReplitDev = process.env.REPL_ID && origin.endsWith('.replit.dev');
+        const isReplitDev = process.env.REPL_ID && origin.endsWith(".replit.dev");
         if (isReplitDev) {
           return callback(null, true);
         }
         return callback(new Error(`Origin ${origin} not allowed by CORS`));
       },
       credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
-    })
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+    }),
   );
 }

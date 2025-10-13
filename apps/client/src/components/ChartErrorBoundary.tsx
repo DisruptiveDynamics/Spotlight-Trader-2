@@ -1,4 +1,4 @@
-import React, { Component, ReactNode, ErrorInfo } from 'react';
+import React, { Component, ReactNode, ErrorInfo } from "react";
 
 interface Props {
   children: ReactNode;
@@ -21,7 +21,7 @@ export class ChartErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Chart pane error:', error, errorInfo);
+    console.error("Chart pane error:", error, errorInfo);
   }
 
   resetError = () => {
@@ -50,7 +50,7 @@ export class ChartErrorBoundary extends Component<Props, State> {
             </div>
             <h3 className="text-white font-semibold mb-1">Chart Error</h3>
             <p className="text-sm text-gray-400 mb-4">
-              {this.state.error?.message || 'An error occurred while rendering the chart'}
+              {this.state.error?.message || "An error occurred while rendering the chart"}
             </p>
             <button
               onClick={this.resetError}

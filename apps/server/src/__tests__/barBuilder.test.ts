@@ -1,16 +1,16 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { BarBuilder } from '../market/barBuilder';
-import { eventBus } from '../market/eventBus';
+import { describe, it, expect, beforeEach } from "vitest";
+import { BarBuilder } from "../market/barBuilder";
+import { eventBus } from "../market/eventBus";
 
-describe('BarBuilder', () => {
+describe("BarBuilder", () => {
   let builder: BarBuilder;
 
   beforeEach(() => {
     builder = new BarBuilder();
   });
 
-  it('should never mutate finalized bars', () => {
-    const symbol = 'TEST';
+  it("should never mutate finalized bars", () => {
+    const symbol = "TEST";
     builder.subscribe(symbol);
 
     const bars: any[] = [];
@@ -47,8 +47,8 @@ describe('BarBuilder', () => {
     expect(bars[0]).toEqual(firstBar);
   });
 
-  it('should maintain strictly increasing seq', () => {
-    const symbol = 'TEST';
+  it("should maintain strictly increasing seq", () => {
+    const symbol = "TEST";
     builder.subscribe(symbol);
 
     const seqs: number[] = [];
@@ -71,8 +71,8 @@ describe('BarBuilder', () => {
     }
   });
 
-  it('should handle minute boundary correctly', () => {
-    const symbol = 'TEST';
+  it("should handle minute boundary correctly", () => {
+    const symbol = "TEST";
     builder.subscribe(symbol);
 
     const bars: any[] = [];

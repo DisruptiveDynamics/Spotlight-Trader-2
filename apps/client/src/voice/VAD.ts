@@ -1,4 +1,4 @@
-type VADEvent = 'start' | 'stop';
+type VADEvent = "start" | "stop";
 type VADListener = () => void;
 
 export class VoiceActivityDetector {
@@ -61,11 +61,11 @@ export class VoiceActivityDetector {
         this.lastSpeechTime = now;
         if (!this.isSpeaking) {
           this.isSpeaking = true;
-          this.emit('start');
+          this.emit("start");
         }
       } else if (this.isSpeaking && now - this.lastSpeechTime > this.holdMs) {
         this.isSpeaking = false;
-        this.emit('stop');
+        this.emit("stop");
       }
 
       this.animationId = requestAnimationFrame(check);

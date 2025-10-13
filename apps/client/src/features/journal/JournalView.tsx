@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
 interface Journal {
   id: string;
@@ -10,11 +10,11 @@ interface Journal {
 interface Trade {
   id: string;
   symbol: string;
-  side: 'long' | 'short';
+  side: "long" | "short";
   entryPrice?: number;
   exitPrice?: number;
   outcomePnl?: number;
-  regime?: 'trend' | 'range' | 'news' | 'illiquid';
+  regime?: "trend" | "range" | "news" | "illiquid";
   tape?: {
     volumeZ?: number;
     spreadBp?: number;
@@ -27,10 +27,10 @@ export function JournalView() {
   const [journals, setJournals] = useState<Journal[]>([]);
   const [selectedJournal, setSelectedJournal] = useState<Journal | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [noteText, setNoteText] = useState('');
+  const [noteText, setNoteText] = useState("");
   const [tradeData, setTradeData] = useState<Partial<Trade>>({
-    symbol: 'SPY',
-    side: 'long',
+    symbol: "SPY",
+    side: "long",
   });
   const [isTradeMode, setIsTradeMode] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -42,11 +42,11 @@ export function JournalView() {
 
   const fetchJournals = async () => {
     try {
-      const response = await fetch('/api/journals');
+      const response = await fetch("/api/journals");
       const data = await response.json();
       setJournals(data.journals || []);
     } catch (error) {
-      console.error('Failed to fetch journals:', error);
+      console.error("Failed to fetch journals:", error);
     }
   };
 
@@ -54,34 +54,34 @@ export function JournalView() {
     try {
       const content = isTradeMode ? tradeData : noteText;
 
-      await fetch('/api/journals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/journals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          [isTradeMode ? 'tradeJson' : 'text']: content,
+          [isTradeMode ? "tradeJson" : "text"]: content,
         }),
       });
 
       setIsModalOpen(false);
-      setNoteText('');
-      setTradeData({ symbol: 'SPY', side: 'long' });
+      setNoteText("");
+      setTradeData({ symbol: "SPY", side: "long" });
       fetchJournals();
     } catch (error) {
-      console.error('Failed to save journal:', error);
+      console.error("Failed to save journal:", error);
     }
   };
 
   const handlePreviewEod = async () => {
     try {
-      const response = await fetch('/api/journals/eod/preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/journals/eod/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
       });
       const data = await response.json();
       setEodPreview(data);
       setIsPreviewOpen(true);
     } catch (error) {
-      console.error('Failed to preview EOD:', error);
+      console.error("Failed to preview EOD:", error);
     }
   };
 
@@ -136,8 +136,8 @@ export function JournalView() {
                       key={journal.id}
                       className={`p-3 border rounded cursor-pointer transition-colors ${
                         selectedJournal?.id === journal.id
-                          ? 'border-blue-500 bg-blue-900/20'
-                          : 'border-gray-600 hover:border-gray-500'
+                          ? "border-blue-500 bg-blue-900/20"
+                          : "border-gray-600 hover:border-gray-500"
                       }`}
                       onClick={() => setSelectedJournal(journal)}
                     >
@@ -161,8 +161,8 @@ export function JournalView() {
               <div className="flex gap-2">
                 <button
                   onClick={async () => {
-                    if (confirm('Delete this journal entry?')) {
-                      await fetch(`/api/journals/${selectedJournal.id}`, { method: 'DELETE' });
+                    if (confirm("Delete this journal entry?")) {
+                      await fetch(`/api/journals/${selectedJournal.id}`, { method: "DELETE" });
                       setSelectedJournal(null);
                       fetchJournals();
                     }
@@ -194,7 +194,7 @@ export function JournalView() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-gray-800 p-6 rounded-lg w-full max-w-2xl">
             <h3 className="text-lg font-semibold mb-4 text-white">
-              {isTradeMode ? 'Add Trade' : 'Add Note'}
+              {isTradeMode ? "Add Trade" : "Add Note"}
             </h3>
 
             <div className="mb-4">
@@ -202,7 +202,7 @@ export function JournalView() {
                 onClick={() => setIsTradeMode(!isTradeMode)}
                 className="text-sm text-blue-400 hover:text-blue-300"
               >
-                Switch to {isTradeMode ? 'Note' : 'Trade'} Mode
+                Switch to {isTradeMode ? "Note" : "Trade"} Mode
               </button>
             </div>
 
@@ -213,7 +213,7 @@ export function JournalView() {
                     <label className="block text-sm font-medium text-gray-300 mb-1">Symbol</label>
                     <input
                       type="text"
-                      value={tradeData.symbol || ''}
+                      value={tradeData.symbol || ""}
                       onChange={(e) => setTradeData({ ...tradeData, symbol: e.target.value })}
                       className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
                     />
@@ -223,7 +223,7 @@ export function JournalView() {
                     <select
                       value={tradeData.side}
                       onChange={(e) =>
-                        setTradeData({ ...tradeData, side: e.target.value as 'long' | 'short' })
+                        setTradeData({ ...tradeData, side: e.target.value as "long" | "short" })
                       }
                       className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
                     >
@@ -238,7 +238,7 @@ export function JournalView() {
                     <input
                       type="number"
                       step="0.01"
-                      value={tradeData.entryPrice || ''}
+                      value={tradeData.entryPrice || ""}
                       onChange={(e) =>
                         setTradeData({ ...tradeData, entryPrice: parseFloat(e.target.value) })
                       }
@@ -252,7 +252,7 @@ export function JournalView() {
                     <input
                       type="number"
                       step="0.01"
-                      value={tradeData.exitPrice || ''}
+                      value={tradeData.exitPrice || ""}
                       onChange={(e) =>
                         setTradeData({ ...tradeData, exitPrice: parseFloat(e.target.value) })
                       }
@@ -264,7 +264,7 @@ export function JournalView() {
                     <input
                       type="number"
                       step="0.01"
-                      value={tradeData.outcomePnl || ''}
+                      value={tradeData.outcomePnl || ""}
                       onChange={(e) =>
                         setTradeData({ ...tradeData, outcomePnl: parseFloat(e.target.value) })
                       }
@@ -274,11 +274,11 @@ export function JournalView() {
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-1">Regime</label>
                     <select
-                      value={tradeData.regime || ''}
+                      value={tradeData.regime || ""}
                       onChange={(e) =>
                         setTradeData({
                           ...tradeData,
-                          regime: e.target.value as 'trend' | 'range' | 'news' | 'illiquid',
+                          regime: e.target.value as "trend" | "range" | "news" | "illiquid",
                         })
                       }
                       className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
@@ -294,7 +294,7 @@ export function JournalView() {
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1">Notes</label>
                   <textarea
-                    value={tradeData.notes || ''}
+                    value={tradeData.notes || ""}
                     onChange={(e) => setTradeData({ ...tradeData, notes: e.target.value })}
                     className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white h-32"
                   />
@@ -313,8 +313,8 @@ export function JournalView() {
               <button
                 onClick={() => {
                   setIsModalOpen(false);
-                  setNoteText('');
-                  setTradeData({ symbol: 'SPY', side: 'long' });
+                  setNoteText("");
+                  setTradeData({ symbol: "SPY", side: "long" });
                 }}
                 className="px-4 py-2 text-gray-300 hover:text-white"
               >

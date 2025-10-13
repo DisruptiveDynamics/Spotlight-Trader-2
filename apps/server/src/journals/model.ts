@@ -1,4 +1,4 @@
-export type TradeSide = 'long' | 'short';
+export type TradeSide = "long" | "short";
 
 export interface TradeScale {
   at: string;
@@ -12,7 +12,7 @@ export interface TradeTape {
   uptickDelta?: number;
 }
 
-export type TradeRegime = 'trend' | 'range' | 'news' | 'illiquid';
+export type TradeRegime = "trend" | "range" | "news" | "illiquid";
 
 export interface Trade {
   id: string;

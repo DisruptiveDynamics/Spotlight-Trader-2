@@ -1,0 +1,171 @@
+Yup—your agent is circling the right idea but mixing **two incompatible patterns**. Here’s the crisp guidance to get voice + tools working reliably:
+
+---
+
+# The core mistake
+
+There are **two different tool patterns** in OpenAI land:
+
+1. **Agents SDK (high-level)**
+
+   * Expects you to pass **actual functions** with your tool schemas (the SDK runs them for you).
+   * Great for server code, **not** for a browser client (you’d leak creds and hit CORS).
+
+2. **Realtime API (low-level)**
+
+   * You send only **tool schemas** to the session.
+   * The model emits **function-call events**; **you** gather args, execute the tool elsewhere (server), then **send the output back** to the session.
+
+You need **#2**, because your tools live on the server behind your ToolBridge.
+
+So: **do not register client-side functions** with the Agents SDK. Instead, **intercept function-call events and round-trip** through your ToolBridge, then post the result back to Realtime.
+
+---
+
+# What to change (concrete)
+
+## 1) Configure the Realtime session for tools (client)
+
+Only send schemas; no implementations.
+
+```ts
+// apps/client/src/voice/RealtimeVoiceClient.ts (during connect)
+await session.update?.({
+  // let the model call tools when helpful
+  tool_choice: 'auto',
+  tools: [
+    {
+      type: 'function',
+      name: 'get_history',
+      description: 'Fetch OHLCV bars for a symbol and timeframe',
+      parameters: {
+        type: 'object',
+        properties: {
+          symbol: { type: 'string' },
+          timeframe: { type: 'string', enum: ['1m','2m','5m','10m','15m','30m','1h'] },
+          limit: { type: 'integer', minimum: 1, maximum: 300 }
+        },
+        required: ['symbol','timeframe']
+      }
+    },
+    // ...add your other tools similarly
+  ]
+});
+```
+
+## 2) Handle function-call **events** (client)
+
+This is the Realtime pattern. Collect argument deltas, execute via ToolBridge, then send the output back.
+
+```ts
+// inside RealtimeVoiceClient.ts after you have `session`
+type PendingCall = { name: string; argsJson: string[] };
+const pending: Record<string, PendingCall> = {};
+
+// A: the model created a tool call
+session.on?.('response.function_call.created', (ev: { id: string; name: string }) => {
+  pending[ev.id] = { name: ev.name, argsJson: [] };
+});
+
+// B: arguments stream in chunks
+session.on?.('response.function_call.arguments.delta', (ev: { id: string; delta: string }) => {
+  pending[ev.id]?.argsJson.push(ev.delta);
+});
+
+// C: arguments are complete → call server tool and send output back
+session.on?.('response.function_call.completed', async (ev: { id: string }) => {
+  const call = pending[ev.id];
+  if (!call) return;
+
+  let args: any;
+  try {
+    args = JSON.parse(call.argsJson.join('') || '{}');
+  } catch (e) {
+    // Return a structured error to the model
+    await session.response?.function_call?.output?.create({
+      call_id: ev.id,
+      output: JSON.stringify({ error: 'Bad tool args JSON' })
+    });
+    delete pending[ev.id];
+    return;
+  }
+
+  // bridge to your server tools with Authorization: Bearer <toolsJwt>
+  let result: any;
+  try {
+    result = await toolBridge.invoke(call.name, args); // your wrapper that hits /api/tools-bridge (WS or HTTP)
+  } catch (e: any) {
+    result = { error: e?.message ?? 'Tool execution failed' };
+  }
+
+  // D: deliver result back to Realtime
+  await session.response?.function_call?.output?.create({
+    call_id: ev.id,
+    output: JSON.stringify(result)
+  });
+
+  // E: tell the model it can continue producing its response
+  await session.response?.create({});
+  delete pending[ev.id];
+});
+```
+
+> If your Agents SDK wrapper uses slightly different event names, map them to the same three phases above. The key is: **created → args delta → completed → output.create → response.create**.
+
+## 3) Don’t register client-side tool implementations
+
+If you wrote something like:
+
+```ts
+session.tools = {
+  get_history: async (args) => { /*...*/ }
+};
+```
+
+…remove it. That’s the **Agents pattern**, and it will break your server-side ToolBridge design (and potentially leak keys).
+
+## 4) Pass the **tools JWT** from your `/api/voice/token` response
+
+When you POST `/api/voice/token` (protected by `requireUser`), return **both** the Realtime session secret **and** a short-lived **tools JWT**. Then:
+
+```ts
+// client after fetching /api/voice/token
+const { tools } = await fetch('/api/voice/token', {
+  method: 'POST',
+  credentials: 'include'
+}).then(r => r.json());
+
+toolBridge.connect({
+  url: '/api/tools-bridge',
+  headers: { Authorization: `Bearer ${tools.jwt}` }
+});
+```
+
+Your ToolBridge server should validate that JWT and execute the actual tool.
+
+---
+
+# Extra fixes your agent should keep (they unblock voice end-to-end)
+
+* **ESM only:** replace all `require()` in `src` with proper `import`
+  (you already found `switchTimeframe.ts` and `pdf.ts`—do them all).
+* **`requireUser`**: accept **cookie OR bearer** (`sid`) and set `SameSite=None; Secure` on the cookie for iOS Safari.
+* **CORS**: `credentials: true`, allow `Authorization` header.
+* **Bind** `0.0.0.0` and `process.env.PORT` for Replit.
+* **Fix timeframe switch bug**: keep 1m subscribed for rollups; never `require('./rollups')` at runtime—import at top.
+* **Date/market time**: bucket bars in `America/New_York`; compute market open/close with `date-fns-tz`.
+
+---
+
+# Quick sanity checklist (for your agent)
+
+1. **Session update includes tools schemas** only.
+2. **Three event handlers** implemented: `created`, `arguments.delta`, `completed`.
+3. **ToolBridge call** on `completed` with args → return JSON.
+4. **Reply to Realtime** with `response.function_call.output.create({ call_id, output })`.
+5. **Resume** with `response.create({})`.
+6. **Auth**: tools bridge uses `Authorization: Bearer <toolsJwt>`.
+
+If they follow this, your voice agent will **both** speak/listen and **call your tools** (history, quotes, journaling, etc.) correctly.
+
+If you want, paste your current `RealtimeVoiceClient.ts` event-listener bits and I’ll mark up the exact edits so it lines up with your SDK’s typings.

@@ -1,7 +1,7 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   APP_ORIGIN: z.string().url(),
   ADMIN_ORIGIN: z.string().url(),
   ADMIN_EMAIL: z.string().email().optional(),
@@ -9,11 +9,11 @@ export const envSchema = z.object({
   POLYGON_API_KEY: z.string().min(1),
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url().optional(),
-  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   SESSION_SECRET: z.string().min(32),
   AUTH_JWT_SECRET: z.string().min(32),
-  SESSION_TTL: z.string().default('604800'), // 7 days in seconds
-  MAGIC_TTL: z.string().default('900'), // 15 minutes in seconds
+  SESSION_TTL: z.string().default("604800"), // 7 days in seconds
+  MAGIC_TTL: z.string().default("900"), // 15 minutes in seconds
   RESEND_API_KEY: z.string().optional(),
 });
 
@@ -23,9 +23,9 @@ export function validateEnv(env: Record<string, string | undefined>): Env {
   const result = envSchema.safeParse(env);
 
   if (!result.success) {
-    console.error('❌ Environment validation failed:');
+    console.error("❌ Environment validation failed:");
     console.error(result.error.format());
-    throw new Error('Invalid environment variables');
+    throw new Error("Invalid environment variables");
   }
 
   return result.data;

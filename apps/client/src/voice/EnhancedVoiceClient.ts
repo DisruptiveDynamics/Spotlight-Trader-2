@@ -1,14 +1,14 @@
-import { VoiceActivityDetector } from './VAD';
+import { VoiceActivityDetector } from "./VAD";
 
 type ConnectionState =
-  | 'disconnected'
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting'
-  | 'error'
-  | 'offline';
-type CoachState = 'listening' | 'thinking' | 'speaking' | 'idle' | 'muted';
-type PermissionState = 'pending' | 'granted' | 'denied';
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "error"
+  | "offline";
+type CoachState = "listening" | "thinking" | "speaking" | "idle" | "muted";
+type PermissionState = "pending" | "granted" | "denied";
 type VoiceClientListener = (state: ConnectionState) => void;
 type StateListener = (state: CoachState) => void;
 type AmplitudeListener = (level: number) => void;
@@ -24,8 +24,8 @@ export class EnhancedVoiceClient {
   private playbackQueue: AudioBuffer[] = [];
   private isPlaying = false;
   private currentSource: AudioBufferSourceNode | null = null;
-  private state: ConnectionState = 'disconnected';
-  private coachState: CoachState = 'idle';
+  private state: ConnectionState = "disconnected";
+  private coachState: CoachState = "idle";
   private listeners = new Set<VoiceClientListener>();
   private stateListeners = new Set<StateListener>();
   private amplitudeListeners = new Set<AmplitudeListener>();
@@ -40,18 +40,18 @@ export class EnhancedVoiceClient {
   private audioSource: MediaStreamAudioSourceNode | null = null;
   private amplitudeMonitorInterval: number | null = null;
   private lastRequestTime = 0;
-  private permissionState: PermissionState = 'pending';
+  private permissionState: PermissionState = "pending";
   private currentToken: string | null = null;
   private isBackgroundTab = false;
 
   constructor() {
     this.vad = new VoiceActivityDetector();
-    this.vad.on('start', () => this.handleSpeechStart());
-    this.vad.on('stop', () => this.handleSpeechStop());
+    this.vad.on("start", () => this.handleSpeechStart());
+    this.vad.on("stop", () => this.handleSpeechStop());
 
     // Monitor tab visibility for mobile optimization
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', () => {
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", () => {
         this.isBackgroundTab = document.hidden;
         if (this.isBackgroundTab) {
           this.stopAmplitudeMonitoring();
@@ -62,14 +62,14 @@ export class EnhancedVoiceClient {
     }
 
     // Listen for online/offline events (registered once)
-    if (typeof window !== 'undefined') {
-      window.addEventListener('online', () => this.handleOnline());
-      window.addEventListener('offline', () => this.handleOffline());
+    if (typeof window !== "undefined") {
+      window.addEventListener("online", () => this.handleOnline());
+      window.addEventListener("offline", () => this.handleOffline());
     }
   }
 
   private handleOnline(): void {
-    if (this.currentToken && this.state === 'offline') {
+    if (this.currentToken && this.state === "offline") {
       // Cancel any pending reconnect timeout
       if (this.reconnectTimeout) {
         clearTimeout(this.reconnectTimeout);
@@ -92,31 +92,31 @@ export class EnhancedVoiceClient {
 
   private handleOffline(): void {
     if (
-      this.state === 'connected' ||
-      this.state === 'connecting' ||
-      this.state === 'reconnecting'
+      this.state === "connected" ||
+      this.state === "connecting" ||
+      this.state === "reconnecting"
     ) {
-      this.setState('offline');
+      this.setState("offline");
     }
   }
 
   async connect(token: string): Promise<void> {
-    if (this.state === 'connected' || this.state === 'connecting') {
+    if (this.state === "connected" || this.state === "connecting") {
       return;
     }
 
     this.currentToken = token;
-    this.setState('connecting');
+    this.setState("connecting");
 
     try {
       await this.setupAudioContext();
       await this.connectWebSocket(token);
     } catch (error) {
-      console.error('Connection failed:', error);
-      this.setState('error');
+      console.error("Connection failed:", error);
+      this.setState("error");
 
-      if (error instanceof Error && error.message.includes('Permission denied')) {
-        this.setPermissionState('denied');
+      if (error instanceof Error && error.message.includes("Permission denied")) {
+        this.setPermissionState("denied");
       }
     }
   }
@@ -133,8 +133,8 @@ export class EnhancedVoiceClient {
     }
 
     this.cleanupAudio();
-    this.setState('disconnected');
-    this.setCoachState('idle');
+    this.setState("disconnected");
+    this.setCoachState("idle");
     this.reconnectAttempts = 0;
     this.currentToken = null;
   }
@@ -155,7 +155,7 @@ export class EnhancedVoiceClient {
         },
       });
 
-      this.setPermissionState('granted');
+      this.setPermissionState("granted");
       await this.vad.start();
 
       this.audioSource = this.audioContext.createMediaStreamSource(this.mediaStream);
@@ -177,7 +177,7 @@ export class EnhancedVoiceClient {
           const view = new Int16Array(buffer);
           view.set(pcm16);
           const audioEvent = {
-            type: 'input_audio_buffer.append',
+            type: "input_audio_buffer.append",
             audio: this.arrayBufferToBase64(buffer),
           };
           this.ws.send(JSON.stringify(audioEvent));
@@ -190,8 +190,8 @@ export class EnhancedVoiceClient {
 
       this.startAmplitudeMonitoring();
     } catch (error) {
-      console.error('Failed to setup audio:', error);
-      this.setPermissionState('denied');
+      console.error("Failed to setup audio:", error);
+      this.setPermissionState("denied");
       throw error;
     }
   }
@@ -199,17 +199,17 @@ export class EnhancedVoiceClient {
   private async connectWebSocket(token: string): Promise<void> {
     // Check if online before attempting connection
     if (!navigator.onLine) {
-      this.setState('offline');
+      this.setState("offline");
       this.scheduleReconnect(token);
       return;
     }
 
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/realtime?t=${token}`;
+    const wsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws/realtime?t=${token}`;
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
-      this.setState('connected');
-      this.setCoachState('listening');
+      this.setState("connected");
+      this.setCoachState("listening");
       this.reconnectAttempts = 0;
     };
 
@@ -217,27 +217,27 @@ export class EnhancedVoiceClient {
       try {
         const data = JSON.parse(event.data);
 
-        if (data.type === 'response.audio.delta' && data.delta) {
+        if (data.type === "response.audio.delta" && data.delta) {
           await this.handleAudioDelta(data.delta);
         }
 
-        if (data.type === 'response.done' && this.lastRequestTime > 0) {
+        if (data.type === "response.done" && this.lastRequestTime > 0) {
           const responseTime = Date.now() - this.lastRequestTime;
           this.notifyLatency(responseTime);
           this.lastRequestTime = 0;
         }
       } catch (error) {
-        console.error('Error processing message:', error);
+        console.error("Error processing message:", error);
       }
     };
 
     this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      console.error("WebSocket error:", error);
       // Check if it's a network error
       if (!navigator.onLine) {
-        this.setState('offline');
+        this.setState("offline");
       } else {
-        this.setState('error');
+        this.setState("error");
       }
     };
 
@@ -245,8 +245,8 @@ export class EnhancedVoiceClient {
       if (this.currentToken && this.reconnectAttempts < this.maxReconnectAttempts) {
         this.scheduleReconnect(this.currentToken);
       } else {
-        this.setState('disconnected');
-        this.setCoachState('idle');
+        this.setState("disconnected");
+        this.setCoachState("idle");
       }
     };
   }
@@ -260,7 +260,7 @@ export class EnhancedVoiceClient {
       audioTrack.enabled = false;
     }
     this.vad.stop();
-    this.setCoachState('muted');
+    this.setCoachState("muted");
   }
 
   unmute(): void {
@@ -272,7 +272,7 @@ export class EnhancedVoiceClient {
       audioTrack.enabled = true;
     }
     this.vad.start();
-    this.setCoachState('listening');
+    this.setCoachState("listening");
   }
 
   toggleMute(): void {
@@ -292,11 +292,11 @@ export class EnhancedVoiceClient {
     this.clearPlaybackQueue();
 
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'response.cancel' }));
+      this.ws.send(JSON.stringify({ type: "response.cancel" }));
     }
 
     if (!this.isMuted) {
-      this.setCoachState('listening');
+      this.setCoachState("listening");
     }
   }
 
@@ -375,7 +375,7 @@ export class EnhancedVoiceClient {
     if (this.isMuted) return;
 
     if (!this.isPlaying) {
-      this.setCoachState('thinking');
+      this.setCoachState("thinking");
     }
   }
 
@@ -388,7 +388,7 @@ export class EnhancedVoiceClient {
     const audioBuffer = this.audioContext.createBuffer(
       1,
       float32.length,
-      this.audioContext.sampleRate
+      this.audioContext.sampleRate,
     );
     audioBuffer.getChannelData(0).set(float32);
 
@@ -403,21 +403,21 @@ export class EnhancedVoiceClient {
     if (this.playbackQueue.length === 0 || !this.audioContext) {
       this.isPlaying = false;
       if (!this.isMuted) {
-        this.setCoachState('listening');
+        this.setCoachState("listening");
       }
       return;
     }
 
     this.isPlaying = true;
-    this.setCoachState('speaking');
+    this.setCoachState("speaking");
     const buffer = this.playbackQueue.shift()!;
 
     // iOS Safari compatibility: Resume AudioContext before playback
-    if (this.audioContext.state === 'suspended') {
+    if (this.audioContext.state === "suspended") {
       try {
         await this.audioContext.resume();
       } catch (error) {
-        console.error('Failed to resume AudioContext:', error);
+        console.error("Failed to resume AudioContext:", error);
       }
     }
 
@@ -457,7 +457,7 @@ export class EnhancedVoiceClient {
   }
 
   private arrayBufferToBase64(buffer: ArrayBuffer): string {
-    let binary = '';
+    let binary = "";
     const bytes = new Uint8Array(buffer);
     for (let i = 0; i < bytes.length; i++) {
       binary += String.fromCharCode(bytes[i]!);
@@ -478,13 +478,13 @@ export class EnhancedVoiceClient {
     if (this.reconnectTimeout) return;
 
     // Only set reconnecting if not offline (preserve offline state)
-    if (this.state !== 'offline') {
-      this.setState('reconnecting');
+    if (this.state !== "offline") {
+      this.setState("reconnecting");
     }
 
     const delayIndex = Math.min(this.reconnectAttempts, this.reconnectDelays.length - 1);
     const baseDelay = this.reconnectDelays[delayIndex] || 10000;
-    
+
     // Add ±20% jitter
     const jitter = baseDelay * 0.2 * (Math.random() * 2 - 1);
     const delay = Math.max(100, baseDelay + jitter); // Minimum 100ms
@@ -514,9 +514,9 @@ export class EnhancedVoiceClient {
   private notifyLatency(ms: number): void {
     this.latencyListeners.forEach((listener) => listener(ms));
     window.dispatchEvent(
-      new CustomEvent('metrics:update', {
+      new CustomEvent("metrics:update", {
         detail: { voiceRTT: ms },
-      })
+      }),
     );
   }
 

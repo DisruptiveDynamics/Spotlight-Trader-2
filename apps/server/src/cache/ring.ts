@@ -1,4 +1,4 @@
-import type { Bar } from '@server/market/eventBus';
+import type { Bar } from "@server/market/eventBus";
 
 interface CachedBar {
   seq: number;

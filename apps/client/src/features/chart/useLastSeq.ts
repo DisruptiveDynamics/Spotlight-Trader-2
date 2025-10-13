@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback } from "react";
 
 export function useLastSeq(symbol: string, timeframe: string) {
   const key = `lastSeq:${symbol}:${timeframe}`;
@@ -14,7 +14,7 @@ export function useLastSeq(symbol: string, timeframe: string) {
       localStorage.setItem(key, String(seq));
       seqRef.current = seq;
     },
-    [key]
+    [key],
   );
 
   return [seqRef.current, setLastSeq] as const;

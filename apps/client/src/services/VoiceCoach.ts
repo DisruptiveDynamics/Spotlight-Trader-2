@@ -6,15 +6,15 @@
 export function handleBargeIn(
   realtimeWs: WebSocket | null,
   playbackNode: AudioBufferSourceNode | null,
-  gainNode: GainNode | null
+  gainNode: GainNode | null,
 ): void {
   // 1. Cancel OpenAI response immediately
   try {
     if (realtimeWs?.readyState === WebSocket.OPEN) {
-      realtimeWs.send(JSON.stringify({ type: 'response.cancel' }));
+      realtimeWs.send(JSON.stringify({ type: "response.cancel" }));
     }
   } catch (err) {
-    console.warn('Failed to send response.cancel:', err);
+    console.warn("Failed to send response.cancel:", err);
   }
 
   // 2. Duck audio gain to 0 instantly (no fade)
@@ -51,7 +51,7 @@ export function createFrameQueue(maxSize = 8): AudioFrameQueue {
 
     addFrame(frame: ArrayBuffer) {
       frames.push(frame);
-      
+
       // Backpressure: drop oldest frames if queue too large
       while (frames.length > maxSize) {
         frames.shift();
@@ -98,11 +98,11 @@ export class AudioBatcher {
       if (batched) {
         // Add to queue with backpressure control
         this.batchQueue.push(batched);
-        
+
         // Drop oldest frames if queue exceeds max size
         while (this.batchQueue.length > this.maxQueueSize) {
           this.batchQueue.shift();
-          console.warn('AudioBatcher: dropping oldest frame due to backpressure');
+          console.warn("AudioBatcher: dropping oldest frame due to backpressure");
         }
       }
     }
@@ -124,7 +124,7 @@ export class AudioBatcher {
     // Concatenate all chunks
     const totalLength = this.buffer.reduce((sum, c) => sum + c.length, 0);
     const batched = new Int16Array(totalLength);
-    
+
     let offset = 0;
     for (const chunk of this.buffer) {
       batched.set(chunk, offset);
@@ -133,7 +133,7 @@ export class AudioBatcher {
 
     this.buffer = [];
     this.lastFlush = Date.now();
-    
+
     return batched;
   }
 

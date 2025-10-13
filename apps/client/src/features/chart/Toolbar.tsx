@@ -1,16 +1,16 @@
-import { useState } from 'react';
-import { useChartState } from '../../state/chartState';
-import type { Timeframe, Layout, ChartStyle } from '../../state/chartState';
+import { useState } from "react";
+import { useChartState } from "../../state/chartState";
+import type { Timeframe, Layout, ChartStyle } from "../../state/chartState";
 
-const TIMEFRAMES: Timeframe[] = ['1m', '2m', '5m', '10m', '15m', '30m', '1h'];
-const LAYOUTS: Layout[] = ['1x1', '2x1', '2x2'];
-const CHART_STYLES: ChartStyle[] = ['candles', 'bars', 'line'];
+const TIMEFRAMES: Timeframe[] = ["1m", "2m", "5m", "10m", "15m", "30m", "1h"];
+const LAYOUTS: Layout[] = ["1x1", "2x1", "2x2"];
+const CHART_STYLES: ChartStyle[] = ["candles", "bars", "line"];
 
 interface ToolbarProps {
-  status?: 'live' | 'paused' | 'reconnecting';
+  status?: "live" | "paused" | "reconnecting";
 }
 
-export function Toolbar({ status = 'live' }: ToolbarProps) {
+export function Toolbar({ status = "live" }: ToolbarProps) {
   const {
     active,
     layout,
@@ -32,20 +32,20 @@ export function Toolbar({ status = 'live' }: ToolbarProps) {
   const [symbolInput, setSymbolInput] = useState(active.symbol);
   const [showSymbolDropdown, setShowSymbolDropdown] = useState(false);
   const [showStudies, setShowStudies] = useState(false);
-  const [emaInput, setEmaInput] = useState('');
+  const [emaInput, setEmaInput] = useState("");
 
   // Popular symbols for quick access
   const popularSymbols = [
-    'SPY',
-    'QQQ',
-    'NVDA',
-    'TSLA',
-    'AAPL',
-    'MSFT',
-    'GOOGL',
-    'AMZN',
-    'META',
-    'AMD',
+    "SPY",
+    "QQQ",
+    "NVDA",
+    "TSLA",
+    "AAPL",
+    "MSFT",
+    "GOOGL",
+    "AMZN",
+    "META",
+    "AMD",
   ];
 
   // Filter symbols based on input
@@ -72,14 +72,14 @@ export function Toolbar({ status = 'live' }: ToolbarProps) {
     const period = parseInt(emaInput);
     if (period > 0 && !overlays.ema.includes(period)) {
       addEma(period);
-      setEmaInput('');
+      setEmaInput("");
     }
   };
 
   const statusColors = {
-    live: 'bg-green-500/20 text-green-400 border-green-500',
-    paused: 'bg-amber-500/20 text-amber-400 border-amber-500',
-    reconnecting: 'bg-red-500/20 text-red-400 border-red-500',
+    live: "bg-green-500/20 text-green-400 border-green-500",
+    paused: "bg-amber-500/20 text-amber-400 border-amber-500",
+    reconnecting: "bg-red-500/20 text-red-400 border-red-500",
   };
 
   return (
@@ -130,7 +130,7 @@ export function Toolbar({ status = 'live' }: ToolbarProps) {
                     className="px-2 text-sm hover:scale-110 transition-transform"
                   >
                     <span
-                      className={favorites.includes(symbol) ? 'text-yellow-500' : 'text-gray-600'}
+                      className={favorites.includes(symbol) ? "text-yellow-500" : "text-gray-600"}
                     >
                       ★
                     </span>
@@ -151,8 +151,8 @@ export function Toolbar({ status = 'live' }: ToolbarProps) {
             onClick={() => setTimeframe(tf)}
             className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
               active.timeframe === tf
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                ? "bg-blue-600 text-white"
+                : "text-gray-400 hover:text-white hover:bg-gray-700"
             }`}
           >
             {tf}
@@ -261,7 +261,7 @@ export function Toolbar({ status = 'live' }: ToolbarProps) {
                       checked={overlays.vwap !== null}
                       onChange={(e) =>
                         setOverlays({
-                          vwap: e.target.checked ? { mode: 'session' } : null,
+                          vwap: e.target.checked ? { mode: "session" } : null,
                         })
                       }
                       className="w-4 h-4 text-blue-600 bg-gray-800 border-gray-700 rounded focus:ring-blue-500"
@@ -273,9 +273,9 @@ export function Toolbar({ status = 'live' }: ToolbarProps) {
                       <select
                         value={overlays.vwap.mode}
                         onChange={(e) => {
-                          const mode = e.target.value as 'session' | 'anchored';
+                          const mode = e.target.value as "session" | "anchored";
                           const newVwap: any = { mode };
-                          if (mode === 'anchored' && overlays.vwap?.anchorMs) {
+                          if (mode === "anchored" && overlays.vwap?.anchorMs) {
                             newVwap.anchorMs = overlays.vwap.anchorMs;
                           }
                           setOverlays({ vwap: newVwap });
@@ -285,7 +285,7 @@ export function Toolbar({ status = 'live' }: ToolbarProps) {
                         <option value="session">Session</option>
                         <option value="anchored">Anchored</option>
                       </select>
-                      {overlays.vwap.mode === 'anchored' && overlays.vwap.anchorMs && (
+                      {overlays.vwap.mode === "anchored" && overlays.vwap.anchorMs && (
                         <button
                           onClick={clearVwapAnchor}
                           className="w-full px-2 py-1 text-xs text-left text-gray-400 hover:text-white"
@@ -322,8 +322,8 @@ export function Toolbar({ status = 'live' }: ToolbarProps) {
               onClick={() => setLayout(l)}
               className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
                 layout === l
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-400 hover:text-white hover:bg-gray-700"
               }`}
             >
               {l}
@@ -339,8 +339,8 @@ export function Toolbar({ status = 'live' }: ToolbarProps) {
               onClick={() => setChartStyle(style)}
               className={`px-2 py-1 text-xs font-medium rounded capitalize transition-colors ${
                 chartStyle === style
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-400 hover:text-white hover:bg-gray-700"
               }`}
             >
               {style}

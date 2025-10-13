@@ -1,13 +1,13 @@
-import { eventBus, type Bar } from '../market/eventBus';
-import { ruleRegistry } from './registry';
-import { ruleEvaluator } from './evaluator';
-import type { RuleContext } from '@shared/types/rules';
+import { eventBus, type Bar } from "../market/eventBus";
+import { ruleRegistry } from "./registry";
+import { ruleEvaluator } from "./evaluator";
+import type { RuleContext } from "@shared/types/rules";
 
 export class RulesEngineService {
-  private userId = 'demo-user';
+  private userId = "demo-user";
 
   start(): void {
-    eventBus.on('bar:new:SPY:1m', this.handleNewBar.bind(this));
+    eventBus.on("bar:new:SPY:1m", this.handleNewBar.bind(this));
   }
 
   private async handleNewBar(bar: Bar): Promise<void> {
@@ -28,16 +28,16 @@ export class RulesEngineService {
 
       for (const rule of rules) {
         const evaluation = ruleEvaluator.evaluate(rule, context, bar.seq);
-        eventBus.emit('rule:evaluated', evaluation);
+        eventBus.emit("rule:evaluated", evaluation);
 
         if (evaluation.passed) {
           console.log(
-            `Rule ${rule.name} passed at seq ${bar.seq}: ${evaluation.signal} (confidence: ${evaluation.confidence.toFixed(2)})`
+            `Rule ${rule.name} passed at seq ${bar.seq}: ${evaluation.signal} (confidence: ${evaluation.confidence.toFixed(2)})`,
           );
         }
       }
     } catch (error) {
-      console.error('Error evaluating rules:', error);
+      console.error("Error evaluating rules:", error);
     }
   }
 
@@ -47,7 +47,7 @@ export class RulesEngineService {
   }
 
   stop(): void {
-    eventBus.off('bar:new:SPY:1m', this.handleNewBar.bind(this));
+    eventBus.off("bar:new:SPY:1m", this.handleNewBar.bind(this));
   }
 }
 

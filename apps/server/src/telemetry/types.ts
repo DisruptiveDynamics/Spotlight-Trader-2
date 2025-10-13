@@ -1,18 +1,18 @@
-import type { Bar } from '@spotlight/shared';
+import type { Bar } from "@spotlight/shared";
 
 export type TelemetryEventType =
-  | 'bar:new'
-  | 'bar:update'
-  | 'tick'
-  | 'indicator:vwap'
-  | 'indicator:ema'
-  | 'indicator:rsi'
-  | 'indicator:atr'
-  | 'session:levels'
-  | 'volatility:bucket'
-  | 'breadth:update'
-  | 'timeframe:changed'
-  | 'symbol:changed';
+  | "bar:new"
+  | "bar:update"
+  | "tick"
+  | "indicator:vwap"
+  | "indicator:ema"
+  | "indicator:rsi"
+  | "indicator:atr"
+  | "session:levels"
+  | "volatility:bucket"
+  | "breadth:update"
+  | "timeframe:changed"
+  | "symbol:changed";
 
 export interface TelemetryEvent<T = unknown> {
   type: TelemetryEventType;
@@ -44,7 +44,7 @@ export interface TickEvent {
 
 export interface VwapIndicator {
   value: number;
-  mode: 'session' | 'anchored';
+  mode: "session" | "anchored";
   anchorMs?: number;
 }
 
@@ -69,7 +69,7 @@ export interface SessionLevels {
   open: number;
 }
 
-export type VolatilityBucket = 'low' | 'medium' | 'high';
+export type VolatilityBucket = "low" | "medium" | "high";
 
 export interface VolatilityEvent {
   bucket: VolatilityBucket;

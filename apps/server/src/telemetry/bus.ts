@@ -1,5 +1,5 @@
-import { EventEmitter } from 'events';
-import type { TelemetryEvent, TelemetrySubscription } from './types';
+import { EventEmitter } from "events";
+import type { TelemetryEvent, TelemetrySubscription } from "./types";
 
 class TelemetryBus extends EventEmitter {
   private subscriptions = new Map<string, TelemetrySubscription[]>();
@@ -7,13 +7,13 @@ class TelemetryBus extends EventEmitter {
   subscribe(symbol: string, timeframe: string, handler: (event: TelemetryEvent) => void): string {
     const key = `${symbol}:${timeframe}`;
     const subscription: TelemetrySubscription = { symbol, timeframe, handler };
-    
+
     if (!this.subscriptions.has(key)) {
       this.subscriptions.set(key, []);
     }
-    
+
     this.subscriptions.get(key)!.push(subscription);
-    
+
     return key;
   }
 
@@ -32,7 +32,7 @@ class TelemetryBus extends EventEmitter {
   publish(event: TelemetryEvent): void {
     const key = `${event.symbol}:${event.timeframe}`;
     const subs = this.subscriptions.get(key);
-    
+
     if (subs) {
       subs.forEach((sub) => {
         try {
@@ -42,8 +42,8 @@ class TelemetryBus extends EventEmitter {
         }
       });
     }
-    
-    this.emit('event', event);
+
+    this.emit("event", event);
   }
 
   getSubscriptionCount(): number {

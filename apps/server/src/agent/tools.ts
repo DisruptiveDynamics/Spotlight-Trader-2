@@ -25,11 +25,11 @@ export const ToolSchemas = [
       type: "object",
       properties: {
         symbol: { type: "string", description: "e.g., ES, NQ, AAPL" },
-        timeframe: { type: "string", enum: ["1m","5m","1h","1d"] },
-        limit: { type: "integer", minimum: 10, maximum: 2000, default: 300 }
+        timeframe: { type: "string", enum: ["1m", "5m", "1h", "1d"] },
+        limit: { type: "integer", minimum: 10, maximum: 2000, default: 300 },
       },
-      required: ["symbol","timeframe"]
-    }
+      required: ["symbol", "timeframe"],
+    },
   },
   {
     name: "getRules",
@@ -37,15 +37,15 @@ export const ToolSchemas = [
     parameters: {
       type: "object",
       properties: {
-        version: { type: "string", description: "Explicit rulebook version; defaults to active." }
-      }
-    }
+        version: { type: "string", description: "Explicit rulebook version; defaults to active." },
+      },
+    },
   },
   {
     name: "getMarketStatus",
     description: "Return exchange open/closed and latency metrics for HUD.",
-    parameters: { type: "object", properties: {} }
-  }
+    parameters: { type: "object", properties: {} },
+  },
 ] as const;
 
 /**
@@ -64,8 +64,8 @@ export const ToolHandlers = {
     return {
       symbol,
       timeframe,
-      bars: [],           // <-- populate when wired
-      source: "agent:placeholder"
+      bars: [], // <-- populate when wired
+      source: "agent:placeholder",
     };
   },
 
@@ -78,7 +78,7 @@ export const ToolHandlers = {
     return {
       version,
       rules: [], // <-- populate when wired
-      meta: { note: "placeholder; wire me to your rules store" }
+      meta: { note: "placeholder; wire me to your rules store" },
     };
   },
 
@@ -90,7 +90,7 @@ export const ToolHandlers = {
     return {
       status: "unknown",
       latency: { rtt: null, sseReconnects: null },
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     };
-  }
+  },
 };

@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
-import { useExplainSignal } from './useExplainSignal';
-import { useInsightJournal } from './useInsightJournal';
-import type { InsightContext } from '@spotlight/shared';
+import { useState, useEffect, useRef } from "react";
+import { useExplainSignal } from "./useExplainSignal";
+import { useInsightJournal } from "./useInsightJournal";
+import type { InsightContext } from "@spotlight/shared";
 
 interface ExplainPanelProps {
   isOpen: boolean;
@@ -10,7 +10,7 @@ interface ExplainPanelProps {
 }
 
 export function ExplainPanel({ isOpen, onClose, context }: ExplainPanelProps) {
-  const [question, setQuestion] = useState('');
+  const [question, setQuestion] = useState("");
   const { explain, response, lastQuestion, isLoading, error, clearResponse } = useExplainSignal();
   const { saveInsight } = useInsightJournal();
   const lastSavedTimestampRef = useRef<number>(0);
@@ -21,7 +21,7 @@ export function ExplainPanel({ isOpen, onClose, context }: ExplainPanelProps) {
     const userQuestion = question;
     clearResponse(); // Clear previous response
     await explain(userQuestion, context);
-    setQuestion('');
+    setQuestion("");
   };
 
   // Save insights to journal when NEW response is received
@@ -38,7 +38,7 @@ export function ExplainPanel({ isOpen, onClose, context }: ExplainPanelProps) {
   }, [response, context, lastQuestion, saveInsight]);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleAsk();
     }
@@ -47,9 +47,9 @@ export function ExplainPanel({ isOpen, onClose, context }: ExplainPanelProps) {
   // Quick questions
   const quickQuestions = [
     "What's happening with this price action?",
-    'Explain the current setup',
-    'What are the key support/resistance levels?',
-    'Is this a good entry point?',
+    "Explain the current setup",
+    "What are the key support/resistance levels?",
+    "Is this a good entry point?",
   ];
 
   const handleQuickQuestion = async (q: string) => {

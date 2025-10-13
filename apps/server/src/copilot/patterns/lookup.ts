@@ -1,6 +1,6 @@
-import { db } from '@server/db';
-import { patternStats } from '@server/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { db } from "@server/db";
+import { patternStats } from "@server/db/schema";
+import { eq, and } from "drizzle-orm";
 
 interface PatternStats {
   symbol: string;
@@ -33,7 +33,7 @@ class PatternMemoryCache {
   async getPatternStats(
     symbol: string,
     timeframe: string,
-    setup?: string
+    setup?: string,
   ): Promise<PatternStats[]> {
     const cacheKey = this.getCacheKey(symbol, timeframe, setup);
     const cached = this.cache.get(cacheKey);
@@ -42,10 +42,7 @@ class PatternMemoryCache {
       return cached.data;
     }
 
-    const conditions = [
-      eq(patternStats.symbol, symbol),
-      eq(patternStats.timeframe, timeframe),
-    ];
+    const conditions = [eq(patternStats.symbol, symbol), eq(patternStats.timeframe, timeframe)];
 
     if (setup) {
       conditions.push(eq(patternStats.setup, setup));
@@ -86,7 +83,7 @@ class PatternMemoryCache {
 
   invalidate(symbol: string, timeframe: string): void {
     const keysToDelete: string[] = [];
-    
+
     for (const [key] of this.cache) {
       if (key.startsWith(`${symbol}:${timeframe}`)) {
         keysToDelete.push(key);

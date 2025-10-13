@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
 interface MemoryViewerProps {
   isOpen: boolean;
@@ -30,18 +30,18 @@ export function MemoryViewer({ isOpen, onClose }: MemoryViewerProps) {
     setError(null);
 
     try {
-      const response = await fetch('/api/nexa/uploads', {
-        credentials: 'include',
+      const response = await fetch("/api/nexa/uploads", {
+        credentials: "include",
       });
 
       if (!response.ok) {
-        throw new Error('Failed to fetch uploads');
+        throw new Error("Failed to fetch uploads");
       }
 
       const data = await response.json();
       setUploads(data.uploads || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load memory');
+      setError(err instanceof Error ? err.message : "Failed to load memory");
     } finally {
       setIsLoading(false);
     }
@@ -51,27 +51,27 @@ export function MemoryViewer({ isOpen, onClose }: MemoryViewerProps) {
 
   const getSourceIcon = (sourceType: string) => {
     switch (sourceType) {
-      case 'youtube':
-        return '📺';
-      case 'pdf':
-        return '📄';
-      case 'text':
-        return '📝';
+      case "youtube":
+        return "📺";
+      case "pdf":
+        return "📄";
+      case "text":
+        return "📝";
       default:
-        return '📚';
+        return "📚";
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'completed':
-        return 'text-green-400 bg-green-900/30 border-green-700';
-      case 'processing':
-        return 'text-yellow-400 bg-yellow-900/30 border-yellow-700';
-      case 'failed':
-        return 'text-red-400 bg-red-900/30 border-red-700';
+      case "completed":
+        return "text-green-400 bg-green-900/30 border-green-700";
+      case "processing":
+        return "text-yellow-400 bg-yellow-900/30 border-yellow-700";
+      case "failed":
+        return "text-red-400 bg-red-900/30 border-red-700";
       default:
-        return 'text-gray-400 bg-gray-800 border-gray-700';
+        return "text-gray-400 bg-gray-800 border-gray-700";
     }
   };
 
@@ -89,7 +89,12 @@ export function MemoryViewer({ isOpen, onClose }: MemoryViewerProps) {
             className="p-1 text-gray-400 transition-colors rounded hover:text-white hover:bg-gray-800"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -129,9 +134,7 @@ export function MemoryViewer({ isOpen, onClose }: MemoryViewerProps) {
                     <div className="text-2xl">{getSourceIcon(upload.sourceType)}</div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
-                        <h3 className="text-sm font-medium text-white truncate">
-                          {upload.title}
-                        </h3>
+                        <h3 className="text-sm font-medium text-white truncate">{upload.title}</h3>
                         <span
                           className={`px-2 py-0.5 text-xs rounded border ${getStatusColor(upload.status)}`}
                         >
@@ -145,9 +148,9 @@ export function MemoryViewer({ isOpen, onClose }: MemoryViewerProps) {
                         <span>•</span>
                         <span>
                           {new Date(upload.createdAt).toLocaleDateString(undefined, {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
                           })}
                         </span>
                       </div>
@@ -163,7 +166,7 @@ export function MemoryViewer({ isOpen, onClose }: MemoryViewerProps) {
         <div className="p-4 text-xs text-center text-gray-500 border-t border-gray-700">
           {uploads.length > 0 && (
             <span>
-              {uploads.reduce((sum, u) => sum + u.chunksCount, 0)} total knowledge chunks •{' '}
+              {uploads.reduce((sum, u) => sum + u.chunksCount, 0)} total knowledge chunks •{" "}
               {uploads.length} uploads
             </span>
           )}

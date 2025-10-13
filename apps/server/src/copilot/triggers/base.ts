@@ -1,4 +1,4 @@
-export type TriggerState = 'idle' | 'primed' | 'fired' | 'cooldown';
+export type TriggerState = "idle" | "primed" | "fired" | "cooldown";
 
 export interface TriggerCondition {
   name: string;
@@ -17,7 +17,7 @@ export interface TriggerEvent {
 }
 
 export abstract class BaseTrigger {
-  protected state: TriggerState = 'idle';
+  protected state: TriggerState = "idle";
   protected lastFiredAt: number = 0;
   protected cooldownMs: number = 30000; // 30 seconds default
   protected hysteresisCount: number = 0;
@@ -26,7 +26,7 @@ export abstract class BaseTrigger {
   constructor(
     protected symbol: string,
     protected timeframe: string,
-    protected setup: string
+    protected setup: string,
   ) {}
 
   abstract checkConditions(): TriggerCondition[];
@@ -34,9 +34,9 @@ export abstract class BaseTrigger {
   canFire(): boolean {
     const now = Date.now();
     const inCooldown = now - this.lastFiredAt < this.cooldownMs;
-    
+
     if (inCooldown) {
-      this.state = 'cooldown';
+      this.state = "cooldown";
       return false;
     }
 
@@ -45,17 +45,17 @@ export abstract class BaseTrigger {
 
     if (allMet) {
       this.hysteresisCount++;
-      
+
       if (this.hysteresisCount >= this.requiredConfirmations) {
-        this.state = 'primed';
+        this.state = "primed";
         return true;
       } else {
-        this.state = 'primed';
+        this.state = "primed";
         return false;
       }
     } else {
       this.hysteresisCount = 0;
-      this.state = 'idle';
+      this.state = "idle";
       return false;
     }
   }
@@ -65,7 +65,7 @@ export abstract class BaseTrigger {
       return null;
     }
 
-    this.state = 'fired';
+    this.state = "fired";
     this.lastFiredAt = Date.now();
     this.hysteresisCount = 0;
 
@@ -75,7 +75,7 @@ export abstract class BaseTrigger {
   abstract createEvent(): TriggerEvent;
 
   reset(): void {
-    this.state = 'idle';
+    this.state = "idle";
     this.hysteresisCount = 0;
   }
 

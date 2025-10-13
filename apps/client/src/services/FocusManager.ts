@@ -1,4 +1,4 @@
-type FocusMode = 'normal' | 'trade' | 'review';
+type FocusMode = "normal" | "trade" | "review";
 
 interface FocusModeConfig {
   mode: FocusMode;
@@ -9,27 +9,27 @@ interface FocusModeConfig {
 
 const FOCUS_CONFIGS: Record<FocusMode, FocusModeConfig> = {
   normal: {
-    mode: 'normal',
+    mode: "normal",
     hiddenPanels: [],
     streamFrozen: false,
     opacity: 1,
   },
   trade: {
-    mode: 'trade',
-    hiddenPanels: ['rules', 'journal', 'memory'],
+    mode: "trade",
+    hiddenPanels: ["rules", "journal", "memory"],
     streamFrozen: false,
     opacity: 0.3,
   },
   review: {
-    mode: 'review',
-    hiddenPanels: ['rules', 'coach'],
+    mode: "review",
+    hiddenPanels: ["rules", "coach"],
     streamFrozen: true,
     opacity: 1,
   },
 };
 
 export class FocusManager {
-  private currentMode: FocusMode = 'normal';
+  private currentMode: FocusMode = "normal";
   private listeners: Set<(mode: FocusMode) => void> = new Set();
 
   constructor() {
@@ -37,14 +37,14 @@ export class FocusManager {
   }
 
   private loadMode() {
-    const saved = localStorage.getItem('focus-mode');
-    if (saved && (saved === 'normal' || saved === 'trade' || saved === 'review')) {
+    const saved = localStorage.getItem("focus-mode");
+    if (saved && (saved === "normal" || saved === "trade" || saved === "review")) {
       this.currentMode = saved;
     }
   }
 
   private saveMode() {
-    localStorage.setItem('focus-mode', this.currentMode);
+    localStorage.setItem("focus-mode", this.currentMode);
   }
 
   setMode(mode: FocusMode) {
@@ -55,9 +55,9 @@ export class FocusManager {
     const config = FOCUS_CONFIGS[mode];
 
     if (config.streamFrozen) {
-      window.dispatchEvent(new CustomEvent('focus:freeze-stream'));
+      window.dispatchEvent(new CustomEvent("focus:freeze-stream"));
     } else {
-      window.dispatchEvent(new CustomEvent('focus:unfreeze-stream'));
+      window.dispatchEvent(new CustomEvent("focus:unfreeze-stream"));
     }
   }
 
@@ -79,11 +79,11 @@ export class FocusManager {
   }
 
   toggleTradeMode() {
-    this.setMode(this.currentMode === 'trade' ? 'normal' : 'trade');
+    this.setMode(this.currentMode === "trade" ? "normal" : "trade");
   }
 
   toggleReviewMode() {
-    this.setMode(this.currentMode === 'review' ? 'normal' : 'review');
+    this.setMode(this.currentMode === "review" ? "normal" : "review");
   }
 
   subscribe(callback: (mode: FocusMode) => void) {

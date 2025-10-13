@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState } from "react";
 
 interface BacktestParams {
   symbol: string;
-  timeframe: '1m';
+  timeframe: "1m";
   start: string;
   end: string;
 }
@@ -12,7 +12,7 @@ interface BacktestResult {
   triggers: Array<{
     ruleId: string;
     seq: number;
-    direction: 'long' | 'short';
+    direction: "long" | "short";
     confidence: number;
     ts: number;
     price: number;
@@ -26,10 +26,10 @@ interface BacktestResult {
 
 export function BacktestPanel({ ruleIds }: { ruleIds: string[] }) {
   const [params, setParams] = useState<BacktestParams>({
-    symbol: 'SPY',
-    timeframe: '1m',
-    start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!,
-    end: new Date().toISOString().split('T')[0]!,
+    symbol: "SPY",
+    timeframe: "1m",
+    start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]!,
+    end: new Date().toISOString().split("T")[0]!,
   });
 
   const [result, setResult] = useState<BacktestResult | null>(null);
@@ -42,9 +42,9 @@ export function BacktestPanel({ ruleIds }: { ruleIds: string[] }) {
     setResult(null);
 
     try {
-      const response = await fetch('/api/backtest/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/backtest/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...params,
           ruleIds, // Use current ruleIds from props
@@ -53,13 +53,13 @@ export function BacktestPanel({ ruleIds }: { ruleIds: string[] }) {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Backtest failed');
+        throw new Error(errorData.error || "Backtest failed");
       }
 
       const data = await response.json();
       setResult(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
@@ -87,7 +87,7 @@ export function BacktestPanel({ ruleIds }: { ruleIds: string[] }) {
           <label className="block text-xs text-gray-400 mb-1">Timeframe</label>
           <select
             value={params.timeframe}
-            onChange={(e) => setParams({ ...params, timeframe: e.target.value as '1m' })}
+            onChange={(e) => setParams({ ...params, timeframe: e.target.value as "1m" })}
             className="w-full px-2 py-1.5 bg-gray-800 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500"
           >
             <option value="1m">1 minute</option>
@@ -120,7 +120,7 @@ export function BacktestPanel({ ruleIds }: { ruleIds: string[] }) {
         disabled={loading || ruleIds.length === 0}
         className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium rounded transition-colors"
       >
-        {loading ? 'Running...' : 'Run Backtest'}
+        {loading ? "Running..." : "Run Backtest"}
       </button>
 
       {error && (
@@ -169,7 +169,7 @@ export function BacktestPanel({ ruleIds }: { ruleIds: string[] }) {
                 >
                   <span className="text-gray-400">#{trigger.seq}</span>
                   <span
-                    className={trigger.direction === 'long' ? 'text-green-400' : 'text-red-400'}
+                    className={trigger.direction === "long" ? "text-green-400" : "text-red-400"}
                   >
                     {trigger.direction.toUpperCase()}
                   </span>

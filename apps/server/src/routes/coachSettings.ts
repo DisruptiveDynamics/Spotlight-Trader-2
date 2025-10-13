@@ -1,13 +1,13 @@
-import { Router } from 'express';
-import { db } from '../db/index.js';
-import { coachProfiles } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
-import { requireUser, AuthRequest } from '../middleware/requireUser.js';
+import { Router } from "express";
+import { db } from "../db/index.js";
+import { coachProfiles } from "../db/schema.js";
+import { eq } from "drizzle-orm";
+import { requireUser, AuthRequest } from "../middleware/requireUser.js";
 
 const router = Router();
 
 // GET /api/coach/settings - Get coach settings
-router.get('/settings', requireUser, async (req: AuthRequest, res) => {
+router.get("/settings", requireUser, async (req: AuthRequest, res) => {
   const userId = req.user!.userId;
 
   try {
@@ -20,9 +20,9 @@ router.get('/settings', requireUser, async (req: AuthRequest, res) => {
     if (results.length === 0) {
       // Return defaults
       return res.json({
-        agentName: 'Coach',
-        voice: 'alloy',
-        tonePreset: 'balanced',
+        agentName: "Coach",
+        voice: "alloy",
+        tonePreset: "balanced",
         jargon: 50,
         decisiveness: 50,
       });
@@ -39,13 +39,13 @@ router.get('/settings', requireUser, async (req: AuthRequest, res) => {
       decisiveness: Math.round(profile.decisiveness * 100),
     });
   } catch (error) {
-    console.error('Failed to get coach settings:', error);
-    res.status(500).json({ error: 'Failed to get settings' });
+    console.error("Failed to get coach settings:", error);
+    res.status(500).json({ error: "Failed to get settings" });
   }
 });
 
 // PUT /api/coach/settings - Update coach settings
-router.put('/settings', requireUser, async (req: AuthRequest, res) => {
+router.put("/settings", requireUser, async (req: AuthRequest, res) => {
   const userId = req.user!.userId;
   const { agentName, voice, tonePreset, jargon, decisiveness } = req.body;
 
@@ -59,9 +59,9 @@ router.put('/settings', requireUser, async (req: AuthRequest, res) => {
 
     const profileData = {
       userId,
-      agentName: agentName || 'Coach',
-      voiceId: voice || 'alloy',
-      tone: mapPresetToTone(tonePreset || 'balanced'),
+      agentName: agentName || "Coach",
+      voiceId: voice || "alloy",
+      tone: mapPresetToTone(tonePreset || "balanced"),
       jargonLevel: (jargon ?? 50) / 100,
       decisiveness: (decisiveness ?? 50) / 100,
     };
@@ -76,43 +76,45 @@ router.put('/settings', requireUser, async (req: AuthRequest, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Failed to update coach settings:', error);
-    res.status(500).json({ error: 'Failed to update settings' });
+    console.error("Failed to update coach settings:", error);
+    res.status(500).json({ error: "Failed to update settings" });
   }
 });
 
 function mapPresetToTone(preset: string): string {
   const map: Record<string, string> = {
-    balanced: 'supportive',
-    friendly: 'encouraging',
-    tough: 'direct',
-    mentor: 'teaching',
+    balanced: "supportive",
+    friendly: "encouraging",
+    tough: "direct",
+    mentor: "teaching",
   };
-  return map[preset] || 'supportive';
+  return map[preset] || "supportive";
 }
 
 function mapToneToPreset(tone: string): string {
   const reverseMap: Record<string, string> = {
-    supportive: 'balanced',
-    encouraging: 'friendly',
-    direct: 'tough',
-    teaching: 'mentor',
+    supportive: "balanced",
+    encouraging: "friendly",
+    direct: "tough",
+    teaching: "mentor",
   };
-  return reverseMap[tone] || 'balanced';
+  return reverseMap[tone] || "balanced";
 }
 
 // PATCH /api/coach/voice - Update voice only
-router.patch('/voice', requireUser, async (req: AuthRequest, res) => {
+router.patch("/voice", requireUser, async (req: AuthRequest, res) => {
   const userId = req.user!.userId;
   const { voiceId } = req.body;
 
   if (!voiceId) {
-    return res.status(400).json({ error: 'voiceId is required' });
+    return res.status(400).json({ error: "voiceId is required" });
   }
 
-  const validVoices = ['alloy', 'echo', 'shimmer', 'fable', 'onyx', 'nova'];
+  const validVoices = ["alloy", "echo", "shimmer", "fable", "onyx", "nova"];
   if (!validVoices.includes(voiceId)) {
-    return res.status(400).json({ error: 'Invalid voice. Must be one of: ' + validVoices.join(', ') });
+    return res
+      .status(400)
+      .json({ error: "Invalid voice. Must be one of: " + validVoices.join(", ") });
   }
 
   try {
@@ -127,13 +129,13 @@ router.patch('/voice', requireUser, async (req: AuthRequest, res) => {
       // Create new profile with just the voice
       await db.insert(coachProfiles).values({
         userId,
-        agentName: 'Nexa',
+        agentName: "Nexa",
         voiceId,
-        tone: 'supportive',
+        tone: "supportive",
         jargonLevel: 0.5,
         decisiveness: 0.7,
-        personality: 'warm and intelligent',
-        pronouns: 'she/her',
+        personality: "warm and intelligent",
+        pronouns: "she/her",
       });
     } else {
       // Update just the voice
@@ -142,8 +144,8 @@ router.patch('/voice', requireUser, async (req: AuthRequest, res) => {
 
     res.json({ success: true, voiceId });
   } catch (error) {
-    console.error('Failed to update voice:', error);
-    res.status(500).json({ error: 'Failed to update voice' });
+    console.error("Failed to update voice:", error);
+    res.status(500).json({ error: "Failed to update voice" });
   }
 });
 

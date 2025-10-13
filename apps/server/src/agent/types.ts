@@ -1,7 +1,12 @@
-import type { Request, Response } from 'express';
+import type { Request, Response } from "express";
 
 export type ChartPoint = { t: number; o: number; h: number; l: number; c: number; v?: number };
-export type ChartSnapshot = { symbol: string; timeframe: string; points: ChartPoint[]; lastSeq?: number };
+export type ChartSnapshot = {
+  symbol: string;
+  timeframe: string;
+  points: ChartPoint[];
+  lastSeq?: number;
+};
 
 export type JournalEntry = {
   id: string;
@@ -12,22 +17,22 @@ export type JournalEntry = {
 };
 
 export type MetricEvent =
-  | { type: 'latency'; rtt: number; sseReconnects?: number; source?: string }
-  | { type: 'market'; status: 'open' | 'closed' | 'pre' | 'halted' }
-  | { type: 'custom'; key: string; value: unknown };
+  | { type: "latency"; rtt: number; sseReconnects?: number; source?: string }
+  | { type: "market"; status: "open" | "closed" | "pre" | "halted" }
+  | { type: "custom"; key: string; value: unknown };
 
 export type ChartEvent =
-  | { type: 'chart:update'; snapshot: ChartSnapshot }
-  | { type: 'chart:append'; symbol: string; timeframe: string; point: ChartPoint };
+  | { type: "chart:update"; snapshot: ChartSnapshot }
+  | { type: "chart:append"; symbol: string; timeframe: string; point: ChartPoint };
 
-export type JournalEvent = { type: 'journal:append'; entry: JournalEntry };
+export type JournalEvent = { type: "journal:append"; entry: JournalEntry };
 
 export type AppEvent = MetricEvent | ChartEvent | JournalEvent;
 
 export type CoachMessage = {
   id: string;
   ts: number;
-  level: 'info' | 'warn' | 'error' | 'success';
+  level: "info" | "warn" | "error" | "success";
   title: string;
   body?: string;
   tags?: string[];

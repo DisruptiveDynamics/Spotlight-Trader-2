@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
-import { useAuthStore } from '../../stores/authStore';
-import { authStorage } from '../../auth/authStorage';
-import { SignIn } from './SignIn';
+import { useEffect, useState } from "react";
+import { useAuthStore } from "../../stores/authStore";
+import { authStorage } from "../../auth/authStorage";
+import { SignIn } from "./SignIn";
 
 interface AuthGateProps {
   children: React.ReactNode;
@@ -18,21 +18,21 @@ export function AuthGate({ children }: AuthGateProps) {
     const validateSession = async () => {
       try {
         // Always validate with server, even if localStorage has user data
-        const res = await fetch('/api/auth/session', {
-          credentials: 'include',
+        const res = await fetch("/api/auth/session", {
+          credentials: "include",
         });
 
         if (cancelled) return;
 
         if (res.ok) {
           const data = await res.json();
-          
+
           // Server confirms session is valid - update storage
           authStorage.set({
             user: data.user,
             expiresAt: data.expiresAt || Date.now() + 30 * 60 * 1000,
           });
-          
+
           setUser(data.user);
           setLoading(false);
           setSessionExpired(false);
@@ -41,7 +41,7 @@ export function AuthGate({ children }: AuthGateProps) {
           authStorage.clear();
           setUser(null);
           setLoading(false);
-          
+
           // Show "session expired" message if we had a user before
           if (user) {
             setSessionExpired(true);
@@ -49,12 +49,12 @@ export function AuthGate({ children }: AuthGateProps) {
         }
       } catch (error) {
         if (cancelled) return;
-        
-        console.error('Session validation failed:', error);
+
+        console.error("Session validation failed:", error);
         authStorage.clear();
         setUser(null);
         setLoading(false);
-        
+
         if (user) {
           setSessionExpired(true);
         }

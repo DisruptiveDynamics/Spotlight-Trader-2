@@ -1,0 +1,228 @@
+Great—this output is super actionable. Here’s exactly what to change so your repo builds cleanly on Replit **and** unblocks the voice + tools work your agent is doing.
+
+---
+
+# 1) Fix the TS project-reference error (TS6306)
+
+Your client references `packages/shared`, so `shared` must be a *composite project* that emits typings.
+
+**Edit `packages/shared/tsconfig.json`:**
+
+```json
+{
+  "extends": "../config/tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": false,
+    "composite": true                      // ⬅️ required for project refs
+  },
+  "include": ["src"],
+  "exclude": ["dist", "node_modules"]
+}
+```
+
+**Edit `packages/shared/package.json`:**
+
+```json
+{
+  "name": "@spotlight/shared",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",              // ⬅️ surface types to dependents
+  "scripts": { "build": "tsc" }
+}
+```
+
+This resolves the immediate `TS6306` and ensures the client/server see `shared`’s types.
+
+---
+
+# 2) Fix the ESM / CommonJS hiccup
+
+You still have a CommonJS `require()` in ESM code.
+
+**Edit `apps/server/src/knowledge/pdf.ts`:**
+
+```ts
+// ❌ const pdfParse = require('pdf-parse');
+import pdfParse from 'pdf-parse';          // ⬅️ ESM import
+```
+
+If you don’t already have it, make sure **`"esModuleInterop": true`** is enabled in your TS base config.
+
+---
+
+# 3) Bind the server correctly for Replit
+
+Replit needs `0.0.0.0` + `process.env.PORT`.
+
+**Edit `apps/server/src/index.ts`:**
+
+```ts
+const port = Number(process.env.PORT ?? 3000);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`[server] listening on http://0.0.0.0:${port}`);
+});
+```
+
+---
+
+# 4) Stop ESLint from scanning PNPM/Corepack cache & worker globals
+
+Those “process is not defined” errors are just ESLint walking the **Corepack cache**. Ignore it and add a worker override for the mic worklet.
+
+**Edit root `eslint.config.js` (or `.eslintrc.*`, whichever you use):**
+
+```js
+export default [
+  {
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.cache/**',            // ⬅️ stop linting corepack/pnpm cache
+      '**/.pnpm/**'
+    ],
+  },
+  // Worklet override
+  {
+    files: ['apps/client/public/worklets/micProcessor.js'],
+    languageOptions: {
+      globals: {
+        AudioWorkletProcessor: 'readonly',
+        registerProcessor: 'readonly'
+      }
+    }
+  },
+  // CJS config files (so “module”/“require” are allowed)
+  {
+    files: ['**/*.cjs'],
+    languageOptions: {
+      globals: { module: 'readonly', require: 'readonly' }
+    },
+    rules: { '@typescript-eslint/no-require-imports': 'off' }
+  }
+];
+```
+
+(If you’re on `.eslintrc.cjs`, add `ignorePatterns` with the same globs and an `overrides` section.)
+
+---
+
+# 5) Approve blocked postinstall builds (Replit)
+
+You saw:
+
+> “Ignored build scripts… Run `pnpm approve-builds` …”
+
+Run this once so native bindings/tools can compile when needed:
+
+```bash
+pnpm approve-builds
+```
+
+---
+
+# 6) (Optional but helpful) Make Vitest use a non-production React build
+
+A bunch of your failing UI tests say: **“act(...) is not supported in production builds of React.”**
+That happens if tests run with `NODE_ENV=production`.
+
+**Edit `apps/client/vitest.config.ts` (or root `vitest.config.ts`):**
+
+```ts
+import { defineConfig } from 'vitest/config'
+
+export default defineConfig({
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./vitest.setup.ts'],
+  },
+  define: {
+    'process.env.NODE_ENV': '"test"',  // ⬅️ force dev/test build of React
+  },
+})
+```
+
+And ensure your test script sets `NODE_ENV=test`:
+
+```json
+{ "scripts": { "test": "cross-env NODE_ENV=test vitest --run" } }
+```
+
+(If you don’t use `cross-env`, set it in Replit “Run” cmd.)
+
+---
+
+# 7) Hotkey test flakiness: make removeEventListener work
+
+If your `HotkeyManager` adds anonymous/bound listeners each time, `disable()` won’t remove them and tests will still see events.
+
+**Edit `apps/client/src/services/HotkeyManager.ts`:**
+
+```ts
+export class HotkeyManager {
+  private enabled = true;
+  private keydownHandler = (e: KeyboardEvent) => this.onKeydown(e);  // ⬅️ stable ref
+
+  constructor() {
+    document.addEventListener('keydown', this.keydownHandler);
+  }
+
+  enable() {
+    if (this.enabled) return;
+    this.enabled = true;
+    document.addEventListener('keydown', this.keydownHandler);
+  }
+
+  disable() {
+    if (!this.enabled) return;
+    this.enabled = false;
+    document.removeEventListener('keydown', this.keydownHandler);     // ⬅️ same ref
+  }
+
+  private onKeydown(e: KeyboardEvent) {
+    if (!this.enabled) return;
+    // existing logic…
+  }
+}
+```
+
+This should satisfy `“should support enable/disable”`.
+
+---
+
+# 8) Rerun a clean build (and what to expect next)
+
+After the edits above, run:
+
+```bash
+pnpm install
+pnpm --filter @spotlight/shared build
+pnpm --filter @spotlight/client build
+pnpm --filter @spotlight/server build
+```
+
+Expected results:
+
+* **TS6306** gone (shared is composite)
+* **ESM** error gone (pdf-parse import fixed)
+* **Replit binding** okay (server listens on `0.0.0.0:PORT`)
+* **ESLint** stops complaining about Corepack cache & worklet globals
+* **UI tests** stop throwing “act(...) in production” if you apply step 6
+* **Hotkey test** stops failing if you apply step 7
+
+---
+
+## Will this help the **AI voice + tools** feature?
+
+Yes—these fixes remove the build/lint/type barriers that were preventing your agent from finishing the **tool invocation wiring**. With the app compiling:
+
+* The client can register **actual tool functions** (wrappers that call your `ToolBridge`) instead of only sending schemas.
+* The server can mint **ephemeral tokens** and proxy Realtime events reliably (thanks to correct ESM + binding).
+* With stable builds, your agent’s “intercept function call → route to ToolBridge → return result” flow can be validated in the browser and in tests.
+
+If you want, I can also drop in a minimal, working **client tool wrapper** pattern for `@openai/agents` that calls your existing `ToolBridge`—just say the word and I’ll paste the exact code for `apps/client/src/voice/toolSchemas.ts` + the `RealtimeVoiceClient` listener wiring.

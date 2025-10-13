@@ -1,5 +1,5 @@
-import jwt from 'jsonwebtoken';
-import { validateEnv } from '@shared/env';
+import jwt from "jsonwebtoken";
+import { validateEnv } from "@shared/env";
 
 const env = validateEnv(process.env);
 
@@ -10,7 +10,7 @@ export interface JwtPayload {
 
 export function signJwt(payload: JwtPayload, ttlSeconds: number): string {
   return jwt.sign(payload, env.AUTH_JWT_SECRET, {
-    algorithm: 'HS256',
+    algorithm: "HS256",
     expiresIn: ttlSeconds,
   });
 }
@@ -18,7 +18,7 @@ export function signJwt(payload: JwtPayload, ttlSeconds: number): string {
 export function verifyJwt(token: string): JwtPayload | null {
   try {
     const payload = jwt.verify(token, env.AUTH_JWT_SECRET, {
-      algorithms: ['HS256'],
+      algorithms: ["HS256"],
     }) as JwtPayload;
     return payload;
   } catch {

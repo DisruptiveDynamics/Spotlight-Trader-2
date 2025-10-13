@@ -23,11 +23,11 @@ export async function verifyThenSpeak(
 export function shouldDebounce(symbol: string): boolean {
   const now = Date.now();
   const lastSpoke = ttsDebounceCache.get(symbol);
-  
-  if (lastSpoke && (now - lastSpoke) < TTS_DEBOUNCE_MS) {
+
+  if (lastSpoke && now - lastSpoke < TTS_DEBOUNCE_MS) {
     return true;
   }
-  
+
   return false;
 }
 

@@ -1,6 +1,6 @@
-import { createRequire } from 'module';
+import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
+const pdfParse = require("pdf-parse");
 
 export interface PDFExtractionResult {
   text: string;
@@ -21,12 +21,12 @@ export async function extractPDFText(buffer: Buffer): Promise<PDFExtractionResul
     const data = await pdfParse(buffer);
 
     if (!data.text || data.text.trim().length === 0) {
-      throw new Error('No text content found in PDF');
+      throw new Error("No text content found in PDF");
     }
 
     return {
       text: data.text,
-      title: data.info?.Title || 'Untitled Document',
+      title: data.info?.Title || "Untitled Document",
       pages: data.numpages,
       metadata: {
         author: data.info?.Author,
@@ -38,7 +38,7 @@ export async function extractPDFText(buffer: Buffer): Promise<PDFExtractionResul
     if (error instanceof Error) {
       throw new Error(`Failed to extract PDF text: ${error.message}`);
     }
-    throw new Error('Failed to extract PDF text');
+    throw new Error("Failed to extract PDF text");
   }
 }
 
@@ -47,5 +47,5 @@ export async function extractPDFText(buffer: Buffer): Promise<PDFExtractionResul
  */
 export function isPDF(buffer: Buffer): boolean {
   // PDF files start with %PDF
-  return buffer.slice(0, 4).toString() === '%PDF';
+  return buffer.slice(0, 4).toString() === "%PDF";
 }

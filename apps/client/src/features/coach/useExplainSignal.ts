@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import type { InsightContext, InsightResponse } from '@spotlight/shared';
+import { useState, useCallback } from "react";
+import type { InsightContext, InsightResponse } from "@spotlight/shared";
 
 interface UseExplainSignalResult {
   explain: (question: string, context: InsightContext) => Promise<void>;
@@ -22,19 +22,19 @@ export function useExplainSignal(): UseExplainSignalResult {
     setLastQuestion(question); // Track the question
 
     try {
-      const res = await fetch('/api/insight/explain', {
-        method: 'POST',
+      const res = await fetch("/api/insight/explain", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({ context, question }),
       });
 
       if (!res.ok) {
         if (res.status === 429) {
-          throw new Error('Rate limit exceeded. Please wait before asking again.');
+          throw new Error("Rate limit exceeded. Please wait before asking again.");
         }
-        throw new Error('Failed to get insight from coach');
+        throw new Error("Failed to get insight from coach");
       }
 
       const data: InsightResponse = await res.json();
@@ -42,14 +42,14 @@ export function useExplainSignal(): UseExplainSignalResult {
 
       // Emit custom event for other components to listen
       window.dispatchEvent(
-        new CustomEvent('coach:insight', {
+        new CustomEvent("coach:insight", {
           detail: { question, response: data },
-        })
+        }),
       );
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
+      const message = err instanceof Error ? err.message : "Unknown error";
       setError(message);
-      console.error('Explain signal error:', err);
+      console.error("Explain signal error:", err);
     } finally {
       setIsLoading(false);
     }

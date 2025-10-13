@@ -69,7 +69,7 @@ export interface BollingerBands {
 export function bollingerBatch(
   candles: Candle[],
   period: number = 20,
-  stdDev: number = 2
+  stdDev: number = 2,
 ): BollingerBands[] {
   if (candles.length === 0 || period <= 0) return [];
 

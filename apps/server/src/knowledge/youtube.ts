@@ -1,4 +1,4 @@
-import { YoutubeTranscript } from 'youtube-transcript';
+import { YoutubeTranscript } from "youtube-transcript";
 
 export interface YouTubeTranscriptResult {
   text: string;
@@ -14,18 +14,18 @@ export async function extractYouTubeTranscript(url: string): Promise<YouTubeTran
   try {
     const videoId = extractVideoId(url);
     if (!videoId) {
-      throw new Error('Invalid YouTube URL');
+      throw new Error("Invalid YouTube URL");
     }
 
     const transcript = await YoutubeTranscript.fetchTranscript(videoId);
-    
+
     if (!transcript || transcript.length === 0) {
-      throw new Error('No transcript available for this video');
+      throw new Error("No transcript available for this video");
     }
 
     // Combine all transcript segments
-    const text = transcript.map(segment => segment.text).join(' ');
-    
+    const text = transcript.map((segment) => segment.text).join(" ");
+
     // Estimate duration from last segment
     const duration = transcript[transcript.length - 1]?.offset || 0;
 
@@ -38,7 +38,7 @@ export async function extractYouTubeTranscript(url: string): Promise<YouTubeTran
     if (error instanceof Error) {
       throw new Error(`Failed to extract YouTube transcript: ${error.message}`);
     }
-    throw new Error('Failed to extract YouTube transcript');
+    throw new Error("Failed to extract YouTube transcript");
   }
 }
 

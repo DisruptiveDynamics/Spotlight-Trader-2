@@ -48,16 +48,16 @@ export class AudioCapture {
    */
   static ensurePCM16FrameSize(pcm: Int16Array): Int16Array {
     const TARGET_SAMPLES = 480; // 20ms @ 24kHz
-    
+
     if (pcm.length === TARGET_SAMPLES) {
       return pcm; // Already correct size
     }
-    
+
     if (pcm.length > TARGET_SAMPLES) {
       // Truncate to exact size
       return pcm.slice(0, TARGET_SAMPLES);
     }
-    
+
     // Pad with zeros if too short
     const padded = new Int16Array(TARGET_SAMPLES);
     padded.set(pcm);
@@ -67,7 +67,7 @@ export class AudioCapture {
   async start(
     audioContext: AudioContext,
     onChunk: (pcm: Int16Array) => void,
-    config: AudioCaptureConfig = {}
+    config: AudioCaptureConfig = {},
   ): Promise<void> {
     this.audioContext = audioContext;
     this.onChunkCallback = onChunk;
@@ -92,12 +92,12 @@ export class AudioCapture {
 
     // Load AudioWorklet processor with proper error handling
     try {
-      const workletUrl = new URL('/worklets/micProcessor.js', window.location.origin).href;
+      const workletUrl = new URL("/worklets/micProcessor.js", window.location.origin).href;
       await this.audioContext.audioWorklet.addModule(workletUrl);
-      
+
       // Create worklet node
-      this.workletNode = new AudioWorkletNode(this.audioContext, 'mic-processor');
-      
+      this.workletNode = new AudioWorkletNode(this.audioContext, "mic-processor");
+
       // Handle PCM chunks from worklet
       this.workletNode.port.onmessage = (e) => {
         if (e.data?.pcm && this.onChunkCallback) {
@@ -112,8 +112,8 @@ export class AudioCapture {
       this.sourceNode.connect(this.workletNode);
       this.workletNode.connect(this.audioContext.destination);
     } catch (err) {
-      console.warn('AudioWorklet failed, falling back to ScriptProcessor:', err);
-      
+      console.warn("AudioWorklet failed, falling back to ScriptProcessor:", err);
+
       // Fallback to ScriptProcessorNode (deprecated but more compatible)
       const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
       processor.onaudioprocess = (e) => {
@@ -133,7 +133,7 @@ export class AudioCapture {
       this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
       this.sourceNode.connect(processor);
       processor.connect(this.audioContext.destination);
-      
+
       // Store reference for cleanup
       (this as any).processorNode = processor;
     }

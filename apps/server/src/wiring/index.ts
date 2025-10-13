@@ -1,22 +1,22 @@
-import type { Express } from 'express';
-import { polygonWs } from '@server/market/polygonWs';
-import { barBuilder } from '@server/market/barBuilder';
-import { sseMarketStream } from '@server/stream/sse';
-import { getHistory } from '@server/history/service';
-import { eventBus } from '@server/market/eventBus';
-import { ringBuffer } from '@server/cache/ring';
-import { bars1m } from '@server/chart/bars1m';
-import { sessionVWAP } from '@server/indicators/vwap';
-import { marketAuditTap } from '@server/market/auditTap';
-import { rulesEngineService } from '@server/rules/service';
-import { signalsService } from '@server/signals/service';
-import { coachAdvisor } from '@server/coach/advisor';
-import { getMarketSource, getMarketReason } from '@server/market/bootstrap';
-import { isRthOpen } from '@server/market/session';
-import { handleChartTimeframe } from '@server/routes/chartTimeframe';
+import type { Express } from "express";
+import { polygonWs } from "@server/market/polygonWs";
+import { barBuilder } from "@server/market/barBuilder";
+import { sseMarketStream } from "@server/stream/sse";
+import { getHistory } from "@server/history/service";
+import { eventBus } from "@server/market/eventBus";
+import { ringBuffer } from "@server/cache/ring";
+import { bars1m } from "@server/chart/bars1m";
+import { sessionVWAP } from "@server/indicators/vwap";
+import { marketAuditTap } from "@server/market/auditTap";
+import { rulesEngineService } from "@server/rules/service";
+import { signalsService } from "@server/signals/service";
+import { coachAdvisor } from "@server/coach/advisor";
+import { getMarketSource, getMarketReason } from "@server/market/bootstrap";
+import { isRthOpen } from "@server/market/session";
+import { handleChartTimeframe } from "@server/routes/chartTimeframe";
 
-const DEFAULT_FAVORITES = ['SPY', 'QQQ'];
-const DEFAULT_TIMEFRAME = '1m';
+const DEFAULT_FAVORITES = ["SPY", "QQQ"];
+const DEFAULT_TIMEFRAME = "1m";
 
 // Track active timeframe subscriptions per symbol
 const activeSubscriptions = new Map<string, string>();
@@ -27,8 +27,8 @@ function subscribeSymbolTimeframe(symbol: string, timeframe: string) {
   // CRITICAL: Always ensure 1m barBuilder subscription exists
   // The 1m feed is authoritative and feeds bars1m, VWAP, voice tools, and rollups
   // This MUST stay active regardless of user's selected timeframe
-  barBuilder.subscribe(symbol, '1m');
-  
+  barBuilder.subscribe(symbol, "1m");
+
   // CRITICAL: Always listen to 1m bars for bars1m buffer (single source of truth)
   // This listener NEVER gets removed - it's the foundation of the entire system
   const bars1mKey = `${symbol}:1m:bars1m`;
@@ -51,13 +51,13 @@ function subscribeSymbolTimeframe(symbol: string, timeframe: string) {
     eventBus.on(`bar:new:${symbol}:1m` as any, bars1mListener);
     console.log(`📊 [CRITICAL] Subscribed ${symbol} to 1m authoritative feed (never removed)`);
   }
-  
+
   // Now handle user-specific timeframe subscription for SSE streaming
   // Remove ALL old timeframe listeners (including 1m ring listener)
   const oldTimeframe = activeSubscriptions.get(symbol);
   if (oldTimeframe) {
     // Remove old non-1m listener
-    if (oldTimeframe !== '1m') {
+    if (oldTimeframe !== "1m") {
       const oldKey = `${symbol}:${oldTimeframe}`;
       const oldListener = barListeners.get(oldKey);
       if (oldListener) {
@@ -74,9 +74,9 @@ function subscribeSymbolTimeframe(symbol: string, timeframe: string) {
       }
     }
   }
-  
+
   // Subscribe to user's selected timeframe for SSE streaming
-  if (timeframe !== '1m') {
+  if (timeframe !== "1m") {
     // For higher timeframes, listen to rolled bar events
     const timeframeKey = `${symbol}:${timeframe}`;
     const timeframeListener = (bar: any) => {
@@ -105,92 +105,92 @@ export function initializeMarketPipeline(app: Express) {
   rulesEngineService.start();
   signalsService.start();
   coachAdvisor.start();
-  
+
   // Start optional audit tap (disabled by default via flag)
   marketAuditTap.start();
 
   for (const symbol of DEFAULT_FAVORITES) {
     polygonWs.subscribe(symbol);
     subscribeSymbolTimeframe(symbol, DEFAULT_TIMEFRAME);
-    
+
     // Subscribe to session VWAP (same tick stream as Tape)
     sessionVWAP.subscribe(symbol);
   }
 
-  app.get('/api/history', async (req, res) => {
+  app.get("/api/history", async (req, res) => {
     try {
-      const { symbol, timeframe = '1m', limit = 1000, before, sinceSeq } = req.query;
+      const { symbol, timeframe = "1m", limit = 1000, before, sinceSeq } = req.query;
 
-      if (!symbol || typeof symbol !== 'string') {
-        return res.status(400).json({ error: 'symbol is required' });
+      if (!symbol || typeof symbol !== "string") {
+        return res.status(400).json({ error: "symbol is required" });
       }
 
       // Validate timeframe
-      const validTimeframes = ['1m', '2m', '5m', '10m', '15m', '30m', '1h'];
-      if (typeof timeframe === 'string' && !validTimeframes.includes(timeframe)) {
-        return res.status(400).json({ error: 'Invalid timeframe' });
+      const validTimeframes = ["1m", "2m", "5m", "10m", "15m", "30m", "1h"];
+      if (typeof timeframe === "string" && !validTimeframes.includes(timeframe)) {
+        return res.status(400).json({ error: "Invalid timeframe" });
       }
 
       const query: any = {
         symbol: symbol.toUpperCase(),
-        timeframe: (typeof timeframe === 'string' ? timeframe : '1m'),
+        timeframe: typeof timeframe === "string" ? timeframe : "1m",
         limit: limit ? parseInt(limit as string, 10) : 1000,
       };
-      
+
       if (before) {
         query.before = parseInt(before as string, 10);
       }
-      
+
       if (sinceSeq) {
         query.sinceSeq = parseInt(sinceSeq as string, 10);
       }
-      
+
       const bars = await getHistory(query);
 
       // Bars already have nested ohlcv format, just return them
       res.json(bars);
     } catch (err) {
-      console.error('History API error:', err);
-      res.status(500).json({ error: 'Internal server error' });
+      console.error("History API error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
-  app.get('/stream/market', sseMarketStream);
+  app.get("/stream/market", sseMarketStream);
 
   // Endpoint to change timeframe for a symbol (replaced with new implementation)
-  app.post('/api/chart/timeframe', handleChartTimeframe);
+  app.post("/api/chart/timeframe", handleChartTimeframe);
 
-  app.get('/api/market/status', (_req, res) => {
+  app.get("/api/market/status", (_req, res) => {
     const source = getMarketSource();
     const reason = getMarketReason();
     const sessionStatus = isRthOpen();
-    
-    res.setHeader('X-Market-Source', source);
-    res.setHeader('X-Market-Reason', reason);
-    res.setHeader('X-Market-Session', sessionStatus.session);
-    res.setHeader('X-Market-Open', String(sessionStatus.open));
-    
-    res.json({ 
-      source, 
+
+    res.setHeader("X-Market-Source", source);
+    res.setHeader("X-Market-Reason", reason);
+    res.setHeader("X-Market-Session", sessionStatus.session);
+    res.setHeader("X-Market-Open", String(sessionStatus.open));
+
+    res.json({
+      source,
       reason,
       session: sessionStatus.session,
-      open: sessionStatus.open
+      open: sessionStatus.open,
     });
   });
 
-  app.get('/ready', (_req, res) => {
+  app.get("/ready", (_req, res) => {
     const isReady = true;
 
     if (isReady) {
-      res.json({ status: 'ready', timestamp: Date.now() });
+      res.json({ status: "ready", timestamp: Date.now() });
     } else {
-      res.status(503).json({ status: 'not ready' });
+      res.status(503).json({ status: "not ready" });
     }
   });
 
-  console.log('✅ Market pipeline initialized');
-  console.log(`   Subscribed symbols: ${DEFAULT_FAVORITES.join(', ')}`);
-  console.log('✅ Rules engine started');
-  console.log('✅ Signals service started');
-  console.log('✅ Coach advisor started');
+  console.log("✅ Market pipeline initialized");
+  console.log(`   Subscribed symbols: ${DEFAULT_FAVORITES.join(", ")}`);
+  console.log("✅ Rules engine started");
+  console.log("✅ Signals service started");
+  console.log("✅ Coach advisor started");
 }

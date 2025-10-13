@@ -1,9 +1,9 @@
-import type { EvaluatedRule, Signal } from '@shared/types/rules';
+import type { EvaluatedRule, Signal } from "@shared/types/rules";
 
 interface ActiveSignal {
   ruleId: string;
   symbol: string;
-  direction: 'long' | 'short' | 'flat';
+  direction: "long" | "short" | "flat";
   barSeq: number;
   timestamp: number;
 }
@@ -39,14 +39,14 @@ export class RiskGovernor {
 
     if (this.activeSignals.size >= this.config.maxConcurrentSignals) {
       console.warn(
-        `RiskGovernor: Max concurrent signals (${this.config.maxConcurrentSignals}) reached`
+        `RiskGovernor: Max concurrent signals (${this.config.maxConcurrentSignals}) reached`,
       );
       return false;
     }
 
     if (this.isRiskBudgetExceeded()) {
       console.warn(
-        `RiskGovernor: Risk budget exceeded (${this.getCurrentRiskExposure().toFixed(2)})`
+        `RiskGovernor: Risk budget exceeded (${this.getCurrentRiskExposure().toFixed(2)})`,
       );
       return false;
     }

@@ -18,13 +18,9 @@ export function chunkText(
     maxTokens?: number;
     overlapTokens?: number;
     separators?: string[];
-  } = {}
+  } = {},
 ): TextChunk[] {
-  const {
-    maxTokens = 500,
-    overlapTokens = 50,
-    separators = ['\n\n', '\n', '. ', ' '],
-  } = options;
+  const { maxTokens = 500, overlapTokens = 50, separators = ["\n\n", "\n", ". ", " "] } = options;
 
   // Rough token estimation: 1 token ≈ 4 characters
   const maxChars = maxTokens * 4;
@@ -35,7 +31,7 @@ export function chunkText(
 
   while (currentPos < text.length) {
     const remainingText = text.slice(currentPos);
-    
+
     // If remaining text fits in one chunk
     if (remainingText.length <= maxChars) {
       chunks.push({
@@ -52,14 +48,14 @@ export function chunkText(
 
     // Find best split point using separators
     let splitPoint = findBestSplitPoint(remainingText, maxChars, separators);
-    
+
     // If no good separator found, split at maxChars
     if (splitPoint === -1) {
       splitPoint = maxChars;
     }
 
     const chunkText = remainingText.slice(0, splitPoint).trim();
-    
+
     chunks.push({
       text: chunkText,
       index: chunks.length,
@@ -80,14 +76,10 @@ export function chunkText(
 /**
  * Find the best position to split text based on semantic boundaries
  */
-function findBestSplitPoint(
-  text: string,
-  maxLength: number,
-  separators: string[]
-): number {
+function findBestSplitPoint(text: string, maxLength: number, separators: string[]): number {
   for (const separator of separators) {
     const lastIndex = text.lastIndexOf(separator, maxLength);
-    
+
     if (lastIndex !== -1 && lastIndex > maxLength * 0.5) {
       // Found a good separator in the latter half of max length
       return lastIndex + separator.length;

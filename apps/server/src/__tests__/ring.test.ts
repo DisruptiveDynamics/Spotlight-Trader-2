@@ -1,20 +1,20 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { RingBuffer } from '../cache/ring';
-import type { Bar } from '../market/eventBus';
+import { describe, it, expect, beforeEach } from "vitest";
+import { RingBuffer } from "../cache/ring";
+import type { Bar } from "../market/eventBus";
 
-describe('RingBuffer', () => {
+describe("RingBuffer", () => {
   let ring: RingBuffer;
 
   beforeEach(() => {
     ring = new RingBuffer();
   });
 
-  it('should return correct slice with getSinceSeq', () => {
-    const symbol = 'TEST';
+  it("should return correct slice with getSinceSeq", () => {
+    const symbol = "TEST";
     const bars: Bar[] = [
       {
         symbol,
-        timeframe: '1m',
+        timeframe: "1m",
         seq: 1,
         bar_start: 1000,
         bar_end: 2000,
@@ -26,7 +26,7 @@ describe('RingBuffer', () => {
       },
       {
         symbol,
-        timeframe: '1m',
+        timeframe: "1m",
         seq: 2,
         bar_start: 2000,
         bar_end: 3000,
@@ -38,7 +38,7 @@ describe('RingBuffer', () => {
       },
       {
         symbol,
-        timeframe: '1m',
+        timeframe: "1m",
         seq: 3,
         bar_start: 3000,
         bar_end: 4000,
@@ -58,14 +58,14 @@ describe('RingBuffer', () => {
     expect(result[1]?.seq).toBe(3);
   });
 
-  it('should limit buffer size to maxSize', () => {
-    const symbol = 'TEST';
+  it("should limit buffer size to maxSize", () => {
+    const symbol = "TEST";
     const bars: Bar[] = [];
 
     for (let i = 0; i < 6000; i++) {
       bars.push({
         symbol,
-        timeframe: '1m',
+        timeframe: "1m",
         seq: i,
         bar_start: i * 60000,
         bar_end: (i + 1) * 60000,
@@ -84,8 +84,8 @@ describe('RingBuffer', () => {
     expect(recent[0]?.seq).toBe(1000);
   });
 
-  it('should return empty array for unknown symbol', () => {
-    const result = ring.getSinceSeq('UNKNOWN', 0);
+  it("should return empty array for unknown symbol", () => {
+    const result = ring.getSinceSeq("UNKNOWN", 0);
     expect(result).toEqual([]);
   });
 });

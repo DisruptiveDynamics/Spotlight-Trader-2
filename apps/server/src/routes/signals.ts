@@ -1,9 +1,9 @@
-import { Router } from 'express';
-import { z } from 'zod';
-import { db } from '../db/index.js';
-import { signals } from '../db/schema.js';
-import { and, eq, gte, lt } from 'drizzle-orm';
-import { AuthRequest } from '../middleware/requireUser.js';
+import { Router } from "express";
+import { z } from "zod";
+import { db } from "../db/index.js";
+import { signals } from "../db/schema.js";
+import { and, eq, gte, lt } from "drizzle-orm";
+import { AuthRequest } from "../middleware/requireUser.js";
 
 const router: Router = Router();
 
@@ -17,7 +17,7 @@ const ListSignalsSchema = z.object({
  * GET /api/signals
  * Query signals by symbol, date, and/or ruleId
  */
-router.get('/', async (req: AuthRequest, res) => {
+router.get("/", async (req: AuthRequest, res) => {
   try {
     const parsed = ListSignalsSchema.parse(req.query);
     const userId = req.user!.userId;
@@ -69,8 +69,8 @@ router.get('/', async (req: AuthRequest, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Failed to list signals:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Failed to list signals:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

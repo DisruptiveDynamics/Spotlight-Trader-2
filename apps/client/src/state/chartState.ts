@@ -1,12 +1,12 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
-export type Timeframe = '1m' | '2m' | '5m' | '10m' | '15m' | '30m' | '1h';
-export type Layout = '1x1' | '2x1' | '2x2';
-export type ChartStyle = 'candles' | 'bars' | 'line';
+export type Timeframe = "1m" | "2m" | "5m" | "10m" | "15m" | "30m" | "1h";
+export type Layout = "1x1" | "2x1" | "2x2";
+export type ChartStyle = "candles" | "bars" | "line";
 
 export interface VwapSettings {
-  mode: 'session' | 'anchored';
+  mode: "session" | "anchored";
   anchorMs?: number;
 }
 
@@ -51,19 +51,19 @@ export interface ChartState {
   removeEma: (period: number) => void;
 }
 
-const DEFAULT_FAVORITES = ['SPY', 'QQQ', 'NVDA'];
+const DEFAULT_FAVORITES = ["SPY", "QQQ", "NVDA"];
 const DEFAULT_EMA_PERIODS = [20, 50];
 const DEFAULT_BOLLINGER: BollingerSettings = { period: 20, stdDev: 2 };
-const DEFAULT_VWAP: VwapSettings = { mode: 'session' };
+const DEFAULT_VWAP: VwapSettings = { mode: "session" };
 const DEFAULT_VOLUME_SMA = 20;
 
 export const useChartState = create<ChartState>()(
   persist(
     (set) => ({
       favorites: DEFAULT_FAVORITES,
-      active: { symbol: 'SPY', timeframe: '1m' },
-      layout: '1x1',
-      chartStyle: 'candles',
+      active: { symbol: "SPY", timeframe: "1m" },
+      layout: "1x1",
+      chartStyle: "candles",
       overlays: {
         ema: DEFAULT_EMA_PERIODS,
         boll: DEFAULT_BOLLINGER,
@@ -80,7 +80,7 @@ export const useChartState = create<ChartState>()(
 
       setTimeframe: async (timeframe: Timeframe) => {
         const symbol = useChartState.getState().active.symbol;
-        
+
         // Optimistically update UI
         set((state) => ({
           active: { ...state.active, timeframe },
@@ -88,22 +88,22 @@ export const useChartState = create<ChartState>()(
 
         try {
           // Call server API for authoritative timeframe switch
-          const response = await fetch('/api/chart/timeframe', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
+          const response = await fetch("/api/chart/timeframe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
             body: JSON.stringify({ symbol, timeframe }),
           });
 
           if (!response.ok) {
-            console.error('[ChartState] Timeframe switch failed:', response.status);
+            console.error("[ChartState] Timeframe switch failed:", response.status);
             // Rollback UI on error (keep optimistic value for now)
           } else {
             const data = await response.json();
             console.log(`[ChartState] ✅ Server switched to ${timeframe}, ${data.barsCount} bars`);
           }
         } catch (error) {
-          console.error('[ChartState] Timeframe switch error:', error);
+          console.error("[ChartState] Timeframe switch error:", error);
           // Keep optimistic update on network errors
         }
       },
@@ -121,7 +121,7 @@ export const useChartState = create<ChartState>()(
         set((state) => ({
           overlays: {
             ...state.overlays,
-            vwap: { mode: 'anchored', anchorMs },
+            vwap: { mode: "anchored", anchorMs },
           },
         })),
 
@@ -129,7 +129,7 @@ export const useChartState = create<ChartState>()(
         set((state) => ({
           overlays: {
             ...state.overlays,
-            vwap: { mode: 'session' },
+            vwap: { mode: "session" },
           },
         })),
 
@@ -167,7 +167,7 @@ export const useChartState = create<ChartState>()(
         })),
     }),
     {
-      name: 'spotlight-chart-state',
+      name: "spotlight-chart-state",
       partialize: (state) => ({
         favorites: state.favorites,
         active: state.active,
@@ -175,6 +175,6 @@ export const useChartState = create<ChartState>()(
         chartStyle: state.chartStyle,
         overlays: state.overlays,
       }),
-    }
-  )
+    },
+  ),
 );

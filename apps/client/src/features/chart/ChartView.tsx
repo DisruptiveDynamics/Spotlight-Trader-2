@@ -1,16 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
-import type { IChartApi, ISeriesApi, CandlestickData, UTCTimestamp } from 'lightweight-charts';
-import { connectMarketSSE, fetchHistory, type Bar, type Micro } from '../../lib/marketStream';
-import { useLastSeq } from './useLastSeq';
+import { useEffect, useRef, useState } from "react";
+import type { IChartApi, ISeriesApi, CandlestickData, UTCTimestamp } from "lightweight-charts";
+import { connectMarketSSE, fetchHistory, type Bar, type Micro } from "../../lib/marketStream";
+import { useLastSeq } from "./useLastSeq";
 
 export function ChartView() {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const isPausedRef = useRef(false);
   const [, forceUpdate] = useState({});
-  const [lastSeq, setLastSeq] = useLastSeq('SPY', '1m');
+  const [lastSeq, setLastSeq] = useLastSeq("SPY", "1m");
 
   const barUpdateQueueRef = useRef<Bar[]>([]);
   const microbarQueueRef = useRef<Micro[]>([]);
@@ -27,19 +27,19 @@ export function ChartView() {
       if (!chartContainerRef.current) return;
 
       try {
-        const history = await fetchHistory('SPY', '1m', 300);
+        const history = await fetchHistory("SPY", "1m", 300);
         if (!mounted) return;
 
-        const { createChart, CrosshairMode } = await import('lightweight-charts');
+        const { createChart, CrosshairMode } = await import("lightweight-charts");
 
         const chart = createChart(chartContainerRef.current, {
           layout: {
-            background: { color: '#1a1a1a' },
-            textColor: '#d1d5db',
+            background: { color: "#1a1a1a" },
+            textColor: "#d1d5db",
           },
           grid: {
-            vertLines: { color: '#374151' },
-            horzLines: { color: '#374151' },
+            vertLines: { color: "#374151" },
+            horzLines: { color: "#374151" },
           },
           crosshair: {
             mode: CrosshairMode.Normal,
@@ -53,12 +53,12 @@ export function ChartView() {
         });
 
         const series = chart.addCandlestickSeries({
-          upColor: '#10b981',
-          downColor: '#ef4444',
-          borderUpColor: '#10b981',
-          borderDownColor: '#ef4444',
-          wickUpColor: '#10b981',
-          wickDownColor: '#ef4444',
+          upColor: "#10b981",
+          downColor: "#ef4444",
+          borderUpColor: "#10b981",
+          borderDownColor: "#ef4444",
+          wickUpColor: "#10b981",
+          wickDownColor: "#ef4444",
         });
 
         const candleData: CandlestickData[] = history.map((bar) => ({
@@ -91,9 +91,9 @@ export function ChartView() {
           }
         };
 
-        window.addEventListener('resize', handleResize);
+        window.addEventListener("resize", handleResize);
 
-        sseConnection = connectMarketSSE(['SPY'], lastSeq ? { sinceSeq: lastSeq } : undefined);
+        sseConnection = connectMarketSSE(["SPY"], lastSeq ? { sinceSeq: lastSeq } : undefined);
 
         sseConnection.onBar((bar: Bar) => {
           if (!mounted || !seriesRef.current) return;
@@ -125,13 +125,13 @@ export function ChartView() {
         setIsLoading(false);
 
         return () => {
-          window.removeEventListener('resize', handleResize);
+          window.removeEventListener("resize", handleResize);
           if (rafIdRef.current) {
             cancelAnimationFrame(rafIdRef.current);
           }
         };
       } catch (error) {
-        console.error('Chart initialization failed:', error);
+        console.error("Chart initialization failed:", error);
         setIsLoading(false);
       }
     };
@@ -179,7 +179,10 @@ export function ChartView() {
         }
       }
 
-      if (document.hidden && (barUpdateQueueRef.current.length > 0 || microbarQueueRef.current.length > 0)) {
+      if (
+        document.hidden &&
+        (barUpdateQueueRef.current.length > 0 || microbarQueueRef.current.length > 0)
+      ) {
         rafIdRef.current = requestAnimationFrame(processUpdates);
       }
     };
@@ -191,11 +194,11 @@ export function ChartView() {
       forceUpdate({});
     };
 
-    window.addEventListener('hotkey:toggle-stream', handleTogglePause);
+    window.addEventListener("hotkey:toggle-stream", handleTogglePause);
 
     return () => {
       mounted = false;
-      window.removeEventListener('hotkey:toggle-stream', handleTogglePause);
+      window.removeEventListener("hotkey:toggle-stream", handleTogglePause);
       if (sseConnection) {
         sseConnection.close();
       }
@@ -220,11 +223,11 @@ export function ChartView() {
         <div
           className={`px-2 py-1 text-xs font-mono rounded ${
             isPausedRef.current
-              ? 'bg-amber-500/20 text-amber-400 border border-amber-500'
-              : 'bg-green-500/20 text-green-400 border border-green-500'
+              ? "bg-amber-500/20 text-amber-400 border border-amber-500"
+              : "bg-green-500/20 text-green-400 border border-green-500"
           }`}
         >
-          {isPausedRef.current ? 'PAUSED' : 'LIVE'}
+          {isPausedRef.current ? "PAUSED" : "LIVE"}
         </div>
       </div>
     </div>

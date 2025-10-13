@@ -1,12 +1,12 @@
-import { eventBus } from '../market/eventBus';
-import type { EvaluatedRule, Signal } from '@shared/types/rules';
-import { riskGovernor } from '../risk/governor';
-import { db } from '../db';
-import { signals } from '../db/schema';
+import { eventBus } from "../market/eventBus";
+import type { EvaluatedRule, Signal } from "@shared/types/rules";
+import { riskGovernor } from "../risk/governor";
+import { db } from "../db";
+import { signals } from "../db/schema";
 
 export class SignalsService {
   start(): void {
-    eventBus.on('rule:evaluated', this.handleRuleEvaluation.bind(this));
+    eventBus.on("rule:evaluated", this.handleRuleEvaluation.bind(this));
   }
 
   private async handleRuleEvaluation(ruleEval: EvaluatedRule): Promise<void> {
@@ -16,19 +16,19 @@ export class SignalsService {
 
     if (!riskGovernor.shouldTrigger(ruleEval)) {
       console.log(
-        `Signal throttled or risk limit reached for rule ${ruleEval.id} at seq ${ruleEval.barSeq}`
+        `Signal throttled or risk limit reached for rule ${ruleEval.id} at seq ${ruleEval.barSeq}`,
       );
       return;
     }
 
     const signal: Signal = {
       id: `sig_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
-      userId: 'demo-user',
-      symbol: 'SPY',
-      timeframe: '1m',
+      userId: "demo-user",
+      symbol: "SPY",
+      timeframe: "1m",
       ruleId: ruleEval.id,
-      ruleVersion: '1',
-      direction: ruleEval.signal ?? 'flat',
+      ruleVersion: "1",
+      direction: ruleEval.signal ?? "flat",
       confidence: ruleEval.confidence,
       ctx: {
         barSeq: ruleEval.barSeq,
@@ -51,18 +51,18 @@ export class SignalsService {
       });
 
       riskGovernor.registerSignal(signal, ruleEval.barSeq);
-      eventBus.emit('signal:new', signal);
+      eventBus.emit("signal:new", signal);
 
       console.log(
-        `Signal created: ${signal.id} for rule ${signal.ruleId} (${signal.direction}, confidence: ${signal.confidence.toFixed(2)})`
+        `Signal created: ${signal.id} for rule ${signal.ruleId} (${signal.direction}, confidence: ${signal.confidence.toFixed(2)})`,
       );
     } catch (error) {
-      console.error('Failed to create signal:', error);
+      console.error("Failed to create signal:", error);
     }
   }
 
   stop(): void {
-    eventBus.off('rule:evaluated', this.handleRuleEvaluation.bind(this));
+    eventBus.off("rule:evaluated", this.handleRuleEvaluation.bind(this));
   }
 }
 

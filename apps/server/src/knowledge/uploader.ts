@@ -1,17 +1,17 @@
-import { db } from '../db/index.js';
-import { coachMemories, knowledgeUploads } from '../db/schema.js';
-import { eq, desc } from 'drizzle-orm';
-import { nanoid } from 'nanoid';
-import { extractYouTubeTranscript, isYouTubeUrl } from './youtube.js';
-import { extractPDFText, isPDF } from './pdf.js';
-import { chunkText } from './chunker.js';
-import { batchGenerateEmbeddings } from './embedder.js';
+import { db } from "../db/index.js";
+import { coachMemories, knowledgeUploads } from "../db/schema.js";
+import { eq, desc } from "drizzle-orm";
+import { nanoid } from "nanoid";
+import { extractYouTubeTranscript, isYouTubeUrl } from "./youtube.js";
+import { extractPDFText, isPDF } from "./pdf.js";
+import { chunkText } from "./chunker.js";
+import { batchGenerateEmbeddings } from "./embedder.js";
 
 export interface UploadResult {
   uploadId: string;
   chunksCreated: number;
   totalTokens: number;
-  status: 'completed' | 'failed';
+  status: "completed" | "failed";
   error?: string;
 }
 
@@ -21,7 +21,7 @@ export interface UploadResult {
  */
 export async function uploadKnowledge(params: {
   userId: string;
-  sourceType: 'youtube' | 'pdf' | 'text';
+  sourceType: "youtube" | "pdf" | "text";
   source: string | Buffer;
   title?: string;
   tags?: string[];
@@ -35,27 +35,27 @@ export async function uploadKnowledge(params: {
     let extractedTitle: string;
     let metadata: Record<string, any> = {};
 
-    if (sourceType === 'youtube' && typeof source === 'string') {
+    if (sourceType === "youtube" && typeof source === "string") {
       if (!isYouTubeUrl(source)) {
-        throw new Error('Invalid YouTube URL');
+        throw new Error("Invalid YouTube URL");
       }
       const result = await extractYouTubeTranscript(source);
       extractedText = result.text;
       extractedTitle = title || result.title;
       metadata = { duration: result.duration, url: source };
-    } else if (sourceType === 'pdf' && Buffer.isBuffer(source)) {
+    } else if (sourceType === "pdf" && Buffer.isBuffer(source)) {
       if (!isPDF(source)) {
-        throw new Error('Invalid PDF file');
+        throw new Error("Invalid PDF file");
       }
       const result = await extractPDFText(source);
       extractedText = result.text;
       extractedTitle = title || result.title;
       metadata = { pages: result.pages, ...result.metadata };
-    } else if (sourceType === 'text' && typeof source === 'string') {
+    } else if (sourceType === "text" && typeof source === "string") {
       extractedText = source;
-      extractedTitle = title || 'Text Note';
+      extractedTitle = title || "Text Note";
     } else {
-      throw new Error('Invalid source type or data');
+      throw new Error("Invalid source type or data");
     }
 
     // Create upload record
@@ -63,9 +63,9 @@ export async function uploadKnowledge(params: {
       id: uploadId,
       userId,
       sourceType,
-      sourceUrl: typeof source === 'string' ? source : null,
+      sourceUrl: typeof source === "string" ? source : null,
       title: extractedTitle,
-      status: 'processing',
+      status: "processing",
       metadata,
     });
 
@@ -76,11 +76,11 @@ export async function uploadKnowledge(params: {
     });
 
     if (chunks.length === 0) {
-      throw new Error('No content to process');
+      throw new Error("No content to process");
     }
 
     // Generate embeddings in batches
-    const chunkTexts = chunks.map(c => c.text);
+    const chunkTexts = chunks.map((c) => c.text);
     const embeddings = await batchGenerateEmbeddings(chunkTexts);
     const totalTokens = embeddings.reduce((sum, e) => sum + e.tokens, 0);
 
@@ -88,14 +88,9 @@ export async function uploadKnowledge(params: {
     const memoryRecords = chunks.map((chunk, i) => ({
       id: nanoid(),
       userId,
-      kind: 'knowledge' as const,
+      kind: "knowledge" as const,
       text: chunk.text,
-      tags: [
-        ...tags,
-        sourceType,
-        `upload:${uploadId}`,
-        extractedTitle,
-      ],
+      tags: [...tags, sourceType, `upload:${uploadId}`, extractedTitle],
       embedding: embeddings[i]!.embedding,
     }));
 
@@ -105,7 +100,7 @@ export async function uploadKnowledge(params: {
     await db
       .update(knowledgeUploads)
       .set({
-        status: 'completed',
+        status: "completed",
         chunksCount: chunks.length,
       })
       .where(eq(knowledgeUploads.id, uploadId));
@@ -114,16 +109,16 @@ export async function uploadKnowledge(params: {
       uploadId,
       chunksCreated: chunks.length,
       totalTokens,
-      status: 'completed',
+      status: "completed",
     };
   } catch (error) {
     // Update upload status to failed
     await db
       .update(knowledgeUploads)
       .set({
-        status: 'failed',
+        status: "failed",
         metadata: {
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: error instanceof Error ? error.message : "Unknown error",
         },
       })
       .where(eq(knowledgeUploads.id, uploadId));
@@ -132,8 +127,8 @@ export async function uploadKnowledge(params: {
       uploadId,
       chunksCreated: 0,
       totalTokens: 0,
-      status: 'failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      status: "failed",
+      error: error instanceof Error ? error.message : "Unknown error",
     };
   }
 }

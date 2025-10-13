@@ -12,14 +12,14 @@ export async function ensureAudioUnlocked(): Promise<AudioContext | null> {
     if (!globalAudioContext) {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioContextClass) {
-        console.warn('AudioContext not supported');
+        console.warn("AudioContext not supported");
         return null;
       }
       globalAudioContext = new AudioContextClass({ sampleRate: 24000 });
     }
 
     // Resume if suspended (Safari/iOS requirement)
-    if (globalAudioContext.state === 'suspended') {
+    if (globalAudioContext.state === "suspended") {
       await globalAudioContext.resume();
     }
 
@@ -30,15 +30,15 @@ export async function ensureAudioUnlocked(): Promise<AudioContext | null> {
       source.buffer = buffer;
       source.connect(globalAudioContext.destination);
       source.start(0);
-      
+
       // Wait for unlock
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 50));
       unlocked = true;
     }
 
     return globalAudioContext;
   } catch (err) {
-    console.warn('Audio unlock failed:', err);
+    console.warn("Audio unlock failed:", err);
     return null;
   }
 }
@@ -48,7 +48,7 @@ export function getAudioContext(): AudioContext | null {
 }
 
 export function isAudioUnlocked(): boolean {
-  return unlocked && globalAudioContext?.state === 'running';
+  return unlocked && globalAudioContext?.state === "running";
 }
 
 export async function closeAudioContext(): Promise<void> {

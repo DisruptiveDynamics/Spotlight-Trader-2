@@ -1,5 +1,5 @@
-import jwt from 'jsonwebtoken';
-import { validateEnv } from '@shared/env';
+import jwt from "jsonwebtoken";
+import { validateEnv } from "@shared/env";
 
 const env = validateEnv(process.env);
 
@@ -16,17 +16,17 @@ export function signVoiceToken(userId: string, ttlSeconds = 60): string {
     exp,
   };
 
-  return jwt.sign(payload, env.SESSION_SECRET, { algorithm: 'HS256' });
+  return jwt.sign(payload, env.SESSION_SECRET, { algorithm: "HS256" });
 }
 
 export function verifyVoiceToken(token: string): VoiceTokenPayload {
   try {
     const decoded = jwt.verify(token, env.SESSION_SECRET, {
-      algorithms: ['HS256'],
+      algorithms: ["HS256"],
     }) as VoiceTokenPayload;
 
     if (decoded.exp < Math.floor(Date.now() / 1000)) {
-      throw new Error('Token expired');
+      throw new Error("Token expired");
     }
 
     return decoded;

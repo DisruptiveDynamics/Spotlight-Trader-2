@@ -55,7 +55,7 @@ class MetricsRegistry {
     } else {
       this.histograms.set(
         key,
-        labels ? { name, values: [value], labels } : { name, values: [value] }
+        labels ? { name, values: [value], labels } : { name, values: [value] },
       );
     }
   }
@@ -72,7 +72,7 @@ class MetricsRegistry {
     const labelStr = Object.entries(labels)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => `${k}="${v}"`)
-      .join(',');
+      .join(",");
     return `${name}{${labelStr}}`;
   }
 
@@ -120,13 +120,13 @@ const activeSSEByUser = new Map<string, number>();
 const activeWSByUser = new Map<string, number>();
 
 export function recordSSEConnection(userId: string) {
-  metrics.counter('sse_connections_total', { userId });
+  metrics.counter("sse_connections_total", { userId });
   const current = activeSSEByUser.get(userId) || 0;
   activeSSEByUser.set(userId, current + 1);
-  metrics.gauge('sse_active_connections', current + 1, { userId });
+  metrics.gauge("sse_active_connections", current + 1, { userId });
 
   const total = Array.from(activeSSEByUser.values()).reduce((a, b) => a + b, 0);
-  metrics.gauge('sse_active_connections_total', total);
+  metrics.gauge("sse_active_connections_total", total);
 }
 
 export function recordSSEDisconnection(userId: string) {
@@ -137,32 +137,32 @@ export function recordSSEDisconnection(userId: string) {
   } else {
     activeSSEByUser.set(userId, newCount);
   }
-  metrics.gauge('sse_active_connections', newCount, { userId });
+  metrics.gauge("sse_active_connections", newCount, { userId });
 
   const total = Array.from(activeSSEByUser.values()).reduce((a, b) => a + b, 0);
-  metrics.gauge('sse_active_connections_total', total);
+  metrics.gauge("sse_active_connections_total", total);
 }
 
 export function recordSSEEvent(eventType: string) {
-  metrics.counter('sse_events_total', { type: eventType });
+  metrics.counter("sse_events_total", { type: eventType });
 }
 
 export function recordSSEBackpressure(buffered: number, dropped: number, prevDropped: number) {
-  metrics.histogram('sse_buffer_size', buffered);
+  metrics.histogram("sse_buffer_size", buffered);
   const newDrops = dropped - prevDropped;
   if (newDrops > 0) {
-    metrics.incrementCounter('sse_events_dropped_total', newDrops, { reason: 'backpressure' });
+    metrics.incrementCounter("sse_events_dropped_total", newDrops, { reason: "backpressure" });
   }
 }
 
 export function recordWSConnection(userId: string) {
-  metrics.counter('ws_connections_total', { userId });
+  metrics.counter("ws_connections_total", { userId });
   const current = activeWSByUser.get(userId) || 0;
   activeWSByUser.set(userId, current + 1);
-  metrics.gauge('ws_active_connections', current + 1, { userId });
+  metrics.gauge("ws_active_connections", current + 1, { userId });
 
   const total = Array.from(activeWSByUser.values()).reduce((a, b) => a + b, 0);
-  metrics.gauge('ws_active_connections_total', total);
+  metrics.gauge("ws_active_connections_total", total);
 }
 
 export function recordWSDisconnection(userId: string, reason: string) {
@@ -173,16 +173,16 @@ export function recordWSDisconnection(userId: string, reason: string) {
   } else {
     activeWSByUser.set(userId, newCount);
   }
-  metrics.gauge('ws_active_connections', newCount, { userId });
+  metrics.gauge("ws_active_connections", newCount, { userId });
 
   const total = Array.from(activeWSByUser.values()).reduce((a, b) => a + b, 0);
-  metrics.gauge('ws_active_connections_total', total);
+  metrics.gauge("ws_active_connections_total", total);
 
-  metrics.counter('ws_disconnections_total', { reason });
+  metrics.counter("ws_disconnections_total", { reason });
 }
 
 export function recordWSLRUEviction() {
-  metrics.counter('ws_lru_evictions_total');
+  metrics.counter("ws_lru_evictions_total");
 }
 
 export function recordWebVital(name: string, value: number, rating: string) {
@@ -190,5 +190,5 @@ export function recordWebVital(name: string, value: number, rating: string) {
 }
 
 export function recordFPS(fps: number) {
-  metrics.histogram('client_fps', fps);
+  metrics.histogram("client_fps", fps);
 }

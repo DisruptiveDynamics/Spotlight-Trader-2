@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
 interface Command {
   id: string;
@@ -33,50 +33,50 @@ function fuzzyMatch(query: string, target: string): number {
 
 export function CommandPalette() {
   const [isOpen, setIsOpen] = useState(false);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [commands] = useState<Command[]>([
     {
-      id: 'explain-bar',
-      label: 'Explain this bar',
-      category: 'Analysis',
+      id: "explain-bar",
+      label: "Explain this bar",
+      category: "Analysis",
       action: () => {
-        window.dispatchEvent(new CustomEvent('command:explain-bar'));
+        window.dispatchEvent(new CustomEvent("command:explain-bar"));
         setIsOpen(false);
       },
     },
     {
-      id: 'jump-signal',
-      label: 'Jump to last signal',
-      category: 'Navigation',
+      id: "jump-signal",
+      label: "Jump to last signal",
+      category: "Navigation",
       action: () => {
-        window.dispatchEvent(new CustomEvent('command:jump-signal'));
+        window.dispatchEvent(new CustomEvent("command:jump-signal"));
         setIsOpen(false);
       },
     },
     {
-      id: 'focus-trade',
-      label: 'Toggle focus mode (Trade)',
-      category: 'View',
+      id: "focus-trade",
+      label: "Toggle focus mode (Trade)",
+      category: "View",
       action: () => {
-        window.dispatchEvent(new CustomEvent('command:focus-trade'));
+        window.dispatchEvent(new CustomEvent("command:focus-trade"));
         setIsOpen(false);
       },
     },
     {
-      id: 'focus-review',
-      label: 'Toggle focus mode (Review)',
-      category: 'View',
+      id: "focus-review",
+      label: "Toggle focus mode (Review)",
+      category: "View",
       action: () => {
-        window.dispatchEvent(new CustomEvent('command:focus-review'));
+        window.dispatchEvent(new CustomEvent("command:focus-review"));
         setIsOpen(false);
       },
     },
     {
-      id: 'toggle-vwap',
-      label: 'Toggle VWAP anchors',
-      category: 'Indicators',
+      id: "toggle-vwap",
+      label: "Toggle VWAP anchors",
+      category: "Indicators",
       action: () => {
-        window.dispatchEvent(new CustomEvent('hotkey:toggle-vwap'));
+        window.dispatchEvent(new CustomEvent("hotkey:toggle-vwap"));
         setIsOpen(false);
       },
     },
@@ -92,19 +92,19 @@ export function CommandPalette() {
 
   useEffect(() => {
     const handleOpen = () => setIsOpen(true);
-    window.addEventListener('hotkey:command-palette', handleOpen);
+    window.addEventListener("hotkey:command-palette", handleOpen);
 
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === "Escape" && isOpen) {
         setIsOpen(false);
-        setQuery('');
+        setQuery("");
       }
     };
-    document.addEventListener('keydown', handleEscape);
+    document.addEventListener("keydown", handleEscape);
 
     return () => {
-      window.removeEventListener('hotkey:command-palette', handleOpen);
-      document.removeEventListener('keydown', handleEscape);
+      window.removeEventListener("hotkey:command-palette", handleOpen);
+      document.removeEventListener("keydown", handleEscape);
     };
   }, [isOpen]);
 

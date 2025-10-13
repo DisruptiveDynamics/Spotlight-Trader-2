@@ -1,7 +1,7 @@
-import { Router } from 'express';
-import type { Request, Response } from 'express';
-import type { InsightRequest, InsightResponse } from '@spotlight/shared';
-import OpenAI from 'openai';
+import { Router } from "express";
+import type { Request, Response } from "express";
+import type { InsightRequest, InsightResponse } from "@spotlight/shared";
+import OpenAI from "openai";
 
 const router = Router();
 const openai = new OpenAI({
@@ -29,22 +29,22 @@ function checkRateLimit(userId: string): boolean {
   return true;
 }
 
-router.post('/explain', async (req: Request, res: Response) => {
+router.post("/explain", async (req: Request, res: Response) => {
   try {
     const { context, question } = req.body as InsightRequest;
-    const userId = req.ip || 'anonymous';
+    const userId = req.ip || "anonymous";
 
     // Check rate limit
     if (!checkRateLimit(userId)) {
       return res.status(429).json({
-        error: 'Rate limit exceeded. Please wait before making another request.',
+        error: "Rate limit exceeded. Please wait before making another request.",
       });
     }
 
     // Validate input
     if (!context || !question) {
       return res.status(400).json({
-        error: 'Missing context or question',
+        error: "Missing context or question",
       });
     }
 
@@ -71,15 +71,15 @@ Always:
     const barsSummary = lastBars
       .map(
         (b) =>
-          `[${new Date(b.time * 1000).toLocaleTimeString()}] O:${b.o.toFixed(2)} H:${b.h.toFixed(2)} L:${b.l.toFixed(2)} C:${b.c.toFixed(2)} V:${b.v}`
+          `[${new Date(b.time * 1000).toLocaleTimeString()}] O:${b.o.toFixed(2)} H:${b.h.toFixed(2)} L:${b.l.toFixed(2)} C:${b.c.toFixed(2)} V:${b.v}`,
       )
-      .join('\n');
+      .join("\n");
 
     const overlaysSummary = [];
     if (context.overlays.ema) {
       const emaValues = Object.entries(context.overlays.ema)
         .map(([period, value]) => `EMA(${period}): ${value.toFixed(2)}`)
-        .join(', ');
+        .join(", ");
       overlaysSummary.push(emaValues);
     }
     if (context.overlays.vwap) {
@@ -87,14 +87,14 @@ Always:
     }
     if (context.overlays.boll) {
       overlaysSummary.push(
-        `Bollinger: Mid ${context.overlays.boll.mid.toFixed(2)}, Upper ${context.overlays.boll.upper.toFixed(2)}, Lower ${context.overlays.boll.lower.toFixed(2)}`
+        `Bollinger: Mid ${context.overlays.boll.mid.toFixed(2)}, Upper ${context.overlays.boll.upper.toFixed(2)}, Lower ${context.overlays.boll.lower.toFixed(2)}`,
       );
     }
 
     const signalsSummary =
       context.activeSignals
         ?.map((s) => `${s.direction.toUpperCase()} signal: ${s.rule} (${s.confidence}% confidence)`)
-        .join('\n') || 'No active signals';
+        .join("\n") || "No active signals";
 
     const userPrompt = `Chart Analysis Request:
 
@@ -107,7 +107,7 @@ ${barsSummary}
 Current Price: ${currentBar?.c.toFixed(2)}
 
 Indicators:
-${overlaysSummary.join('\n')}
+${overlaysSummary.join("\n")}
 
 Active Signals:
 ${signalsSummary}
@@ -117,17 +117,17 @@ Question: ${question}`;
     // Call OpenAI for analysis
     try {
       const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: "gpt-4o-mini",
         messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
         ],
         max_tokens: 300,
         temperature: 0.7,
       });
 
       const aiResponse =
-        completion.choices[0]?.message?.content || 'Unable to analyze at this time.';
+        completion.choices[0]?.message?.content || "Unable to analyze at this time.";
 
       const response: InsightResponse = {
         text: aiResponse,
@@ -135,7 +135,7 @@ Question: ${question}`;
       };
 
       // Log for development
-      console.log('📊 Insight Request:', {
+      console.log("📊 Insight Request:", {
         symbol: context.symbol,
         question: question.substring(0, 50),
         bars: context.bars.length,
@@ -143,7 +143,7 @@ Question: ${question}`;
 
       res.json(response);
     } catch (aiError) {
-      console.error('❌ OpenAI error:', aiError);
+      console.error("❌ OpenAI error:", aiError);
 
       // Fallback response
       const response: InsightResponse = {
@@ -151,8 +151,8 @@ Question: ${question}`;
           context.overlays.ema
             ? `The EMAs show ${Object.entries(context.overlays.ema)
                 .map(([p, v]) => `${p}-period at ${v.toFixed(2)}`)
-                .join(', ')}.`
-            : ''
+                .join(", ")}.`
+            : ""
         }`,
         timestamp: Date.now(),
       };
@@ -160,9 +160,9 @@ Question: ${question}`;
       res.json(response);
     }
   } catch (error) {
-    console.error('❌ Insight error:', error);
+    console.error("❌ Insight error:", error);
     res.status(500).json({
-      error: 'Failed to generate insight',
+      error: "Failed to generate insight",
     });
   }
 });

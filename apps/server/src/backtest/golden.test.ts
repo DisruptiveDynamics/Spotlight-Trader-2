@@ -3,24 +3,24 @@
  * These tests ensure the backtest engine produces consistent results
  */
 
-import { describe, it, expect, vi } from 'vitest';
-import { runBacktest } from './engine';
-import { goldenTestCases, expectedTriggers } from './fixtures';
-import * as historyService from '../history/service';
+import { describe, it, expect, vi } from "vitest";
+import { runBacktest } from "./engine";
+import { goldenTestCases, expectedTriggers } from "./fixtures";
+import * as historyService from "../history/service";
 
-describe('Backtest Golden Tests', () => {
-  describe('Deterministic Replay', () => {
+describe("Backtest Golden Tests", () => {
+  describe("Deterministic Replay", () => {
     for (const testCase of goldenTestCases) {
       it(testCase.name, async () => {
         // Mock getHistory using vi.spyOn
         const getHistorySpy = vi
-          .spyOn(historyService, 'getHistory')
+          .spyOn(historyService, "getHistory")
           .mockResolvedValue(testCase.bars);
 
         try {
           const result = await runBacktest({
-            symbol: 'SPY',
-            timeframe: '1m',
+            symbol: "SPY",
+            timeframe: "1m",
             start: new Date(1700000000000).toISOString(),
             end: new Date(1700000300000).toISOString(),
             rules: testCase.rules,
@@ -73,16 +73,16 @@ describe('Backtest Golden Tests', () => {
     }
   });
 
-  describe('Reproducibility', () => {
-    it('should produce identical results on repeated runs', async () => {
-      const { sampleBars, sampleRules } = await import('./fixtures');
+  describe("Reproducibility", () => {
+    it("should produce identical results on repeated runs", async () => {
+      const { sampleBars, sampleRules } = await import("./fixtures");
 
-      const getHistorySpy = vi.spyOn(historyService, 'getHistory').mockResolvedValue(sampleBars);
+      const getHistorySpy = vi.spyOn(historyService, "getHistory").mockResolvedValue(sampleBars);
 
       try {
         const input = {
-          symbol: 'SPY',
-          timeframe: '1m' as const,
+          symbol: "SPY",
+          timeframe: "1m" as const,
           start: new Date(1700000000000).toISOString(),
           end: new Date(1700000300000).toISOString(),
           rules: [sampleRules[0]!],
@@ -106,46 +106,46 @@ describe('Backtest Golden Tests', () => {
     });
   });
 
-  describe('Edge Cases', () => {
-    it('should handle empty bar list gracefully', async () => {
-      const { sampleRules } = await import('./fixtures');
+  describe("Edge Cases", () => {
+    it("should handle empty bar list gracefully", async () => {
+      const { sampleRules } = await import("./fixtures");
 
-      const getHistorySpy = vi.spyOn(historyService, 'getHistory').mockResolvedValue([]);
+      const getHistorySpy = vi.spyOn(historyService, "getHistory").mockResolvedValue([]);
 
       try {
         await expect(
           runBacktest({
-            symbol: 'SPY',
-            timeframe: '1m',
+            symbol: "SPY",
+            timeframe: "1m",
             start: new Date(1700000000000).toISOString(),
             end: new Date(1700000300000).toISOString(),
             rules: [sampleRules[0]!],
-          })
-        ).rejects.toThrow('No historical data available');
+          }),
+        ).rejects.toThrow("No historical data available");
       } finally {
         getHistorySpy.mockRestore();
       }
     });
 
-    it('should handle rules with no triggers', async () => {
-      const { sampleBars } = await import('./fixtures');
+    it("should handle rules with no triggers", async () => {
+      const { sampleBars } = await import("./fixtures");
 
-      const getHistorySpy = vi.spyOn(historyService, 'getHistory').mockResolvedValue(sampleBars);
+      const getHistorySpy = vi.spyOn(historyService, "getHistory").mockResolvedValue(sampleBars);
 
       try {
-        const impossibleRule: import('@shared/types/rules').Rule = {
-          id: 'impossible',
-          name: 'Impossible',
-          description: 'Never triggers',
-          expression: 'close > 1000',
+        const impossibleRule: import("@shared/types/rules").Rule = {
+          id: "impossible",
+          name: "Impossible",
+          description: "Never triggers",
+          expression: "close > 1000",
           createdAt: Date.now(),
           updatedAt: Date.now(),
           version: 1,
         };
 
         const result = await runBacktest({
-          symbol: 'SPY',
-          timeframe: '1m',
+          symbol: "SPY",
+          timeframe: "1m",
           start: new Date(1700000000000).toISOString(),
           end: new Date(1700000300000).toISOString(),
           rules: [impossibleRule],

@@ -1,18 +1,17 @@
-
 /**
  * Voice System Integration Tests
  * Tests the complete voice assistant pipeline
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { EnhancedVoiceClient } from '../EnhancedVoiceClient.v2';
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { EnhancedVoiceClient } from "../EnhancedVoiceClient.v2";
 
-describe('Voice System Integration', () => {
+describe("Voice System Integration", () => {
   let client: EnhancedVoiceClient;
-  
+
   beforeEach(() => {
     client = new EnhancedVoiceClient();
-    
+
     // Mock WebSocket
     global.WebSocket = vi.fn().mockImplementation(() => ({
       send: vi.fn(),
@@ -21,10 +20,10 @@ describe('Voice System Integration', () => {
       removeEventListener: vi.fn(),
       readyState: WebSocket.OPEN,
     }));
-    
+
     // Mock AudioContext
     global.AudioContext = vi.fn().mockImplementation(() => ({
-      state: 'running',
+      state: "running",
       sampleRate: 24000,
       resume: vi.fn().mockResolvedValue(undefined),
       close: vi.fn().mockResolvedValue(undefined),
@@ -56,52 +55,56 @@ describe('Voice System Integration', () => {
       })),
       destination: {},
     }));
-    
+
     // Mock getUserMedia
     global.navigator.mediaDevices = {
       getUserMedia: vi.fn().mockResolvedValue({
-        getTracks: () => [{
-          stop: vi.fn(),
-          enabled: true,
-        }],
-        getAudioTracks: () => [{
-          stop: vi.fn(),
-          enabled: true,
-        }],
+        getTracks: () => [
+          {
+            stop: vi.fn(),
+            enabled: true,
+          },
+        ],
+        getAudioTracks: () => [
+          {
+            stop: vi.fn(),
+            enabled: true,
+          },
+        ],
       }),
     } as any;
   });
-  
+
   afterEach(() => {
     client.disconnect();
   });
-  
-  it('should initialize with disconnected state', () => {
-    expect(client.getState()).toBe('disconnected');
-    expect(client.getCoachState()).toBe('idle');
+
+  it("should initialize with disconnected state", () => {
+    expect(client.getState()).toBe("disconnected");
+    expect(client.getCoachState()).toBe("idle");
   });
-  
-  it('should transition to connecting state when connect is called', async () => {
+
+  it("should transition to connecting state when connect is called", async () => {
     const states: string[] = [];
-    client.onStateChange(state => states.push(state));
-    
-    const connectPromise = client.connect('test-token');
-    
-    expect(states).toContain('connecting');
+    client.onStateChange((state) => states.push(state));
+
+    const connectPromise = client.connect("test-token");
+
+    expect(states).toContain("connecting");
   });
-  
-  it('should handle mute/unmute correctly', () => {
+
+  it("should handle mute/unmute correctly", () => {
     client.mute();
     expect(client.isMicMuted()).toBe(true);
-    expect(client.getCoachState()).toBe('muted');
-    
+    expect(client.getCoachState()).toBe("muted");
+
     client.unmute();
     expect(client.isMicMuted()).toBe(false);
   });
-  
-  it('should cleanup resources on disconnect', () => {
+
+  it("should cleanup resources on disconnect", () => {
     client.disconnect();
-    expect(client.getState()).toBe('disconnected');
-    expect(client.getCoachState()).toBe('idle');
+    expect(client.getState()).toBe("disconnected");
+    expect(client.getCoachState()).toBe("idle");
   });
 });

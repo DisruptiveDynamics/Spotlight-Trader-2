@@ -1,10 +1,10 @@
-import { eventBus, type Bar, type Tick } from '@server/market/eventBus';
-import { telemetryBus } from './bus';
+import { eventBus, type Bar, type Tick } from "@server/market/eventBus";
+import { telemetryBus } from "./bus";
 
 export function initializeTelemetryBridge(): void {
-  eventBus.on('bar:new:SPY:1m', (bar: Bar) => {
+  eventBus.on("bar:new:SPY:1m", (bar: Bar) => {
     telemetryBus.publish({
-      type: 'bar:new',
+      type: "bar:new",
       symbol: bar.symbol,
       timeframe: bar.timeframe,
       timestamp: bar.bar_start,
@@ -12,9 +12,9 @@ export function initializeTelemetryBridge(): void {
     });
   });
 
-  eventBus.on('bar:new:QQQ:1m', (bar: Bar) => {
+  eventBus.on("bar:new:QQQ:1m", (bar: Bar) => {
     telemetryBus.publish({
-      type: 'bar:new',
+      type: "bar:new",
       symbol: bar.symbol,
       timeframe: bar.timeframe,
       timestamp: bar.bar_start,
@@ -22,11 +22,11 @@ export function initializeTelemetryBridge(): void {
     });
   });
 
-  eventBus.on('tick:SPY', (tick: Tick) => {
+  eventBus.on("tick:SPY", (tick: Tick) => {
     telemetryBus.publish({
-      type: 'tick',
-      symbol: 'SPY',
-      timeframe: '1m',
+      type: "tick",
+      symbol: "SPY",
+      timeframe: "1m",
       timestamp: tick.ts,
       data: {
         price: tick.price,
@@ -35,11 +35,11 @@ export function initializeTelemetryBridge(): void {
     });
   });
 
-  eventBus.on('tick:QQQ', (tick: Tick) => {
+  eventBus.on("tick:QQQ", (tick: Tick) => {
     telemetryBus.publish({
-      type: 'tick',
-      symbol: 'QQQ',
-      timeframe: '1m',
+      type: "tick",
+      symbol: "QQQ",
+      timeframe: "1m",
       timestamp: tick.ts,
       data: {
         price: tick.price,
@@ -48,5 +48,5 @@ export function initializeTelemetryBridge(): void {
     });
   });
 
-  console.log('✅ Telemetry bridge initialized');
+  console.log("✅ Telemetry bridge initialized");
 }

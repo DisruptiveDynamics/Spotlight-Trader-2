@@ -2,11 +2,11 @@
 // Passive logging only, no functional impact - useful for debugging
 // Guarded behind flags.marketAudit (default: false)
 
-import { eventBus } from './eventBus';
-import { getSessionVWAPForSymbol } from '@server/indicators/vwap';
-import { flags } from '@shared/flags';
-import type { Tick } from '@shared/types';
-import type { Bar } from '@shared/types';
+import { eventBus } from "./eventBus";
+import { getSessionVWAPForSymbol } from "@server/indicators/vwap";
+import { flags } from "@shared/flags";
+import type { Tick } from "@shared/types";
+import type { Bar } from "@shared/types";
 
 class MarketAuditTap {
   private lastTickPrices = new Map<string, number>();
@@ -14,16 +14,16 @@ class MarketAuditTap {
 
   start(): void {
     if (!flags.marketAudit) {
-      console.log('[AuditTap] Disabled (flag: marketAudit=false)');
+      console.log("[AuditTap] Disabled (flag: marketAudit=false)");
       return;
     }
 
     this.isActive = true;
-    console.log('[AuditTap] ✅ Enabled - monitoring bar/tape/vwap consistency');
+    console.log("[AuditTap] ✅ Enabled - monitoring bar/tape/vwap consistency");
 
     // Monitor ticks (same as Tape sees)
-    const symbols = ['SPY', 'QQQ']; // Add more as needed
-    
+    const symbols = ["SPY", "QQQ"]; // Add more as needed
+
     for (const symbol of symbols) {
       eventBus.on(`tick:${symbol}` as const, (tick: Tick) => {
         this.lastTickPrices.set(symbol, tick.price);
@@ -47,9 +47,13 @@ class MarketAuditTap {
     if (lastTickPrice !== undefined) {
       const priceDiff = Math.abs(barClose - lastTickPrice);
       if (priceDiff > 0.03) {
-        console.warn(`[Audit] ⚠️  Price mismatch: ${symbol} bar.close=${barClose.toFixed(2)}, lastTick=${lastTickPrice.toFixed(2)} (diff=$${priceDiff.toFixed(3)})`);
+        console.warn(
+          `[Audit] ⚠️  Price mismatch: ${symbol} bar.close=${barClose.toFixed(2)}, lastTick=${lastTickPrice.toFixed(2)} (diff=$${priceDiff.toFixed(3)})`,
+        );
       } else {
-        console.log(`[Audit] ✅ Price OK: ${symbol} bar.close ≈ lastTick (diff=$${priceDiff.toFixed(3)})`);
+        console.log(
+          `[Audit] ✅ Price OK: ${symbol} bar.close ≈ lastTick (diff=$${priceDiff.toFixed(3)})`,
+        );
       }
     }
 
@@ -57,21 +61,27 @@ class MarketAuditTap {
     if (sessionVWAP !== undefined) {
       const vwapDiff = Math.abs(barClose - sessionVWAP);
       const vwapDiffPercent = (vwapDiff / barClose) * 100;
-      
+
       if (vwapDiffPercent > 5) {
-        console.warn(`[Audit] ⚠️  VWAP far from price: ${symbol} VWAP=${sessionVWAP.toFixed(2)}, close=${barClose.toFixed(2)} (${vwapDiffPercent.toFixed(1)}% diff)`);
+        console.warn(
+          `[Audit] ⚠️  VWAP far from price: ${symbol} VWAP=${sessionVWAP.toFixed(2)}, close=${barClose.toFixed(2)} (${vwapDiffPercent.toFixed(1)}% diff)`,
+        );
       } else {
-        console.log(`[Audit] ✅ VWAP OK: ${symbol} VWAP=${sessionVWAP.toFixed(2)}, close=${barClose.toFixed(2)} (${vwapDiffPercent.toFixed(1)}% diff)`);
+        console.log(
+          `[Audit] ✅ VWAP OK: ${symbol} VWAP=${sessionVWAP.toFixed(2)}, close=${barClose.toFixed(2)} (${vwapDiffPercent.toFixed(1)}% diff)`,
+        );
       }
     }
 
     // Log bar summary
-    console.log(`[Audit] Bar: ${symbol} ${bar.bar_start} → ${bar.bar_end}, OHLCV: ${bar.ohlcv?.o.toFixed(2)}/${bar.ohlcv?.h.toFixed(2)}/${bar.ohlcv?.l.toFixed(2)}/${bar.ohlcv?.c.toFixed(2)}, vol=${bar.ohlcv?.v}`);
+    console.log(
+      `[Audit] Bar: ${symbol} ${bar.bar_start} → ${bar.bar_end}, OHLCV: ${bar.ohlcv?.o.toFixed(2)}/${bar.ohlcv?.h.toFixed(2)}/${bar.ohlcv?.l.toFixed(2)}/${bar.ohlcv?.c.toFixed(2)}, vol=${bar.ohlcv?.v}`,
+    );
   }
 
   stop(): void {
     this.isActive = false;
-    console.log('[AuditTap] Stopped');
+    console.log("[AuditTap] Stopped");
   }
 }
 

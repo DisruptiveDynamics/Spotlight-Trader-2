@@ -10,7 +10,7 @@ class PerformanceMonitor {
 
   recordLatency(source: string, startTime: number) {
     const latencyMs = Date.now() - startTime;
-    
+
     this.latencies.push({
       timestamp: Date.now(),
       source,
@@ -27,9 +27,7 @@ class PerformanceMonitor {
   }
 
   getStats(source?: string) {
-    const filtered = source
-      ? this.latencies.filter((m) => m.source === source)
-      : this.latencies;
+    const filtered = source ? this.latencies.filter((m) => m.source === source) : this.latencies;
 
     if (filtered.length === 0) {
       return { p50: 0, p95: 0, count: 0 };
@@ -47,12 +45,14 @@ class PerformanceMonitor {
   }
 
   logStats() {
-    const calloutsStats = this.getStats('callout-broadcast');
+    const calloutsStats = this.getStats("callout-broadcast");
     const totalStats = this.getStats();
 
-    console.log('📊 Copilot Performance Stats:');
+    console.log("📊 Copilot Performance Stats:");
     console.log(`   Callout broadcast - p50: ${calloutsStats.p50}ms, p95: ${calloutsStats.p95}ms`);
-    console.log(`   Overall - p50: ${totalStats.p50}ms, p95: ${totalStats.p95}ms, samples: ${totalStats.count}`);
+    console.log(
+      `   Overall - p50: ${totalStats.p50}ms, p95: ${totalStats.p95}ms, samples: ${totalStats.count}`,
+    );
   }
 }
 

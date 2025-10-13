@@ -1,25 +1,25 @@
-import { validateEnv } from '@shared/env';
+import { validateEnv } from "@shared/env";
 
 const env = validateEnv(process.env);
 
 export async function sendMagicLink(
   email: string,
   token: string,
-  redirectUrl: string
+  redirectUrl: string,
 ): Promise<void> {
   const magicUrl = `${redirectUrl}?token=${token}`;
 
   if (env.RESEND_API_KEY) {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         Authorization: `Bearer ${env.RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: 'Spotlight Trader <auth@spotlighttrader.com>',
+        from: "Spotlight Trader <auth@spotlighttrader.com>",
         to: email,
-        subject: 'Sign in to Spotlight Trader',
+        subject: "Sign in to Spotlight Trader",
         html: `
           <h1>Sign in to Spotlight Trader</h1>
           <p>Click the link below to sign in to your account:</p>
@@ -37,9 +37,9 @@ export async function sendMagicLink(
 
     console.log(`✅ Magic link sent to ${email} via Resend`);
   } else {
-    console.log('\n🔗 MAGIC LINK (dev mode - no email service configured):');
+    console.log("\n🔗 MAGIC LINK (dev mode - no email service configured):");
     console.log(`   Email: ${email}`);
     console.log(`   URL: ${magicUrl}`);
-    console.log('');
+    console.log("");
   }
 }

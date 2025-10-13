@@ -1,8 +1,8 @@
-import { VoiceActivityDetector } from './VAD';
+import { VoiceActivityDetector } from "./VAD";
 
-type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
+type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
 type VoiceClientListener = (state: ConnectionState) => void;
-type StateListener = (state: 'listening' | 'thinking' | 'speaking' | 'idle') => void;
+type StateListener = (state: "listening" | "thinking" | "speaking" | "idle") => void;
 
 export class VoiceClient {
   private ws: WebSocket | null = null;
@@ -11,8 +11,8 @@ export class VoiceClient {
   private playbackQueue: AudioBuffer[] = [];
   private isPlaying = false;
   private currentSource: AudioBufferSourceNode | null = null;
-  private state: ConnectionState = 'disconnected';
-  private coachState: 'listening' | 'thinking' | 'speaking' | 'idle' = 'idle';
+  private state: ConnectionState = "disconnected";
+  private coachState: "listening" | "thinking" | "speaking" | "idle" = "idle";
   private listeners = new Set<VoiceClientListener>();
   private stateListeners = new Set<StateListener>();
   private reconnectTimeout: number | null = null;
@@ -24,23 +24,23 @@ export class VoiceClient {
 
   constructor() {
     this.vad = new VoiceActivityDetector();
-    this.vad.on('start', () => this.handleSpeechStart());
-    this.vad.on('stop', () => this.handleSpeechStop());
+    this.vad.on("start", () => this.handleSpeechStart());
+    this.vad.on("stop", () => this.handleSpeechStop());
   }
 
   async connect(token: string) {
-    if (this.state === 'connected' || this.state === 'connecting') {
+    if (this.state === "connected" || this.state === "connecting") {
       return;
     }
 
-    this.setState('connecting');
+    this.setState("connecting");
 
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
     const wsUrl = `${proto}://${window.location.host}/ws/realtime?t=${encodeURIComponent(token)}`;
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
-      this.setState('connected');
+      this.setState("connected");
       this.reconnectAttempts = 0;
       this.startAudioCapture();
     };
@@ -48,28 +48,28 @@ export class VoiceClient {
     this.ws.onmessage = async (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'response.audio.delta' && data.delta) {
+        if (data.type === "response.audio.delta" && data.delta) {
           await this.handleAudioDelta(data.delta);
         }
       } catch (error) {
-        console.error('Error processing message:', error);
+        console.error("Error processing message:", error);
       }
     };
 
     this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      this.setState('error');
+      console.error("WebSocket error:", error);
+      this.setState("error");
     };
 
     this.ws.onclose = () => {
-      this.setState('disconnected');
+      this.setState("disconnected");
       this.stopAudioCapture();
       this.scheduleReconnect();
     };
   }
 
   private async freshToken(): Promise<string> {
-    const res = await fetch('/api/voice/token', { method: 'POST', credentials: 'include' });
+    const res = await fetch("/api/voice/token", { method: "POST", credentials: "include" });
     if (!res.ok) throw new Error(`Token fetch failed: ${res.status}`);
     const { token } = await res.json();
     return token as string;
@@ -87,7 +87,7 @@ export class VoiceClient {
     }
 
     this.stopAudioCapture();
-    this.setState('disconnected');
+    this.setState("disconnected");
   }
 
   private async startAudioCapture() {
@@ -117,7 +117,7 @@ export class VoiceClient {
         const view = new Int16Array(buffer);
         view.set(pcm16);
         const audioEvent = {
-          type: 'input_audio_buffer.append',
+          type: "input_audio_buffer.append",
           audio: this.arrayBufferToBase64(buffer),
         };
         this.ws.send(JSON.stringify(audioEvent));
@@ -131,13 +131,13 @@ export class VoiceClient {
   async enableMic() {
     this.isMicEnabled = true;
     await this.vad.start();
-    this.setCoachState('listening');
+    this.setCoachState("listening");
   }
 
   disableMic() {
     this.isMicEnabled = false;
     this.vad.stop();
-    this.setCoachState('idle');
+    this.setCoachState("idle");
   }
 
   isMicActive(): boolean {
@@ -166,17 +166,17 @@ export class VoiceClient {
     this.clearPlaybackQueue();
 
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'response.cancel' }));
+      this.ws.send(JSON.stringify({ type: "response.cancel" }));
     }
 
-    this.setCoachState('listening');
+    this.setCoachState("listening");
   }
 
   private handleSpeechStop() {
     if (!this.isMicEnabled) return;
 
     if (!this.isPlaying) {
-      this.setCoachState('thinking');
+      this.setCoachState("thinking");
     }
   }
 
@@ -189,7 +189,7 @@ export class VoiceClient {
     const audioBuffer = this.audioContext.createBuffer(
       1,
       float32.length,
-      this.audioContext.sampleRate
+      this.audioContext.sampleRate,
     );
     audioBuffer.getChannelData(0).set(float32);
 
@@ -203,12 +203,12 @@ export class VoiceClient {
   private async playNextBuffer() {
     if (this.playbackQueue.length === 0 || !this.audioContext) {
       this.isPlaying = false;
-      this.setCoachState('idle');
+      this.setCoachState("idle");
       return;
     }
 
     this.isPlaying = true;
-    this.setCoachState('speaking');
+    this.setCoachState("speaking");
     const buffer = this.playbackQueue.shift()!;
 
     this.currentSource = this.audioContext.createBufferSource();
@@ -227,7 +227,7 @@ export class VoiceClient {
     this.playbackQueue = [];
     this.isPlaying = false;
     this.currentSource = null;
-    this.setCoachState('idle');
+    this.setCoachState("idle");
   }
 
   private float32ToPCM16(float32: Float32Array): Int16Array {
@@ -248,7 +248,7 @@ export class VoiceClient {
   }
 
   private arrayBufferToBase64(buffer: ArrayBuffer): string {
-    let binary = '';
+    let binary = "";
     const bytes = new Uint8Array(buffer);
     for (let i = 0; i < bytes.length; i++) {
       binary += String.fromCharCode(bytes[i]!);
@@ -270,7 +270,7 @@ export class VoiceClient {
 
     const delay = Math.min(
       1000 * Math.pow(2, this.reconnectAttempts) + Math.random() * 1000,
-      this.maxReconnectDelay
+      this.maxReconnectDelay,
     );
 
     this.reconnectAttempts++;
@@ -281,7 +281,7 @@ export class VoiceClient {
         const fresh = await this.freshToken();
         await this.connect(fresh);
       } catch (err) {
-        console.error('Reconnect failed (will retry):', err);
+        console.error("Reconnect failed (will retry):", err);
         this.scheduleReconnect();
       }
     }, delay);
@@ -292,7 +292,7 @@ export class VoiceClient {
     this.listeners.forEach((listener) => listener(newState));
   }
 
-  private setCoachState(newState: 'listening' | 'thinking' | 'speaking' | 'idle') {
+  private setCoachState(newState: "listening" | "thinking" | "speaking" | "idle") {
     this.coachState = newState;
     this.stateListeners.forEach((listener) => listener(newState));
   }
@@ -311,7 +311,7 @@ export class VoiceClient {
     return this.state;
   }
 
-  getCoachState(): 'listening' | 'thinking' | 'speaking' | 'idle' {
+  getCoachState(): "listening" | "thinking" | "speaking" | "idle" {
     return this.coachState;
   }
 }

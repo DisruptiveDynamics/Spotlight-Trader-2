@@ -1,30 +1,30 @@
-import type { Request, Response } from 'express';
-import { eventBus } from '@server/market/eventBus';
-import { getHistory } from '@server/history/service';
-import { BackpressureController } from './backpressure';
+import type { Request, Response } from "express";
+import { eventBus } from "@server/market/eventBus";
+import { getHistory } from "@server/history/service";
+import { BackpressureController } from "./backpressure";
 import {
   recordSSEConnection,
   recordSSEDisconnection,
   recordSSEEvent,
   recordSSEBackpressure,
-} from '@server/metrics/registry';
-import { getMarketSource, getMarketReason } from '@server/market/bootstrap';
+} from "@server/metrics/registry";
+import { getMarketSource, getMarketReason } from "@server/market/bootstrap";
 
 export async function sseMarketStream(req: Request, res: Response) {
-  const symbolsParam = (req.query.symbols as string) || 'SPY';
-  const symbols = symbolsParam.split(',').map((s) => s.trim().toUpperCase());
-  const timeframe = (req.query.timeframe as string) || '1m'; // Allow client to specify timeframe
+  const symbolsParam = (req.query.symbols as string) || "SPY";
+  const symbols = symbolsParam.split(",").map((s) => s.trim().toUpperCase());
+  const timeframe = (req.query.timeframe as string) || "1m"; // Allow client to specify timeframe
   const sinceSeq = req.query.sinceSeq ? parseInt(req.query.sinceSeq as string, 10) : undefined;
 
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.setHeader('X-Market-Source', getMarketSource());
-  res.setHeader('X-Market-Reason', getMarketReason());
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.setHeader("X-Market-Source", getMarketSource());
+  res.setHeader("X-Market-Reason", getMarketReason());
   res.flushHeaders();
 
-  const userId = (req as any).userId || 'anonymous';
+  const userId = (req as any).userId || "anonymous";
   recordSSEConnection(userId);
 
   const bpc = new BackpressureController(res, 100);
@@ -34,7 +34,7 @@ export async function sseMarketStream(req: Request, res: Response) {
       const backfill = await getHistory({ symbol, timeframe: timeframe as any, sinceSeq });
       for (const bar of backfill) {
         bpc.write(
-          'bar',
+          "bar",
           {
             symbol: bar.symbol,
             timeframe: bar.timeframe,
@@ -43,7 +43,7 @@ export async function sseMarketStream(req: Request, res: Response) {
             bar_end: bar.bar_end,
             ohlcv: bar.ohlcv,
           },
-          String(bar.seq)
+          String(bar.seq),
         );
       }
     }
@@ -52,8 +52,8 @@ export async function sseMarketStream(req: Request, res: Response) {
   const listeners: Array<{ event: string; handler: (data: any) => void }> = [];
 
   const alertHandler = (signal: any) => {
-    recordSSEEvent('alert');
-    bpc.write('alert', {
+    recordSSEEvent("alert");
+    bpc.write("alert", {
       id: signal.id,
       symbol: signal.symbol,
       direction: signal.direction,
@@ -62,13 +62,13 @@ export async function sseMarketStream(req: Request, res: Response) {
     });
   };
 
-  eventBus.on('signal:new', alertHandler);
-  listeners.push({ event: 'signal:new', handler: alertHandler });
+  eventBus.on("signal:new", alertHandler);
+  listeners.push({ event: "signal:new", handler: alertHandler });
 
   for (const symbol of symbols) {
     const microbarHandler = (data: any) => {
-      recordSSEEvent('microbar');
-      bpc.write('microbar', {
+      recordSSEEvent("microbar");
+      bpc.write("microbar", {
         symbol: data.symbol,
         ts: data.ts,
         ohlcv: {
@@ -82,9 +82,9 @@ export async function sseMarketStream(req: Request, res: Response) {
     };
 
     const barHandler = (data: any) => {
-      recordSSEEvent('bar');
+      recordSSEEvent("bar");
       bpc.write(
-        'bar',
+        "bar",
         {
           symbol: data.symbol,
           timeframe: data.timeframe,
@@ -93,14 +93,14 @@ export async function sseMarketStream(req: Request, res: Response) {
           bar_end: data.bar_end,
           ohlcv: data.ohlcv,
         },
-        String(data.seq)
+        String(data.seq),
       );
     };
 
     // Tick streaming for real-time "tape" feel
     const tickHandler = (tick: any) => {
-      recordSSEEvent('tick');
-      bpc.write('tick', {
+      recordSSEEvent("tick");
+      bpc.write("tick", {
         symbol,
         ts: tick.ts,
         price: tick.price,
@@ -110,7 +110,7 @@ export async function sseMarketStream(req: Request, res: Response) {
     };
 
     const barEventKey = `bar:new:${symbol}:${timeframe}`;
-    
+
     eventBus.on(`microbar:${symbol}` as const, microbarHandler);
     eventBus.on(barEventKey as any, barHandler);
     eventBus.on(`tick:${symbol}` as const, tickHandler);
@@ -118,20 +118,20 @@ export async function sseMarketStream(req: Request, res: Response) {
     listeners.push(
       { event: `microbar:${symbol}`, handler: microbarHandler },
       { event: barEventKey, handler: barHandler },
-      { event: `tick:${symbol}`, handler: tickHandler }
+      { event: `tick:${symbol}`, handler: tickHandler },
     );
   }
 
   let lastDropped = 0;
 
   const heartbeat = setInterval(() => {
-    res.write(':\n\n');
+    res.write(":\n\n");
     const stats = bpc.getStats();
     recordSSEBackpressure(stats.buffered, stats.dropped, lastDropped);
     lastDropped = stats.dropped;
   }, 15000);
 
-  req.on('close', () => {
+  req.on("close", () => {
     clearInterval(heartbeat);
     listeners.forEach(({ event, handler }) => {
       eventBus.off(event as any, handler);

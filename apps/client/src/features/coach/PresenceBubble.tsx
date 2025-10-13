@@ -1,17 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
-import { RealtimeVoiceClient } from '../../voice/RealtimeVoiceClient';
-import { VoiceFallback } from './VoiceFallback';
-import { ensureiOSAudioUnlocked } from '../../voice/ios';
+import { useEffect, useRef, useState } from "react";
+import { RealtimeVoiceClient } from "../../voice/RealtimeVoiceClient";
+import { VoiceFallback } from "./VoiceFallback";
+import { ensureiOSAudioUnlocked } from "../../voice/ios";
+import { VOICE_COACH_SYSTEM } from "@spotlight/shared";
 
-type CoachState = 'listening' | 'thinking' | 'speaking' | 'idle' | 'muted';
+type CoachState = "listening" | "thinking" | "speaking" | "idle" | "muted";
 type ConnectionState =
-  | 'disconnected'
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting'
-  | 'error'
-  | 'offline';
-type PermissionState = 'pending' | 'granted' | 'denied';
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "error"
+  | "offline";
+type PermissionState = "pending" | "granted" | "denied";
 
 interface WaveProps {
   amplitude: number;
@@ -40,7 +41,7 @@ function WaveAnimation({ amplitude, state, reducedMotion, size = 200 }: WaveProp
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
@@ -59,7 +60,7 @@ function WaveAnimation({ amplitude, state, reducedMotion, size = 200 }: WaveProp
       const currentState = stateRef.current;
       const currentAmplitude = amplitudeRef.current;
 
-      if (currentState === 'idle') {
+      if (currentState === "idle") {
         const breathRadius = baseRadius + Math.sin(timeRef.current * 0.5) * (size * 0.025);
 
         // Outer glow
@@ -69,14 +70,14 @@ function WaveAnimation({ amplitude, state, reducedMotion, size = 200 }: WaveProp
           0,
           centerX,
           centerY,
-          breathRadius + (size * 0.2)
+          breathRadius + size * 0.2,
         );
-        outerGlow.addColorStop(0, 'rgba(59, 130, 246, 0.9)');
-        outerGlow.addColorStop(0.5, 'rgba(59, 130, 246, 0.5)');
-        outerGlow.addColorStop(1, 'rgba(59, 130, 246, 0)');
+        outerGlow.addColorStop(0, "rgba(59, 130, 246, 0.9)");
+        outerGlow.addColorStop(0.5, "rgba(59, 130, 246, 0.5)");
+        outerGlow.addColorStop(1, "rgba(59, 130, 246, 0)");
 
         ctx.beginPath();
-        ctx.arc(centerX, centerY, breathRadius + (size * 0.2), 0, Math.PI * 2);
+        ctx.arc(centerX, centerY, breathRadius + size * 0.2, 0, Math.PI * 2);
         ctx.fillStyle = outerGlow;
         ctx.fill();
 
@@ -87,17 +88,17 @@ function WaveAnimation({ amplitude, state, reducedMotion, size = 200 }: WaveProp
           0,
           centerX,
           centerY,
-          breathRadius
+          breathRadius,
         );
-        gradient.addColorStop(0, 'rgba(59, 130, 246, 1)');
-        gradient.addColorStop(0.7, 'rgba(59, 130, 246, 0.9)');
-        gradient.addColorStop(1, 'rgba(59, 130, 246, 0.4)');
+        gradient.addColorStop(0, "rgba(59, 130, 246, 1)");
+        gradient.addColorStop(0.7, "rgba(59, 130, 246, 0.9)");
+        gradient.addColorStop(1, "rgba(59, 130, 246, 0.4)");
 
         ctx.beginPath();
         ctx.arc(centerX, centerY, breathRadius, 0, Math.PI * 2);
         ctx.fillStyle = gradient;
         ctx.fill();
-      } else if (currentState === 'listening') {
+      } else if (currentState === "listening") {
         const points = 64;
         const variance = currentAmplitude * (size * 0.075);
 
@@ -123,31 +124,31 @@ function WaveAnimation({ amplitude, state, reducedMotion, size = 200 }: WaveProp
           0,
           centerX,
           centerY,
-          baseRadius + (size * 0.1)
+          baseRadius + size * 0.1,
         );
-        gradient.addColorStop(0, 'rgba(34, 197, 94, 0.8)');
-        gradient.addColorStop(1, 'rgba(34, 197, 94, 0)');
+        gradient.addColorStop(0, "rgba(34, 197, 94, 0.8)");
+        gradient.addColorStop(1, "rgba(34, 197, 94, 0)");
         ctx.fillStyle = gradient;
         ctx.fill();
-      } else if (currentState === 'thinking') {
+      } else if (currentState === "thinking") {
         const shimmerRadius = baseRadius + Math.sin(timeRef.current) * (size * 0.025);
         const gradient = ctx.createLinearGradient(
           centerX - shimmerRadius,
           centerY - shimmerRadius,
           centerX + shimmerRadius,
-          centerY + shimmerRadius
+          centerY + shimmerRadius,
         );
 
         const offset = (timeRef.current * 0.5) % 1;
-        gradient.addColorStop(Math.max(0, offset - 0.3), 'rgba(168, 85, 247, 0)');
-        gradient.addColorStop(offset, 'rgba(168, 85, 247, 0.8)');
-        gradient.addColorStop(Math.min(1, offset + 0.3), 'rgba(168, 85, 247, 0)');
+        gradient.addColorStop(Math.max(0, offset - 0.3), "rgba(168, 85, 247, 0)");
+        gradient.addColorStop(offset, "rgba(168, 85, 247, 0.8)");
+        gradient.addColorStop(Math.min(1, offset + 0.3), "rgba(168, 85, 247, 0)");
 
         ctx.beginPath();
         ctx.arc(centerX, centerY, shimmerRadius, 0, Math.PI * 2);
         ctx.fillStyle = gradient;
         ctx.fill();
-      } else if (currentState === 'speaking') {
+      } else if (currentState === "speaking") {
         const ripples = 3;
         for (let i = 0; i < ripples; i++) {
           const progress = (timeRef.current * 0.5 + i * 0.33) % 1;
@@ -160,7 +161,7 @@ function WaveAnimation({ amplitude, state, reducedMotion, size = 200 }: WaveProp
             rippleRadius - 5,
             centerX,
             centerY,
-            rippleRadius
+            rippleRadius,
           );
           gradient.addColorStop(0, `rgba(59, 130, 246, 0)`);
           gradient.addColorStop(1, `rgba(59, 130, 246, ${opacity * 0.4})`);
@@ -174,12 +175,12 @@ function WaveAnimation({ amplitude, state, reducedMotion, size = 200 }: WaveProp
 
         ctx.beginPath();
         ctx.arc(centerX, centerY, baseRadius, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(59, 130, 246, 0.6)';
+        ctx.fillStyle = "rgba(59, 130, 246, 0.6)";
         ctx.fill();
-      } else if (currentState === 'muted') {
+      } else if (currentState === "muted") {
         ctx.beginPath();
         ctx.arc(centerX, centerY, baseRadius, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(107, 114, 128, 0.3)';
+        ctx.fillStyle = "rgba(107, 114, 128, 0.3)";
         ctx.fill();
       }
 
@@ -211,16 +212,16 @@ interface PresenceBubbleProps {
 }
 
 export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
-  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
-  const [coachState, setCoachState] = useState<CoachState>('idle');
+  const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
+  const [coachState, setCoachState] = useState<CoachState>("idle");
   const [amplitude, setAmplitude] = useState(0);
   const [latency, setLatency] = useState(0);
   const [showTooltip, setShowTooltip] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
-  const [_permissionState, setPermissionState] = useState<PermissionState>('pending');
-  const [statusMessage, setStatusMessage] = useState<string>('');
+  const [_permissionState, setPermissionState] = useState<PermissionState>("pending");
+  const [statusMessage, setStatusMessage] = useState<string>("");
 
   const voiceClientRef = useRef<RealtimeVoiceClient | null>(null);
   const clickTimeoutRef = useRef<number | null>(null);
@@ -230,35 +231,35 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
   const statusTimerRef = useRef<number>();
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     setReducedMotion(mediaQuery.matches);
 
     const handleChange = (e: MediaQueryListEvent) => {
       setReducedMotion(e.matches);
     };
 
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
   }, []);
 
   useEffect(() => {
     const client = new RealtimeVoiceClient({
-      instructions: 'You are a world-class intraday trading coach. Your #1 job is to help the user trade THEIR plan on THEIR symbols in real time. Be concise (2 sentences or less unless asked). If no quality setup: say "No edge right now" and stop.',
-      voice: 'alloy',
+      instructions: VOICE_COACH_SYSTEM,
+      voice: "alloy",
       onConnected: () => {
-        setConnectionState('connected');
-        setCoachState('idle');
+        setConnectionState("connected");
+        setCoachState("idle");
       },
       onDisconnected: () => {
-        setConnectionState('disconnected');
-        setCoachState('idle');
+        setConnectionState("disconnected");
+        setCoachState("idle");
       },
       onError: (error) => {
-        console.error('Voice error:', error);
-        setConnectionState('error');
+        console.error("Voice error:", error);
+        setConnectionState("error");
       },
       onMuteChange: (isMuted) => {
-        setCoachState(isMuted ? 'muted' : 'listening');
+        setCoachState(isMuted ? "muted" : "listening");
       },
     });
     voiceClientRef.current = client;
@@ -291,16 +292,16 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
     }
 
     statusTimerRef.current = window.setTimeout(() => {
-      setStatusMessage('');
+      setStatusMessage("");
     }, duration);
   };
 
   const fetchEphemeralToken = async (): Promise<string> => {
-    const response = await fetch('/api/voice/ephemeral-token', {
-      method: 'POST',
-      credentials: 'include',
+    const response = await fetch("/api/voice/ephemeral-token", {
+      method: "POST",
+      credentials: "include",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
     });
 
@@ -332,10 +333,10 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
     // Double-click detection (within 300ms)
     if (clickCountRef.current === 2) {
       clickCountRef.current = 0;
-      
+
       // Double-click → Disconnect
-      if (connectionState === 'connected') {
-        showStatusMessage('Disconnecting...', 1000);
+      if (connectionState === "connected") {
+        showStatusMessage("Disconnecting...", 1000);
         await client.disconnect();
       }
       return;
@@ -347,35 +348,35 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
 
       // Single-click behavior
       if (
-        connectionState === 'disconnected' ||
-        connectionState === 'error' ||
-        connectionState === 'offline'
+        connectionState === "disconnected" ||
+        connectionState === "error" ||
+        connectionState === "offline"
       ) {
         // Idle/Error → Connect
         try {
-          showStatusMessage('Connecting...', 3000);
-          
+          showStatusMessage("Connecting...", 3000);
+
           // Unlock iOS audio on first user gesture (critical for Safari/iOS)
           await ensureiOSAudioUnlocked();
-          
+
           // Connect client (RealtimeVoiceClient handles token fetching internally)
           await client.connect();
 
-          showStatusMessage('Voice coach connected ✅', 2000);
+          showStatusMessage("Voice coach connected ✅", 2000);
         } catch (error) {
-          console.error('Failed to connect voice coach:', error);
-          console.error('Error details:', error instanceof Error ? error.message : String(error));
-          showStatusMessage('Connection failed. Please try again.', 3000);
+          console.error("Failed to connect voice coach:", error);
+          console.error("Error details:", error instanceof Error ? error.message : String(error));
+          showStatusMessage("Connection failed. Please try again.", 3000);
         }
-      } else if (connectionState === 'connected') {
+      } else if (connectionState === "connected") {
         // Connected → Toggle mute/unmute
         try {
           client.toggleMute();
-          const isMuted = client.getMutedState();
-          showStatusMessage(isMuted ? 'Muted 🔇' : 'Unmuted 🔊', 1500);
+          const isMuted = client.getMuteState();
+          showStatusMessage(isMuted ? "Muted 🔇" : "Unmuted 🔊", 1500);
         } catch (error) {
-          console.error('Failed to toggle mute:', error);
-          showStatusMessage('Failed to toggle mute', 2000);
+          console.error("Failed to toggle mute:", error);
+          showStatusMessage("Failed to toggle mute", 2000);
         }
       }
     }, 300);
@@ -387,7 +388,7 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
   };
 
   const handleSendMessage = async (message: string) => {
-    console.log('Text message:', message);
+    console.log("Text message:", message);
 
     // TODO: Implement text-based API endpoint for coach
     // For now, just log the message
@@ -399,47 +400,47 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 't' || e.key === 'T') {
+    if (e.key === "t" || e.key === "T") {
       e.preventDefault();
-      if (connectionState === 'connected' && voiceClientRef.current) {
+      if (connectionState === "connected" && voiceClientRef.current) {
         try {
           voiceClientRef.current.toggleMute();
-          const isMuted = voiceClientRef.current.getMutedState();
-          showStatusMessage(isMuted ? 'Muted 🔇' : 'Unmuted 🔊', 1500);
+          const isMuted = voiceClientRef.current.getMuteState();
+          showStatusMessage(isMuted ? "Muted 🔇" : "Unmuted 🔊", 1500);
         } catch (error) {
-          console.error('Failed to toggle mute:', error);
-          showStatusMessage('Failed to toggle mute', 2000);
+          console.error("Failed to toggle mute:", error);
+          showStatusMessage("Failed to toggle mute", 2000);
         }
       }
-    } else if (e.key === 'Escape') {
+    } else if (e.key === "Escape") {
       e.preventDefault();
       handleDisconnect();
     }
   };
 
   useEffect(() => {
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [connectionState]);
 
   const getStateLabel = () => {
-    if (connectionState === 'connecting') return 'Connecting...';
-    if (connectionState === 'reconnecting') return 'Reconnecting...';
-    if (connectionState === 'offline') return 'Offline — retrying…';
-    if (connectionState === 'error') return 'Error';
-    if (connectionState === 'disconnected') return 'Click to activate';
-    if (coachState === 'muted') return 'Muted';
+    if (connectionState === "connecting") return "Connecting...";
+    if (connectionState === "reconnecting") return "Reconnecting...";
+    if (connectionState === "offline") return "Offline — retrying…";
+    if (connectionState === "error") return "Error";
+    if (connectionState === "disconnected") return "Click to activate";
+    if (coachState === "muted") return "Muted";
     return coachState.charAt(0).toUpperCase() + coachState.slice(1);
   };
 
   const getLatencyColor = () => {
-    if (latency === 0) return 'text-gray-400';
-    if (latency < 500) return 'text-green-400';
-    if (latency < 1500) return 'text-amber-400';
-    return 'text-red-400';
+    if (latency === 0) return "text-gray-400";
+    if (latency < 500) return "text-green-400";
+    if (latency < 1500) return "text-amber-400";
+    return "text-red-400";
   };
 
-  const showThinkingOverlay = latency > 1500 && coachState === 'thinking' && !compact;
+  const showThinkingOverlay = latency > 1500 && coachState === "thinking" && !compact;
   const bubbleSize = compact ? 36 : 200;
 
   if (showFallback) {
@@ -453,11 +454,16 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
           onClick={handleBubbleClick}
           className="relative w-9 h-9 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-transform hover:scale-105 touch-manipulation"
           aria-label={getStateLabel()}
-          aria-pressed={connectionState === 'connected'}
+          aria-pressed={connectionState === "connected"}
           role="button"
-          style={{ WebkitTapHighlightColor: 'transparent' }}
+          style={{ WebkitTapHighlightColor: "transparent" }}
         >
-          <WaveAnimation amplitude={amplitude} state={coachState} reducedMotion={reducedMotion} size={bubbleSize} />
+          <WaveAnimation
+            amplitude={amplitude}
+            state={coachState}
+            reducedMotion={reducedMotion}
+            size={bubbleSize}
+          />
         </button>
 
         {statusMessage && (
@@ -476,13 +482,18 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
           onClick={handleBubbleClick}
           className="relative w-[200px] h-[200px] rounded-full focus:outline-none focus:ring-4 focus:ring-blue-500/50 transition-transform hover:scale-105 touch-manipulation"
           aria-label={getStateLabel()}
-          aria-pressed={connectionState === 'connected'}
+          aria-pressed={connectionState === "connected"}
           role="button"
-          style={{ WebkitTapHighlightColor: 'transparent' }}
+          style={{ WebkitTapHighlightColor: "transparent" }}
         >
-          <WaveAnimation amplitude={amplitude} state={coachState} reducedMotion={reducedMotion} size={bubbleSize} />
+          <WaveAnimation
+            amplitude={amplitude}
+            state={coachState}
+            reducedMotion={reducedMotion}
+            size={bubbleSize}
+          />
 
-          {connectionState === 'connected' && (
+          {connectionState === "connected" && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -522,7 +533,7 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
             {getStateLabel()}
           </div>
 
-          {connectionState === 'connected' && latency > 0 && (
+          {connectionState === "connected" && latency > 0 && (
             <div className={`text-xs font-mono ${getLatencyColor()}`}>{latency}ms</div>
           )}
 

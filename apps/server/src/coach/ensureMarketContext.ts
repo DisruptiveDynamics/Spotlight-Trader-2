@@ -1,5 +1,5 @@
-import { isMarketQuestion, extractSymbol, extractTimeframe } from './marketClassifier.js';
-import { toolHandlers } from '../copilot/tools/handlers.js';
+import { isMarketQuestion, extractSymbol, extractTimeframe } from "./marketClassifier.js";
+import { toolHandlers } from "../copilot/tools/handlers.js";
 
 export interface SnapshotContext {
   symbol: string;
@@ -8,15 +8,15 @@ export interface SnapshotContext {
 }
 
 export async function ensureMarketContext(
-  userId: string, 
-  userUtterance: string
+  userId: string,
+  userUtterance: string,
 ): Promise<SnapshotContext | null> {
   if (!isMarketQuestion(userUtterance)) {
     return null;
   }
 
   // Extract symbol and timeframe from user question
-  const symbol = extractSymbol(userUtterance) ?? 'SPY';
+  const symbol = extractSymbol(userUtterance) ?? "SPY";
   const timeframe = extractTimeframe(userUtterance);
 
   try {
@@ -24,7 +24,7 @@ export async function ensureMarketContext(
     const snapshot = await toolHandlers.get_chart_snapshot({
       symbol,
       timeframe,
-      barCount: 50
+      barCount: 50,
     });
 
     // Build context payload
@@ -36,16 +36,16 @@ export async function ensureMarketContext(
       session: snapshot.session,
       volatility: snapshot.volatility,
       regime: snapshot.regime,
-      lastUpdate: Date.now()
+      lastUpdate: Date.now(),
     };
 
     return {
       symbol,
       timeframe,
-      snapshotJSON: JSON.stringify(payload)
+      snapshotJSON: JSON.stringify(payload),
     };
   } catch (error) {
-    console.error('[ensureMarketContext] Failed to fetch snapshot:', error);
+    console.error("[ensureMarketContext] Failed to fetch snapshot:", error);
     return null;
   }
 }

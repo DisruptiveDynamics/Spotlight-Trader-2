@@ -3,8 +3,8 @@
  * Protects admin-only routes
  */
 
-import { Request, Response, NextFunction } from 'express';
-import { validateEnv } from '@shared/env';
+import { Request, Response, NextFunction } from "express";
+import { validateEnv } from "@shared/env";
 
 const env = validateEnv(process.env);
 
@@ -24,18 +24,18 @@ export function requireAdmin(req: AuthenticatedRequest, res: Response, next: Nex
 
   if (!adminEmail) {
     return res.status(500).json({
-      error: 'Admin access not configured. Set ADMIN_EMAIL environment variable.',
+      error: "Admin access not configured. Set ADMIN_EMAIL environment variable.",
     });
   }
 
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: "Authentication required" });
   }
 
   if (req.user.email !== adminEmail) {
     return res.status(403).json({
-      error: 'Admin access required',
-      message: 'You do not have permission to access this resource',
+      error: "Admin access required",
+      message: "You do not have permission to access this resource",
     });
   }
 

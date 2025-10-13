@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 
 /**
  * Splash screen with animated lightbulb mark
@@ -37,7 +37,7 @@ export function Splash({ isVisible }: { isVisible: boolean }) {
               strokeWidth="1.5"
               strokeLinecap="round"
               strokeLinejoin="round"
-              style={{ animationDelay: '0.3s' }}
+              style={{ animationDelay: "0.3s" }}
             />
             {/* Base threads */}
             <line
@@ -49,7 +49,7 @@ export function Splash({ isVisible }: { isVisible: boolean }) {
               stroke="var(--brand-primary)"
               strokeWidth="1.5"
               strokeLinecap="round"
-              style={{ animationDelay: '0.5s' }}
+              style={{ animationDelay: "0.5s" }}
             />
             <line
               className="bulb-path"
@@ -60,7 +60,7 @@ export function Splash({ isVisible }: { isVisible: boolean }) {
               stroke="var(--brand-primary)"
               strokeWidth="1.5"
               strokeLinecap="round"
-              style={{ animationDelay: '0.6s' }}
+              style={{ animationDelay: "0.6s" }}
             />
             {/* Glow rays */}
             <path

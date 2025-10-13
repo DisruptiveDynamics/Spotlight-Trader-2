@@ -3,7 +3,7 @@
  * Lightweight rolling FPS measurement with React hook
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
 interface FpsState {
   current: number;
@@ -108,14 +108,14 @@ export function useFPS(): FpsState {
  */
 export async function reportFPS(fps: number) {
   try {
-    await fetch('/api/metrics/fps', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    await fetch("/api/metrics/fps", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fps }),
-      credentials: 'include',
+      credentials: "include",
     });
   } catch (error) {
-    console.error('Failed to report FPS:', error);
+    console.error("Failed to report FPS:", error);
   }
 }
 

@@ -1,11 +1,13 @@
 # Voice Assistant Optimizations - Implementation Summary
 
 ## Overview
+
 Complete implementation of 5 critical voice assistant optimizations for production-grade performance, Safari/iOS compatibility, and professional audio quality.
 
 ## Implemented Optimizations
 
 ### 1. Enhanced Barge-In with Gain Ducking ✅
+
 **File:** `apps/client/src/services/VoiceCoach.ts`
 
 - Instant audio interruption with zero clicks/pops
@@ -14,29 +16,32 @@ Complete implementation of 5 critical voice assistant optimizations for producti
 - Smooth transition back to listening state
 
 **Key Code:**
+
 ```typescript
 export function handleBargeIn(
   realtimeWs: WebSocket | null,
   playbackNode: AudioBufferSourceNode | null,
-  gainNode: GainNode | null
+  gainNode: GainNode | null,
 ): void {
   // 1. Cancel OpenAI response
   if (realtimeWs?.readyState === WebSocket.OPEN) {
-    realtimeWs.send(JSON.stringify({ type: 'response.cancel' }));
+    realtimeWs.send(JSON.stringify({ type: "response.cancel" }));
   }
-  
+
   // 2. Duck gain to 0 instantly
   if (gainNode?.gain && playbackNode?.context) {
     gainNode.gain.setValueAtTime(0, playbackNode.context.currentTime);
   }
-  
+
   // 3. Stop playback
   playbackNode?.stop();
 }
 ```
 
 ### 2. AudioWorklet Migration (Replaced ScriptProcessorNode) ✅
-**Files:** 
+
+**Files:**
+
 - `apps/client/src/services/AudioCapture.ts`
 - `apps/client/public/worklets/micProcessor.js`
 
@@ -46,12 +51,14 @@ export function handleBargeIn(
 - Proper echo cancellation, noise suppression, AGC
 
 **Key Features:**
+
 - Float32 → PCM16 conversion in worklet thread
 - Transferable buffers for zero-copy messaging
 - Mono channel at 16kHz sample rate
 - Persistent across tab visibility changes
 
 ### 3. Audio Frame Batching & Backpressure Control ✅
+
 **File:** `apps/client/src/services/VoiceCoach.ts`
 
 - Batches 20-40ms audio frames to reduce protocol overhead
@@ -60,16 +67,17 @@ export function handleBargeIn(
 - Prevents WebSocket flooding
 
 **Key Code:**
+
 ```typescript
 export class AudioBatcher {
   private buffer: Int16Array[] = [];
   private batchDurationMs: number;
-  
+
   add(chunk: Int16Array): Int16Array | null {
     this.buffer.push(chunk);
     const currentSamples = this.buffer.reduce((sum, c) => sum + c.length, 0);
     const targetSamples = (this.batchDurationMs / 1000) * this.sampleRate;
-    
+
     if (currentSamples >= targetSamples) {
       return this.flush(); // Concatenate and return batched frame
     }
@@ -79,6 +87,7 @@ export class AudioBatcher {
 ```
 
 ### 4. Idle Detection & Auto-Sleep ✅
+
 **File:** `apps/client/src/services/IdleDetector.ts`
 
 - Monitors user activity (mouse, keyboard, touch, scroll)
@@ -87,11 +96,13 @@ export class AudioBatcher {
 - Graceful wake on user interaction
 
 **Benefits:**
+
 - ~$0.10-0.30/hour savings on idle sessions
 - Reduced server load
 - Better battery life on mobile
 
 ### 5. Safari/iOS AudioContext Unlock ✅
+
 **File:** `apps/client/src/services/AudioManager.ts`
 
 - Gesture-based AudioContext unlock for iOS Safari
@@ -100,11 +111,13 @@ export class AudioBatcher {
 - Proper suspend/resume state management
 
 **Key Features:**
+
 - Requires user gesture (click/touch) for iOS compliance
 - Handles locked/suspended states
 - Fallback for Web Audio API unavailability
 
 ### 6. VAD Pause on Tab Hidden ✅
+
 **File:** `apps/client/src/voice/EnhancedVoiceClient.v2.ts`
 
 - Pauses Voice Activity Detection when tab hidden
@@ -113,10 +126,11 @@ export class AudioBatcher {
 - Saves CPU and battery on mobile
 
 **Implementation:**
+
 ```typescript
-document.addEventListener('visibilitychange', () => {
+document.addEventListener("visibilitychange", () => {
   this.isBackgroundTab = document.hidden;
-  
+
   if (this.isBackgroundTab) {
     this.stopAmplitudeMonitoring();
     this.vad.stop(); // Pause VAD
@@ -132,6 +146,7 @@ document.addEventListener('visibilitychange', () => {
 **File:** `apps/client/src/voice/EnhancedVoiceClient.v2.ts`
 
 Complete rewrite integrating all optimizations:
+
 - AudioCapture service with AudioWorklet
 - AudioBatcher for frame coalescing
 - IdleDetector for auto-sleep
@@ -162,6 +177,7 @@ Complete rewrite integrating all optimizations:
 ## Performance Metrics
 
 ### Before Optimizations:
+
 - Barge-in latency: ~200-500ms (gain fade + buffer clear)
 - Audio capture: ScriptProcessorNode with 50-100ms latency
 - WebSocket: Unbounded queue, potential flooding
@@ -169,6 +185,7 @@ Complete rewrite integrating all optimizations:
 - Idle sessions: $0.30/hour token waste
 
 ### After Optimizations:
+
 - Barge-in latency: <50ms (instant gain duck)
 - Audio capture: AudioWorklet with 10-20ms latency
 - WebSocket: Batched frames, max 320ms queue
@@ -196,16 +213,20 @@ Complete rewrite integrating all optimizations:
 ## Files Modified/Created
 
 ### New Services:
+
 - `apps/client/src/services/AudioManager.ts`
 - `apps/client/src/services/AudioCapture.ts`
 - `apps/client/src/services/VoiceCoach.ts`
 - `apps/client/src/services/IdleDetector.ts`
 
 ### New Client:
+
 - `apps/client/src/voice/EnhancedVoiceClient.v2.ts`
 
 ### Worklet:
+
 - `apps/client/public/worklets/micProcessor.js` (already existed)
 
 ### Documentation:
+
 - `VOICE_OPTIMIZATIONS.md` (this file)

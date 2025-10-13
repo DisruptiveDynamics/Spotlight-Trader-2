@@ -1,6 +1,6 @@
-import { toZonedTime } from 'date-fns-tz';
+import { toZonedTime } from "date-fns-tz";
 
-const ET = 'America/New_York';
+const ET = "America/New_York";
 
 interface MarketHours {
   isOpen: boolean;
@@ -36,10 +36,10 @@ export function getMarketHours(timestamp: number = Date.now()): MarketHours {
 
   // Regular trading hours (9:30 AM - 4:00 PM ET)
   const isOpen = timeInMinutes >= marketOpen && timeInMinutes < marketClose;
-  
+
   // Pre-market (4:00 AM - 9:30 AM ET)
   const isPreMarket = timeInMinutes >= preMarketStart && timeInMinutes < marketOpen;
-  
+
   // After hours (4:00 PM - 8:00 PM ET)
   const isAfterHours = timeInMinutes >= marketClose && timeInMinutes < afterHoursEnd;
 

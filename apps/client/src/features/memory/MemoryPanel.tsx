@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
-type MemoryKind = 'playbook' | 'glossary' | 'postmortem';
+type MemoryKind = "playbook" | "glossary" | "postmortem";
 
 interface Memory {
   id: string;
@@ -19,18 +19,18 @@ export function MemoryPanel() {
   const [searchResults, setSearchResults] = useState<MemoryWithScore[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [newMemory, setNewMemory] = useState<{
     kind: MemoryKind;
     text: string;
     tags: string;
   }>({
-    kind: 'playbook',
-    text: '',
-    tags: '',
+    kind: "playbook",
+    text: "",
+    tags: "",
   });
-  const [selectedKind, setSelectedKind] = useState<MemoryKind | 'all'>('all');
-  const [selectedTag, setSelectedTag] = useState<string>('');
+  const [selectedKind, setSelectedKind] = useState<MemoryKind | "all">("all");
+  const [selectedTag, setSelectedTag] = useState<string>("");
 
   useEffect(() => {
     fetchMemories();
@@ -39,15 +39,15 @@ export function MemoryPanel() {
   const fetchMemories = async () => {
     try {
       const params = new URLSearchParams();
-      if (selectedKind !== 'all') params.append('kind', selectedKind);
-      if (selectedTag) params.append('tag', selectedTag);
+      if (selectedKind !== "all") params.append("kind", selectedKind);
+      if (selectedTag) params.append("tag", selectedTag);
 
       const queryString = params.toString();
-      const response = await fetch(`/api/memory${queryString ? `?${queryString}` : ''}`);
+      const response = await fetch(`/api/memory${queryString ? `?${queryString}` : ""}`);
       const data = await response.json();
       setMemories(data.memories || []);
     } catch (error) {
-      console.error('Failed to fetch memories:', error);
+      console.error("Failed to fetch memories:", error);
     }
   };
 
@@ -60,7 +60,7 @@ export function MemoryPanel() {
       const data = await response.json();
       setSearchResults(data.memories || []);
     } catch (error) {
-      console.error('Failed to search memories:', error);
+      console.error("Failed to search memories:", error);
     } finally {
       setIsSearching(false);
     }
@@ -69,13 +69,13 @@ export function MemoryPanel() {
   const handleSaveMemory = async () => {
     try {
       const tags = newMemory.tags
-        .split(',')
+        .split(",")
         .map((t) => t.trim())
         .filter((t) => t.length > 0);
 
-      await fetch('/api/memory', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/memory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           kind: newMemory.kind,
           text: newMemory.text,
@@ -84,29 +84,29 @@ export function MemoryPanel() {
       });
 
       setIsModalOpen(false);
-      setNewMemory({ kind: 'playbook', text: '', tags: '' });
+      setNewMemory({ kind: "playbook", text: "", tags: "" });
       fetchMemories();
-      showToast('Memory saved successfully');
+      showToast("Memory saved successfully");
     } catch (error) {
-      console.error('Failed to save memory:', error);
-      showToast('Failed to save memory', 'error');
+      console.error("Failed to save memory:", error);
+      showToast("Failed to save memory", "error");
     }
   };
 
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+  const showToast = (message: string, type: "success" | "error" = "success") => {
     console.log(`[${type.toUpperCase()}] ${message}`);
   };
 
   const getKindBadgeColor = (kind: MemoryKind) => {
     switch (kind) {
-      case 'playbook':
-        return 'bg-blue-100 text-blue-800';
-      case 'glossary':
-        return 'bg-purple-100 text-purple-800';
-      case 'postmortem':
-        return 'bg-orange-100 text-orange-800';
+      case "playbook":
+        return "bg-blue-100 text-blue-800";
+      case "glossary":
+        return "bg-purple-100 text-purple-800";
+      case "postmortem":
+        return "bg-orange-100 text-orange-800";
       default:
-        return 'bg-gray-100 text-gray-800';
+        return "bg-gray-100 text-gray-800";
     }
   };
 
@@ -130,7 +130,7 @@ export function MemoryPanel() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
             placeholder="Search memories..."
             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
           />
@@ -140,12 +140,12 @@ export function MemoryPanel() {
           disabled={isSearching}
           className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 disabled:opacity-50"
         >
-          {isSearching ? 'Searching...' : 'Search'}
+          {isSearching ? "Searching..." : "Search"}
         </button>
         {searchQuery && (
           <button
             onClick={() => {
-              setSearchQuery('');
+              setSearchQuery("");
               setSearchResults([]);
             }}
             className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-500"
@@ -156,14 +156,14 @@ export function MemoryPanel() {
       </div>
 
       <div className="mb-4 flex gap-2">
-        {(['all', 'playbook', 'glossary', 'postmortem'] as const).map((kind) => (
+        {(["all", "playbook", "glossary", "postmortem"] as const).map((kind) => (
           <button
             key={kind}
             onClick={() => setSelectedKind(kind)}
             className={`px-3 py-1 text-sm rounded ${
               selectedKind === kind
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                ? "bg-blue-500 text-white"
+                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
             }`}
           >
             {kind.charAt(0).toUpperCase() + kind.slice(1)}
@@ -184,7 +184,7 @@ export function MemoryPanel() {
       <div className="flex-1 overflow-y-auto space-y-3">
         {displayMemories.length === 0 ? (
           <p className="text-gray-400 text-sm text-center mt-8">
-            {searchQuery.trim() ? 'No memories found' : 'No memories stored yet'}
+            {searchQuery.trim() ? "No memories found" : "No memories stored yet"}
           </p>
         ) : (
           displayMemories.map((memory) => (
@@ -193,9 +193,9 @@ export function MemoryPanel() {
                 <span className={`px-2 py-1 text-xs rounded ${getKindBadgeColor(memory.kind)}`}>
                   {memory.kind}
                 </span>
-                {'score' in memory && (
+                {"score" in memory && (
                   <span className="text-xs text-gray-400">
-                    Score: {typeof memory.score === 'number' ? memory.score.toFixed(3) : ''}
+                    Score: {typeof memory.score === "number" ? memory.score.toFixed(3) : ""}
                   </span>
                 )}
               </div>
@@ -215,8 +215,8 @@ export function MemoryPanel() {
                 )}
                 <button
                   onClick={async () => {
-                    if (confirm('Delete this memory?')) {
-                      await fetch(`/api/memory/${memory.id}`, { method: 'DELETE' });
+                    if (confirm("Delete this memory?")) {
+                      await fetch(`/api/memory/${memory.id}`, { method: "DELETE" });
                       fetchMemories();
                     }
                   }}
@@ -279,7 +279,7 @@ export function MemoryPanel() {
               <button
                 onClick={() => {
                   setIsModalOpen(false);
-                  setNewMemory({ kind: 'playbook', text: '', tags: '' });
+                  setNewMemory({ kind: "playbook", text: "", tags: "" });
                 }}
                 className="px-4 py-2 text-gray-300 hover:text-white"
               >

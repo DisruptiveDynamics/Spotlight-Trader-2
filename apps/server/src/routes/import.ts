@@ -1,9 +1,9 @@
-import { Router } from 'express';
-import { nanoid } from 'nanoid';
-import { db } from '../db/index.js';
-import { userRules, userRuleVersions, coachMemories, coachProfiles } from '../db/schema.js';
-import { requireUser, AuthRequest } from '../middleware/requireUser.js';
-import { z } from 'zod';
+import { Router } from "express";
+import { nanoid } from "nanoid";
+import { db } from "../db/index.js";
+import { userRules, userRuleVersions, coachMemories, coachProfiles } from "../db/schema.js";
+import { requireUser, AuthRequest } from "../middleware/requireUser.js";
+import { z } from "zod";
 
 const router: Router = Router();
 
@@ -21,9 +21,9 @@ const importSchema = z.object({
           version: z.string(),
           doc: z.any(),
           createdAt: z.string().optional(),
-        })
+        }),
       ),
-    })
+    }),
   ),
   memories: z.array(
     z.object({
@@ -32,7 +32,7 @@ const importSchema = z.object({
       text: z.string(),
       tags: z.array(z.string()),
       createdAt: z.string().optional(),
-    })
+    }),
   ),
   coachProfile: z
     .object({
@@ -45,7 +45,7 @@ const importSchema = z.object({
     .nullable(),
 });
 
-router.post('/all', requireUser, async (req: AuthRequest, res) => {
+router.post("/all", requireUser, async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.userId;
     const data = importSchema.parse(req.body);
@@ -101,8 +101,8 @@ router.post('/all', requireUser, async (req: AuthRequest, res) => {
       },
     });
   } catch (error) {
-    console.error('Import failed:', error);
-    res.status(400).json({ error: 'Failed to import data' });
+    console.error("Import failed:", error);
+    res.status(400).json({ error: "Failed to import data" });
   }
 });
 

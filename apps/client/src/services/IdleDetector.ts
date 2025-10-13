@@ -20,11 +20,11 @@ export class IdleDetector {
     this.isActive = true;
 
     // Listen to user activity events
-    window.addEventListener('mousemove', this.resetIdle);
-    window.addEventListener('mousedown', this.resetIdle);
-    window.addEventListener('keydown', this.resetIdle);
-    window.addEventListener('touchstart', this.resetIdle);
-    window.addEventListener('scroll', this.resetIdle);
+    window.addEventListener("mousemove", this.resetIdle);
+    window.addEventListener("mousedown", this.resetIdle);
+    window.addEventListener("keydown", this.resetIdle);
+    window.addEventListener("touchstart", this.resetIdle);
+    window.addEventListener("scroll", this.resetIdle);
 
     // Start idle timer
     this.resetIdle();
@@ -40,11 +40,11 @@ export class IdleDetector {
     }
 
     // Remove event listeners
-    window.removeEventListener('mousemove', this.resetIdle);
-    window.removeEventListener('mousedown', this.resetIdle);
-    window.removeEventListener('keydown', this.resetIdle);
-    window.removeEventListener('touchstart', this.resetIdle);
-    window.removeEventListener('scroll', this.resetIdle);
+    window.removeEventListener("mousemove", this.resetIdle);
+    window.removeEventListener("mousedown", this.resetIdle);
+    window.removeEventListener("keydown", this.resetIdle);
+    window.removeEventListener("touchstart", this.resetIdle);
+    window.removeEventListener("scroll", this.resetIdle);
 
     this.onIdleCallback = null;
   }
@@ -60,7 +60,7 @@ export class IdleDetector {
     // Start new idle countdown
     this.idleTimer = window.setTimeout(() => {
       if (this.onIdleCallback) {
-        console.log('🔕 User idle - Voice Coach entering sleep mode');
+        console.log("🔕 User idle - Voice Coach entering sleep mode");
         this.onIdleCallback();
       }
     }, this.idleTimeoutMs);
@@ -71,7 +71,7 @@ export class IdleDetector {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
     }
-    
+
     if (this.onIdleCallback) {
       this.onIdleCallback();
     }

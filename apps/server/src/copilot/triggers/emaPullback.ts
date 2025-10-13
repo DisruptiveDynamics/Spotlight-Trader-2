@@ -1,12 +1,12 @@
-import { BaseTrigger, TriggerCondition, TriggerEvent } from './base';
-import { emaBatch, type Candle } from '@shared/indicators';
-import { nanoid } from 'nanoid';
+import { BaseTrigger, TriggerCondition, TriggerEvent } from "./base";
+import { emaBatch, type Candle } from "@shared/indicators";
+import { nanoid } from "nanoid";
 
 export class EmaPullbackTrigger extends BaseTrigger {
   private bars: Candle[] = [];
 
   constructor(symbol: string, timeframe: string) {
-    super(symbol, timeframe, 'ema_pullback');
+    super(symbol, timeframe, "ema_pullback");
     this.requiredConfirmations = 2;
     this.cooldownMs = 300000; // 5 min cooldown
   }
@@ -17,27 +17,28 @@ export class EmaPullbackTrigger extends BaseTrigger {
 
   checkConditions(): TriggerCondition[] {
     if (this.bars.length < 25) {
-      return [{ name: 'insufficient_data', evaluate: () => false }];
+      return [{ name: "insufficient_data", evaluate: () => false }];
     }
 
     const ema9 = emaBatch(this.bars, 9);
     const ema20 = emaBatch(this.bars, 20);
-    
+
     const recentBars = this.bars.slice(-5);
     const recentEma9 = ema9.slice(-5);
     const recentEma20 = ema20.slice(-5);
 
     const condition1: TriggerCondition = {
-      name: 'uptrend_9_above_20',
+      name: "uptrend_9_above_20",
       evaluate: () => {
-        if (recentEma9.some((v: number) => isNaN(v)) || recentEma20.some((v: number) => isNaN(v))) return false;
-        
+        if (recentEma9.some((v: number) => isNaN(v)) || recentEma20.some((v: number) => isNaN(v)))
+          return false;
+
         return recentEma9.every((v9: number, i: number) => v9 > (recentEma20[i] || 0));
       },
     };
 
     const condition2: TriggerCondition = {
-      name: 'pullback_to_9ema',
+      name: "pullback_to_9ema",
       evaluate: () => {
         const low1 = recentBars[3]?.ohlcv.l || 0;
         const low2 = recentBars[4]?.ohlcv.l || 0;
@@ -52,7 +53,7 @@ export class EmaPullbackTrigger extends BaseTrigger {
     };
 
     const condition3: TriggerCondition = {
-      name: 'shrinking_volume',
+      name: "shrinking_volume",
       evaluate: () => {
         const vol0 = recentBars[0]?.ohlcv.v || 0;
         const vol1 = recentBars[1]?.ohlcv.v || 0;

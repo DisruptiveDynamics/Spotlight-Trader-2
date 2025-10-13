@@ -1,24 +1,24 @@
-import { Router } from 'express';
-import { z } from 'zod';
+import { Router } from "express";
+import { z } from "zod";
 import {
   saveMemory,
   listMemories,
   retrieveTopK,
   deleteMemory,
   type MemoryKind,
-} from '../memory/store.js';
-import { AuthRequest } from '../middleware/requireUser.js';
+} from "../memory/store.js";
+import { AuthRequest } from "../middleware/requireUser.js";
 
 const router: Router = Router();
 
 const SaveMemorySchema = z.object({
-  kind: z.enum(['playbook', 'glossary', 'postmortem']),
+  kind: z.enum(["playbook", "glossary", "postmortem"]),
   text: z.string(),
   tags: z.array(z.string()),
 });
 
 const ListMemoriesSchema = z.object({
-  kind: z.enum(['playbook', 'glossary', 'postmortem']).optional(),
+  kind: z.enum(["playbook", "glossary", "postmortem"]).optional(),
   tag: z.string().optional(),
   limit: z.coerce.number().optional(),
 });
@@ -28,7 +28,7 @@ const SearchMemoriesSchema = z.object({
   k: z.coerce.number().optional(),
 });
 
-router.post('/', async (req: AuthRequest, res) => {
+router.post("/", async (req: AuthRequest, res) => {
   try {
     const parsed = SaveMemorySchema.parse(req.body);
     const userId = req.user!.userId;
@@ -40,12 +40,12 @@ router.post('/', async (req: AuthRequest, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Failed to save memory:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Failed to save memory:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-router.get('/', async (req: AuthRequest, res) => {
+router.get("/", async (req: AuthRequest, res) => {
   try {
     const parsed = ListMemoriesSchema.parse(req.query);
     const userId = req.user!.userId;
@@ -62,12 +62,12 @@ router.get('/', async (req: AuthRequest, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Failed to list memories:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Failed to list memories:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-router.get('/search', async (req: AuthRequest, res) => {
+router.get("/search", async (req: AuthRequest, res) => {
   try {
     const parsed = SearchMemoriesSchema.parse(req.query);
     const userId = req.user!.userId;
@@ -80,12 +80,12 @@ router.get('/search', async (req: AuthRequest, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Failed to search memories:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Failed to search memories:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-router.delete('/:id', async (req: AuthRequest, res) => {
+router.delete("/:id", async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.userId;
     const { id } = req.params;
@@ -94,8 +94,8 @@ router.delete('/:id', async (req: AuthRequest, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Failed to delete memory:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Failed to delete memory:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

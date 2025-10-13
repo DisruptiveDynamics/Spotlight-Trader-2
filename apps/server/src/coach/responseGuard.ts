@@ -1,4 +1,5 @@
-const NUMERIC_MARKET_REGEX = /\b(vwap|price|last|close|open|high|low|volume|atr|rsi|entry|stop|target|trading at)\b/i;
+const NUMERIC_MARKET_REGEX =
+  /\b(vwap|price|last|close|open|high|low|volume|atr|rsi|entry|stop|target|trading at)\b/i;
 const HAS_NUMBER = /-?\d+(\.\d+)?/;
 
 export function appearsToClaimMarketNumber(text: string): boolean {
@@ -14,7 +15,7 @@ export class ToolCallTracker {
   }
 
   hasRecentToolCall(): boolean {
-    return (Date.now() - this.lastToolCallAt) <= this.FRESHNESS_WINDOW_MS;
+    return Date.now() - this.lastToolCallAt <= this.FRESHNESS_WINDOW_MS;
   }
 
   shouldBlockResponse(responseText: string): boolean {

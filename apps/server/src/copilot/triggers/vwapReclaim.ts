@@ -1,13 +1,13 @@
-import { BaseTrigger, TriggerCondition, TriggerEvent } from './base';
-import { vwapSessionBatch, type Candle } from '@shared/indicators';
-import { nanoid } from 'nanoid';
+import { BaseTrigger, TriggerCondition, TriggerEvent } from "./base";
+import { vwapSessionBatch, type Candle } from "@shared/indicators";
+import { nanoid } from "nanoid";
 
 export class VwapReclaimTrigger extends BaseTrigger {
   private sessionStartMs: number;
   private bars: Candle[] = [];
 
   constructor(symbol: string, timeframe: string, sessionStartMs: number) {
-    super(symbol, timeframe, 'vwap_reclaim');
+    super(symbol, timeframe, "vwap_reclaim");
     this.sessionStartMs = sessionStartMs;
     this.requiredConfirmations = 2;
     this.cooldownMs = 300000; // 5 min cooldown
@@ -19,7 +19,7 @@ export class VwapReclaimTrigger extends BaseTrigger {
 
   checkConditions(): TriggerCondition[] {
     if (this.bars.length < 3) {
-      return [{ name: 'insufficient_data', evaluate: () => false }];
+      return [{ name: "insufficient_data", evaluate: () => false }];
     }
 
     const vwapValues = vwapSessionBatch(this.bars, this.sessionStartMs);
@@ -27,10 +27,10 @@ export class VwapReclaimTrigger extends BaseTrigger {
     const recentVwap = vwapValues.slice(-3);
 
     const condition1: TriggerCondition = {
-      name: 'two_closes_above_vwap',
+      name: "two_closes_above_vwap",
       evaluate: () => {
         if (recentVwap.some((v: number) => isNaN(v))) return false;
-        
+
         const close1 = recentBars[1]?.ohlcv.c || 0;
         const close2 = recentBars[2]?.ohlcv.c || 0;
         const vwap1 = recentVwap[1] || 0;
@@ -41,17 +41,17 @@ export class VwapReclaimTrigger extends BaseTrigger {
     };
 
     const condition2: TriggerCondition = {
-      name: 'volume_confirmation',
+      name: "volume_confirmation",
       evaluate: () => {
         const avgVol = recentBars.slice(0, -1).reduce((sum, b) => sum + (b?.ohlcv.v || 0), 0) / 2;
         const lastVol = recentBars[2]?.ohlcv.v || 0;
-        
+
         return lastVol > avgVol * 1.2;
       },
     };
 
     const condition3: TriggerCondition = {
-      name: 'price_structure',
+      name: "price_structure",
       evaluate: () => {
         const low0 = recentBars[0]?.ohlcv.l || 0;
         const low1 = recentBars[1]?.ohlcv.l || 0;
@@ -90,7 +90,7 @@ export class VwapRejectTrigger extends BaseTrigger {
   private bars: Candle[] = [];
 
   constructor(symbol: string, timeframe: string, sessionStartMs: number) {
-    super(symbol, timeframe, 'vwap_reject');
+    super(symbol, timeframe, "vwap_reject");
     this.sessionStartMs = sessionStartMs;
     this.requiredConfirmations = 2;
     this.cooldownMs = 300000; // 5 min cooldown
@@ -102,7 +102,7 @@ export class VwapRejectTrigger extends BaseTrigger {
 
   checkConditions(): TriggerCondition[] {
     if (this.bars.length < 3) {
-      return [{ name: 'insufficient_data', evaluate: () => false }];
+      return [{ name: "insufficient_data", evaluate: () => false }];
     }
 
     const vwapValues = vwapSessionBatch(this.bars, this.sessionStartMs);
@@ -110,10 +110,10 @@ export class VwapRejectTrigger extends BaseTrigger {
     const recentVwap = vwapValues.slice(-3);
 
     const condition1: TriggerCondition = {
-      name: 'two_closes_below_vwap',
+      name: "two_closes_below_vwap",
       evaluate: () => {
         if (recentVwap.some((v: number) => isNaN(v))) return false;
-        
+
         const close1 = recentBars[1]?.ohlcv.c || 0;
         const close2 = recentBars[2]?.ohlcv.c || 0;
         const vwap1 = recentVwap[1] || 0;
@@ -124,17 +124,17 @@ export class VwapRejectTrigger extends BaseTrigger {
     };
 
     const condition2: TriggerCondition = {
-      name: 'volume_confirmation',
+      name: "volume_confirmation",
       evaluate: () => {
         const avgVol = recentBars.slice(0, -1).reduce((sum, b) => sum + (b?.ohlcv.v || 0), 0) / 2;
         const lastVol = recentBars[2]?.ohlcv.v || 0;
-        
+
         return lastVol > avgVol * 1.2;
       },
     };
 
     const condition3: TriggerCondition = {
-      name: 'price_structure',
+      name: "price_structure",
       evaluate: () => {
         const high0 = recentBars[0]?.ohlcv.h || 0;
         const high1 = recentBars[1]?.ohlcv.h || 0;

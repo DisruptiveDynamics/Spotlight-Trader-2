@@ -1,4 +1,4 @@
-import { validateEnv } from '@shared/env';
+import { validateEnv } from "@shared/env";
 
 const env = validateEnv(process.env);
 
@@ -13,15 +13,15 @@ export interface EmbeddingResult {
  */
 export async function generateEmbedding(text: string): Promise<EmbeddingResult> {
   try {
-    const response = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
+    const response = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
         input: text,
-        model: 'text-embedding-3-small',
+        model: "text-embedding-3-small",
         dimensions: 1536,
       }),
     });
@@ -31,13 +31,13 @@ export async function generateEmbedding(text: string): Promise<EmbeddingResult> 
       throw new Error(`OpenAI API error: ${response.status} - ${error}`);
     }
 
-    const data = await response.json() as {
+    const data = (await response.json()) as {
       data: Array<{ embedding: number[] }>;
       usage: { total_tokens: number };
     };
-    
+
     if (!data.data || data.data.length === 0) {
-      throw new Error('No embedding returned from OpenAI');
+      throw new Error("No embedding returned from OpenAI");
     }
 
     return {
@@ -48,7 +48,7 @@ export async function generateEmbedding(text: string): Promise<EmbeddingResult> 
     if (error instanceof Error) {
       throw new Error(`Failed to generate embedding: ${error.message}`);
     }
-    throw new Error('Failed to generate embedding');
+    throw new Error("Failed to generate embedding");
   }
 }
 
@@ -56,25 +56,23 @@ export async function generateEmbedding(text: string): Promise<EmbeddingResult> 
  * Batch generate embeddings for multiple texts
  * Processes up to 100 texts per request (OpenAI limit)
  */
-export async function batchGenerateEmbeddings(
-  texts: string[]
-): Promise<EmbeddingResult[]> {
+export async function batchGenerateEmbeddings(texts: string[]): Promise<EmbeddingResult[]> {
   const BATCH_SIZE = 100;
   const results: EmbeddingResult[] = [];
 
   for (let i = 0; i < texts.length; i += BATCH_SIZE) {
     const batch = texts.slice(i, i + BATCH_SIZE);
-    
+
     try {
-      const response = await fetch('https://api.openai.com/v1/embeddings', {
-        method: 'POST',
+      const response = await fetch("https://api.openai.com/v1/embeddings", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
         },
         body: JSON.stringify({
           input: batch,
-          model: 'text-embedding-3-small',
+          model: "text-embedding-3-small",
           dimensions: 1536,
         }),
       });
@@ -84,11 +82,11 @@ export async function batchGenerateEmbeddings(
         throw new Error(`OpenAI API error: ${response.status} - ${error}`);
       }
 
-      const data = await response.json() as {
+      const data = (await response.json()) as {
         data: Array<{ embedding: number[] }>;
         usage: { total_tokens: number };
       };
-      
+
       for (let j = 0; j < data.data.length; j++) {
         results.push({
           embedding: data.data[j]!.embedding,
@@ -99,7 +97,7 @@ export async function batchGenerateEmbeddings(
       if (error instanceof Error) {
         throw new Error(`Batch embedding failed: ${error.message}`);
       }
-      throw new Error('Batch embedding failed');
+      throw new Error("Batch embedding failed");
     }
   }
 

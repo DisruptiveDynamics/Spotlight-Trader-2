@@ -1,17 +1,17 @@
-import { Router } from 'express';
-import { nanoid } from 'nanoid';
-import { db } from '../db/index.js';
-import { users, magicLinks, sessions } from '../db/schema.js';
-import { startAuthSchema, callbackQuerySchema } from '../auth/models.js';
-import { sendMagicLink } from '../auth/mail.js';
-import { signJwt, verifyJwt } from '../auth/jwt.js';
-import { validateEnv } from '@shared/env';
-import { eq, and, gte } from 'drizzle-orm';
+import { Router } from "express";
+import { nanoid } from "nanoid";
+import { db } from "../db/index.js";
+import { users, magicLinks, sessions } from "../db/schema.js";
+import { startAuthSchema, callbackQuerySchema } from "../auth/models.js";
+import { sendMagicLink } from "../auth/mail.js";
+import { signJwt, verifyJwt } from "../auth/jwt.js";
+import { validateEnv } from "@shared/env";
+import { eq, and, gte } from "drizzle-orm";
 
 const env = validateEnv(process.env);
 const router = Router();
 
-router.post('/start', async (req, res) => {
+router.post("/start", async (req, res) => {
   try {
     const { email } = startAuthSchema.parse(req.body);
 
@@ -27,14 +27,14 @@ router.post('/start', async (req, res) => {
     const redirectUrl = `${env.APP_ORIGIN}/auth/callback`;
     await sendMagicLink(email, token, redirectUrl);
 
-    res.json({ success: true, message: 'Magic link sent to your email' });
+    res.json({ success: true, message: "Magic link sent to your email" });
   } catch (error) {
-    console.error('Failed to start auth:', error);
-    res.status(400).json({ error: 'Invalid request' });
+    console.error("Failed to start auth:", error);
+    res.status(400).json({ error: "Invalid request" });
   }
 });
 
-router.get('/callback', async (req, res) => {
+router.get("/callback", async (req, res) => {
   try {
     const { token } = callbackQuerySchema.parse(req.query);
 
@@ -45,13 +45,13 @@ router.get('/callback', async (req, res) => {
         and(
           eq(magicLinks.token, token),
           eq(magicLinks.used, false),
-          gte(magicLinks.expiresAt, new Date())
-        )
+          gte(magicLinks.expiresAt, new Date()),
+        ),
       )
       .limit(1);
 
     if (!link) {
-      return res.status(400).send('Invalid or expired magic link');
+      return res.status(400).send("Invalid or expired magic link");
     }
 
     await db.update(magicLinks).set({ used: true }).where(eq(magicLinks.id, link.id));
@@ -65,7 +65,7 @@ router.get('/callback', async (req, res) => {
     }
 
     if (!user) {
-      return res.status(500).send('Failed to create user');
+      return res.status(500).send("Failed to create user");
     }
 
     const sessionTtl = parseInt(env.SESSION_TTL);
@@ -78,28 +78,28 @@ router.get('/callback', async (req, res) => {
 
     const jwt = signJwt({ userId: user.id, email: user.email }, sessionTtl);
 
-    res.cookie('sid', jwt, {
+    res.cookie("sid", jwt, {
       httpOnly: true,
       secure: true,
-      sameSite: 'none',
+      sameSite: "none",
       maxAge: sessionTtl * 1000,
-      path: '/',
+      path: "/",
     });
 
-    res.redirect('/');
+    res.redirect("/");
   } catch (error) {
-    console.error('Failed to process callback:', error);
-    res.status(400).send('Authentication failed');
+    console.error("Failed to process callback:", error);
+    res.status(400).send("Authentication failed");
   }
 });
 
-router.post('/demo', async (req, res) => {
-  if (env.NODE_ENV === 'production' && !process.env.REPL_ID) {
-    return res.status(403).json({ error: 'Demo login only available in development' });
+router.post("/demo", async (req, res) => {
+  if (env.NODE_ENV === "production" && !process.env.REPL_ID) {
+    return res.status(403).json({ error: "Demo login only available in development" });
   }
 
   try {
-    const demoEmail = 'demo-user@local';
+    const demoEmail = "demo-user@local";
 
     const existingUsers = await db.select().from(users).where(eq(users.email, demoEmail)).limit(1);
 
@@ -110,7 +110,7 @@ router.post('/demo', async (req, res) => {
     }
 
     if (!user) {
-      return res.status(500).json({ error: 'Failed to create demo user' });
+      return res.status(500).json({ error: "Failed to create demo user" });
     }
 
     const sessionTtl = parseInt(env.SESSION_TTL);
@@ -123,51 +123,46 @@ router.post('/demo', async (req, res) => {
 
     const jwt = signJwt({ userId: user.id, email: user.email }, sessionTtl);
 
-    res.cookie('sid', jwt, {
+    res.cookie("sid", jwt, {
       httpOnly: true,
       secure: true,
-      sameSite: 'none',
+      sameSite: "none",
       maxAge: sessionTtl * 1000,
-      path: '/',
+      path: "/",
     });
 
     res.json({ success: true, user: { id: user.id, email: user.email } });
   } catch (error) {
-    console.error('Failed to demo login:', error);
-    res.status(500).json({ error: 'Demo login failed' });
+    console.error("Failed to demo login:", error);
+    res.status(500).json({ error: "Demo login failed" });
   }
 });
 
-router.get('/session', async (req, res) => {
+router.get("/session", async (req, res) => {
   try {
-    const token = req.cookies?.sid || req.headers.authorization?.replace('Bearer ', '');
+    const token = req.cookies?.sid || req.headers.authorization?.replace("Bearer ", "");
 
     if (!token) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      return res.status(401).json({ error: "Not authenticated" });
     }
 
     const payload = verifyJwt(token);
 
     if (!payload) {
-      return res.status(401).json({ error: 'Invalid or expired session' });
+      return res.status(401).json({ error: "Invalid or expired session" });
     }
 
     const userResults = await db.select().from(users).where(eq(users.id, payload.userId)).limit(1);
     const user = userResults[0];
 
     if (!user) {
-      return res.status(401).json({ error: 'User not found' });
+      return res.status(401).json({ error: "User not found" });
     }
 
     const sessionResults = await db
       .select()
       .from(sessions)
-      .where(
-        and(
-          eq(sessions.userId, user.id),
-          gte(sessions.expiresAt, new Date())
-        )
-      )
+      .where(and(eq(sessions.userId, user.id), gte(sessions.expiresAt, new Date())))
       .orderBy(sessions.createdAt)
       .limit(1);
 
@@ -182,30 +177,30 @@ router.get('/session', async (req, res) => {
       expiresAt: session?.expiresAt?.getTime() || Date.now() + 30 * 60 * 1000,
     });
   } catch (error) {
-    console.error('Failed to validate session:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Failed to validate session:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-router.get('/me', async (req, res) => {
+router.get("/me", async (req, res) => {
   try {
-    const token = req.cookies?.sid || req.headers.authorization?.replace('Bearer ', '');
+    const token = req.cookies?.sid || req.headers.authorization?.replace("Bearer ", "");
 
     if (!token) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      return res.status(401).json({ error: "Not authenticated" });
     }
 
     const payload = verifyJwt(token);
 
     if (!payload) {
-      return res.status(401).json({ error: 'Invalid session' });
+      return res.status(401).json({ error: "Invalid session" });
     }
 
     const userResults = await db.select().from(users).where(eq(users.id, payload.userId)).limit(1);
     const user = userResults[0];
 
     if (!user) {
-      return res.status(401).json({ error: 'User not found' });
+      return res.status(401).json({ error: "User not found" });
     }
 
     res.json({
@@ -214,13 +209,13 @@ router.get('/me', async (req, res) => {
       createdAt: user.createdAt,
     });
   } catch (error) {
-    console.error('Failed to get user:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Failed to get user:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-router.post('/logout', (req, res) => {
-  res.clearCookie('sid');
+router.post("/logout", (req, res) => {
+  res.clearCookie("sid");
   res.json({ success: true });
 });
 

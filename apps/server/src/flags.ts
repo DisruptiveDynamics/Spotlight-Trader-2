@@ -5,11 +5,11 @@
  * @deprecated Use flags/store.ts for new code. This file maintains backward compatibility.
  */
 
-export { getFlags, updateFlags, loadFlags, resetFlags, isEnabled } from './flags/store';
-export type { Flags } from './flags/store';
+export { getFlags, updateFlags, loadFlags, resetFlags, isEnabled } from "./flags/store";
+export type { Flags } from "./flags/store";
 
 // Backward compatibility exports
-export type FeatureFlag = keyof import('./flags/store').Flags;
+export type FeatureFlag = keyof import("./flags/store").Flags;
 
 /**
  * Execute a function only if the feature flag is enabled

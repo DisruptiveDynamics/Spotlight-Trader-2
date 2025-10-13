@@ -9,6 +9,7 @@ Based on your attached vision document, here's where we are and where we're goin
 ## ✅ Phase 1-3 Complete (Current State)
 
 ### 1. Market Awareness Layer - "Total Field Vision" ✅
+
 - **Tick-by-tick streaming**: Real-time data via Polygon WebSocket
 - **Context synthesis**: Bar builder with 50ms microbars, VWAP, indicators
 - **Market regime detection**: Trend-up/trend-down/chop classification
@@ -16,6 +17,7 @@ Based on your attached vision document, here's where we are and where we're goin
 - **Status**: ✅ Operational with <150ms latency
 
 ### 2. Pattern Recognition Engine ✅
+
 - **3 Production Triggers**:
   - VWAP Reclaim/Reject (2-bar confirmation + volume)
   - ORB Breakout (opening range with 2x volume)
@@ -25,6 +27,7 @@ Based on your attached vision document, here's where we are and where we're goin
 - **Status**: ✅ Operational with deterministic state machine
 
 ### 3. Voice & Attention Coach ✅
+
 - **Real-time WebRTC audio**: OpenAI Realtime API
 - **7 integrated tools**: Chart data, pattern stats, risk validation
 - **Live alert streaming**: Triggers → Voice in real-time
@@ -32,6 +35,7 @@ Based on your attached vision document, here's where we are and where we're goin
 - **Status**: ✅ Fully wired, tools registered
 
 ### 4. Risk Management & Safety Nets ✅
+
 - **Rules Sentinel**: Position limits, daily loss caps
 - **Circuit breakers**: 2-loss cooldown, hard stops
 - **Quality gates**: A/B/C grading system
@@ -39,6 +43,7 @@ Based on your attached vision document, here's where we are and where we're goin
 - **Status**: ✅ Production-ready
 
 ### 5. Adaptive Memory & Learning ✅
+
 - **Pgvector semantic memory**: OpenAI embeddings
 - **Journal system**: Logs entries, exits, decisions, notes
 - **Pattern memory**: Cached performance stats (1-hour TTL)
@@ -50,12 +55,14 @@ Based on your attached vision document, here's where we are and where we're goin
 ## 🚧 Phase 4: Enhanced AI Awareness (Next 2 Weeks)
 
 ### Proactive Tool Usage
+
 - [ ] **Auto-snapshot on alerts**: Always call get_chart_snapshot first
 - [ ] **Pattern validation loop**: Check historical stats before recommending
 - [ ] **Auto-journaling**: Log every decision with reasoning
 - [ ] **Continuous memory updates**: Save insights from conversations
 
 ### Learning Loop Enhancements
+
 - [ ] **Voice → Memory pipeline**: Auto-save learnings from conversations
 - [ ] **Trader pattern detection**: Track late entries, oversizing, emotion
 - [ ] **Pre-warnings**: "Last 3 times you chased here, stopped out"
@@ -66,18 +73,21 @@ Based on your attached vision document, here's where we are and where we're goin
 ## 🔮 Phase 5: ML Probability Engine (1-2 Months)
 
 ### Micro-Structure Recognition
+
 - [ ] **ML models**: Bull flags, liquidity sweeps, volume squeezes
 - [ ] **Hidden divergence detection**: Price vs volume/momentum
 - [ ] **Probability scoring**: Continuation vs reversal odds
 - [ ] **Entry zone optimization**: Historical analog matching
 
 ### Statistical Enhancement
+
 - [ ] **Real-time probability updates**: Each bar recalculates odds
 - [ ] **Confidence intervals**: Not just "buy" but "73% confidence"
 - [ ] **False break prediction**: Historical false-break-rate integration
 - [ ] **Setup grading v2**: A+ = 75%+ win rate in similar regime
 
 ### Implementation Plan
+
 - Train on 1000+ historical sessions per pattern
 - Feature engineering: volume profile, delta, tick structure
 - Model: Gradient boosting or transformer for sequence
@@ -88,18 +98,21 @@ Based on your attached vision document, here's where we are and where we're goin
 ## 🚀 Phase 6: Macro-Micro Fusion (2-3 Months)
 
 ### Economic Calendar Integration
+
 - [ ] **Event awareness**: Fed, CPI, earnings, FOMC
 - [ ] **Catalyst alignment**: "NVDA momentum + call-wall + CPI beat"
 - [ ] **Pre-event volatility**: Reduce size before high-impact events
 - [ ] **Post-event playbook**: Historical reaction patterns
 
 ### Options Flow & Dark Pool
+
 - [ ] **Call/put flow**: Unusual activity detection
 - [ ] **Dark pool prints**: Large block trades
 - [ ] **Gamma exposure**: Strike-level positioning
 - [ ] **Implied move**: Expected range from options
 
 ### News Sentiment
+
 - [ ] **Real-time news scraping**: Bloomberg, Reuters, Twitter
 - [ ] **Sentiment scoring**: LLM-based positive/negative/neutral
 - [ ] **Catalyst detection**: "Breaking: NVDA partnership with..."
@@ -110,18 +123,21 @@ Based on your attached vision document, here's where we are and where we're goin
 ## 🎯 Phase 7: Execution Layer (3-4 Months)
 
 ### Order Routing
+
 - [ ] **Broker API integration**: Direct execution capability
 - [ ] **Smart order routing**: Fastest liquidity path
 - [ ] **Iceberg logic**: Split large orders to hide footprint
 - [ ] **Slippage prediction**: Historical fill quality
 
 ### Pre-Trade Simulation
+
 - [ ] **"What-if" calculator**: Test sizing before entry
 - [ ] **Fill quality prediction**: Expected vs worst case
 - [ ] **Opportunity cost**: Edge decay timer
 - [ ] **Risk scenario**: P&L heatmap by outcome
 
 ### Safety & Compliance
+
 - [ ] **Kill switch**: Hard stop on major drawdown
 - [ ] **Daily VAR monitoring**: Real-time value-at-risk
 - [ ] **Cool-off timer**: Forced break after losses
@@ -172,28 +188,33 @@ Based on your attached vision document, here's where we are and where we're goin
 ## 📈 Success Metrics
 
 ### Current (Phase 1-3)
+
 - ✅ <150ms tick → callout latency
 - ✅ 100% alert delivery (SSE + WebSocket)
 - ✅ 7 tools registered and callable
 - ✅ Memory system operational
 
 ### Phase 4 Goals
+
 - 95%+ tool usage on alerts (proactive behavior)
 - 90%+ decision logging (learning coverage)
 - Memory recall accuracy >80%
 - Trader pattern detection: 3+ insights per day
 
 ### Phase 5 Goals (ML)
+
 - 70%+ win rate on A+ graded setups
 - <10% false break rate on high-quality signals
 - Probability accuracy within 5% of backtest
 
 ### Phase 6 Goals (Macro-Micro)
+
 - Catalyst detection <5 seconds from event
 - Options flow integration: unusual activity alerts
 - News sentiment correlation with price action >75%
 
 ### Phase 7 Goals (Execution)
+
 - <50ms order execution latency
 - <0.5 tick average slippage
 - 99%+ fill rate on limit orders
@@ -204,6 +225,7 @@ Based on your attached vision document, here's where we are and where we're goin
 ## 💡 Key Insights from Your Vision
 
 Your vision emphasizes:
+
 1. **Proactive awareness** - AI sees patterns forming, not just formed ✅ (triggers)
 2. **Data fusion** - Market + macro + news + options (partial, expanding)
 3. **Learning loops** - Every trade improves the system ✅ (infrastructure ready)

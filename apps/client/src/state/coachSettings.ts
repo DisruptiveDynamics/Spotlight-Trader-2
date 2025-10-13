@@ -1,10 +1,10 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 export interface CoachSettings {
   agentName: string;
   voice: string;
-  tonePreset: 'balanced' | 'friendly' | 'tough' | 'mentor';
+  tonePreset: "balanced" | "friendly" | "tough" | "mentor";
   jargon: number; // 0-100
   decisiveness: number; // 0-100
 }
@@ -17,32 +17,32 @@ interface CoachSettingsState {
 }
 
 const defaultSettings: CoachSettings = {
-  agentName: 'Coach',
-  voice: 'alloy',
-  tonePreset: 'balanced',
+  agentName: "Coach",
+  voice: "alloy",
+  tonePreset: "balanced",
   jargon: 50,
   decisiveness: 50,
 };
 
 async function saveSettingsToAPI(settings: CoachSettings): Promise<void> {
   try {
-    const response = await fetch('/api/coach/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+    const response = await fetch("/api/coach/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(settings),
     });
 
     if (!response.ok) {
-      console.error('Failed to save settings:', response.statusText);
+      console.error("Failed to save settings:", response.statusText);
     }
   } catch (error) {
-    console.error('Failed to save settings:', error);
+    console.error("Failed to save settings:", error);
   }
 }
 
 async function loadSettingsFromAPI(): Promise<CoachSettings> {
   try {
-    const response = await fetch('/api/coach/settings');
+    const response = await fetch("/api/coach/settings");
 
     if (!response.ok) {
       return defaultSettings;
@@ -50,7 +50,7 @@ async function loadSettingsFromAPI(): Promise<CoachSettings> {
 
     return await response.json();
   } catch (error) {
-    console.error('Failed to load settings:', error);
+    console.error("Failed to load settings:", error);
     return defaultSettings;
   }
 }
@@ -74,7 +74,7 @@ export const useCoachSettings = create<CoachSettingsState>()(
       },
     }),
     {
-      name: 'coach-settings-storage',
-    }
-  )
+      name: "coach-settings-storage",
+    },
+  ),
 );

@@ -1,19 +1,19 @@
-import { Router } from 'express';
-import { z } from 'zod';
-import { runBacktest, getBacktestPresets, BacktestValidationError } from '../backtest/engine';
-import { ruleRegistry } from '../rules/registry';
-import { isEnabled } from '../flags';
-import { AuthRequest } from '../middleware/requireUser.js';
+import { Router } from "express";
+import { z } from "zod";
+import { runBacktest, getBacktestPresets, BacktestValidationError } from "../backtest/engine";
+import { ruleRegistry } from "../rules/registry";
+import { isEnabled } from "../flags";
+import { AuthRequest } from "../middleware/requireUser.js";
 
 export const backtestRouter: Router = Router();
 
 const BacktestSchema = z
   .object({
-    symbol: z.string().min(1, 'Symbol is required'),
-    timeframe: z.enum(['1m']), // Only 1m supported for now
+    symbol: z.string().min(1, "Symbol is required"),
+    timeframe: z.enum(["1m"]), // Only 1m supported for now
     start: z.string(),
     end: z.string(),
-    ruleIds: z.array(z.string()).min(1, 'At least one rule ID is required'),
+    ruleIds: z.array(z.string()).min(1, "At least one rule ID is required"),
   })
   .refine(
     (data) => {
@@ -22,17 +22,17 @@ const BacktestSchema = z
       return !isNaN(startMs) && !isNaN(endMs) && startMs < endMs;
     },
     {
-      message: 'Invalid date range: start must be before end and both must be valid ISO dates',
-    }
+      message: "Invalid date range: start must be before end and both must be valid ISO dates",
+    },
   );
 
 /**
  * POST /api/backtest/run
  * Run a backtest with specified parameters
  */
-backtestRouter.post('/run', async (req: AuthRequest, res) => {
-  if (!isEnabled('enableBacktest')) {
-    return res.status(403).json({ error: 'Backtest feature is disabled' });
+backtestRouter.post("/run", async (req: AuthRequest, res) => {
+  if (!isEnabled("enableBacktest")) {
+    return res.status(403).json({ error: "Backtest feature is disabled" });
   }
 
   try {
@@ -46,7 +46,7 @@ backtestRouter.post('/run', async (req: AuthRequest, res) => {
     const validRules = rules.filter((r) => r !== null);
 
     if (validRules.length === 0) {
-      return res.status(400).json({ error: 'No valid rules found for the provided IDs' });
+      return res.status(400).json({ error: "No valid rules found for the provided IDs" });
     }
 
     const result = await runBacktest({
@@ -62,7 +62,7 @@ backtestRouter.post('/run', async (req: AuthRequest, res) => {
     // Distinguish validation errors from runtime errors
     if (error instanceof z.ZodError) {
       return res.status(400).json({
-        error: 'Invalid request parameters',
+        error: "Invalid request parameters",
         details: error.errors,
       });
     }
@@ -73,9 +73,9 @@ backtestRouter.post('/run', async (req: AuthRequest, res) => {
       });
     }
 
-    console.error('Backtest error:', error);
+    console.error("Backtest error:", error);
     res.status(500).json({
-      error: error instanceof Error ? error.message : 'Backtest failed',
+      error: error instanceof Error ? error.message : "Backtest failed",
     });
   }
 });
@@ -84,7 +84,7 @@ backtestRouter.post('/run', async (req: AuthRequest, res) => {
  * GET /api/backtest/presets
  * Get common backtest presets
  */
-backtestRouter.get('/presets', (_req, res) => {
+backtestRouter.get("/presets", (_req, res) => {
   const presets = getBacktestPresets();
   res.json({ presets });
 });

@@ -24,94 +24,94 @@ export class HotkeyManager {
 
   private setupDefaultBindings() {
     this.register({
-      key: 't',
-      description: 'Push-to-talk (hold on mobile, toggle on desktop)',
+      key: "t",
+      description: "Push-to-talk (hold on mobile, toggle on desktop)",
       callback: (e) => {
         e.preventDefault();
-        window.dispatchEvent(new CustomEvent('hotkey:push-to-talk'));
+        window.dispatchEvent(new CustomEvent("hotkey:push-to-talk"));
       },
     });
 
     this.register({
-      key: ' ',
-      description: 'Pause/resume live stream',
+      key: " ",
+      description: "Pause/resume live stream",
       callback: (e) => {
         e.preventDefault();
-        window.dispatchEvent(new CustomEvent('hotkey:toggle-stream'));
+        window.dispatchEvent(new CustomEvent("hotkey:toggle-stream"));
       },
     });
 
     this.register({
-      key: 'a',
-      description: 'Set alert at cursor price',
+      key: "a",
+      description: "Set alert at cursor price",
       callback: (e) => {
         e.preventDefault();
-        window.dispatchEvent(new CustomEvent('hotkey:set-alert'));
+        window.dispatchEvent(new CustomEvent("hotkey:set-alert"));
       },
     });
 
     this.register({
-      key: 'j',
-      description: 'New journal note',
+      key: "j",
+      description: "New journal note",
       callback: (e) => {
         e.preventDefault();
-        window.dispatchEvent(new CustomEvent('hotkey:new-journal'));
+        window.dispatchEvent(new CustomEvent("hotkey:new-journal"));
       },
     });
 
     this.register({
-      key: 'g',
+      key: "g",
       sequence: true,
-      description: 'VWAP anchor sequence (g+v)',
+      description: "VWAP anchor sequence (g+v)",
       callback: () => {
-        this.startSequence('g');
+        this.startSequence("g");
       },
     });
 
     this.register({
-      key: '1',
-      description: 'Switch to 1m timeframe',
+      key: "1",
+      description: "Switch to 1m timeframe",
       callback: (e) => {
         e.preventDefault();
-        window.dispatchEvent(new CustomEvent('hotkey:timeframe', { detail: '1m' }));
+        window.dispatchEvent(new CustomEvent("hotkey:timeframe", { detail: "1m" }));
       },
     });
 
     this.register({
-      key: '2',
-      description: 'Switch to 5m timeframe',
+      key: "2",
+      description: "Switch to 5m timeframe",
       callback: (e) => {
         e.preventDefault();
-        window.dispatchEvent(new CustomEvent('hotkey:timeframe', { detail: '5m' }));
+        window.dispatchEvent(new CustomEvent("hotkey:timeframe", { detail: "5m" }));
       },
     });
 
     this.register({
-      key: '3',
-      description: 'Switch to 15m timeframe',
+      key: "3",
+      description: "Switch to 15m timeframe",
       callback: (e) => {
         e.preventDefault();
-        window.dispatchEvent(new CustomEvent('hotkey:timeframe', { detail: '15m' }));
+        window.dispatchEvent(new CustomEvent("hotkey:timeframe", { detail: "15m" }));
       },
     });
 
     this.register({
-      key: 'k',
+      key: "k",
       meta: true,
-      description: 'Command palette',
+      description: "Command palette",
       callback: (e) => {
         e.preventDefault();
-        window.dispatchEvent(new CustomEvent('hotkey:command-palette'));
+        window.dispatchEvent(new CustomEvent("hotkey:command-palette"));
       },
     });
 
     this.register({
-      key: 'k',
+      key: "k",
       ctrl: true,
-      description: 'Command palette',
+      description: "Command palette",
       callback: (e) => {
         e.preventDefault();
-        window.dispatchEvent(new CustomEvent('hotkey:command-palette'));
+        window.dispatchEvent(new CustomEvent("hotkey:command-palette"));
       },
     });
   }
@@ -129,14 +129,14 @@ export class HotkeyManager {
   }
 
   private attachListeners() {
-    document.addEventListener('keydown', this.handleKeyDown.bind(this));
+    document.addEventListener("keydown", this.handleKeyDown.bind(this));
   }
 
   private handleKeyDown(event: KeyboardEvent) {
     if (!this.enabled) return;
 
     const target = event.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+    if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
       return;
     }
 
@@ -155,11 +155,11 @@ export class HotkeyManager {
 
   private handleSequence(event: KeyboardEvent) {
     const key = event.key.toLowerCase();
-    const sequence = [...this.sequenceBuffer, key].join('+');
+    const sequence = [...this.sequenceBuffer, key].join("+");
 
-    if (sequence === 'g+v') {
+    if (sequence === "g+v") {
       event.preventDefault();
-      window.dispatchEvent(new CustomEvent('hotkey:toggle-vwap'));
+      window.dispatchEvent(new CustomEvent("hotkey:toggle-vwap"));
       this.sequenceBuffer = [];
       if (this.sequenceTimeout) {
         clearTimeout(this.sequenceTimeout);
@@ -172,14 +172,14 @@ export class HotkeyManager {
   private getBindingKey(event: KeyboardEvent): string {
     const parts: string[] = [];
 
-    if (event.ctrlKey) parts.push('ctrl');
-    if (event.metaKey) parts.push('meta');
-    if (event.shiftKey) parts.push('shift');
-    if (event.altKey) parts.push('alt');
+    if (event.ctrlKey) parts.push("ctrl");
+    if (event.metaKey) parts.push("meta");
+    if (event.shiftKey) parts.push("shift");
+    if (event.altKey) parts.push("alt");
 
     parts.push(event.key.toLowerCase());
 
-    return parts.join('+');
+    return parts.join("+");
   }
 
   register(binding: HotkeyBinding) {
@@ -190,14 +190,14 @@ export class HotkeyManager {
   private getKeyString(binding: HotkeyBinding): string {
     const parts: string[] = [];
 
-    if (binding.ctrl) parts.push('ctrl');
-    if (binding.meta) parts.push('meta');
-    if (binding.shift) parts.push('shift');
-    if (binding.alt) parts.push('alt');
+    if (binding.ctrl) parts.push("ctrl");
+    if (binding.meta) parts.push("meta");
+    if (binding.shift) parts.push("shift");
+    if (binding.alt) parts.push("alt");
 
     parts.push(binding.key.toLowerCase());
 
-    return parts.join('+');
+    return parts.join("+");
   }
 
   unregister(key: string) {
@@ -220,7 +220,7 @@ export class HotkeyManager {
   }
 
   destroy() {
-    document.removeEventListener('keydown', this.handleKeyDown.bind(this));
+    document.removeEventListener("keydown", this.handleKeyDown.bind(this));
     if (this.sequenceTimeout) {
       clearTimeout(this.sequenceTimeout);
     }

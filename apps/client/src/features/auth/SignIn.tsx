@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useAuthStore } from '../../stores/authStore';
+import { useState } from "react";
+import { useAuthStore } from "../../stores/authStore";
 
 interface SignInProps {
   sessionExpired?: boolean;
@@ -7,71 +7,71 @@ interface SignInProps {
 
 export function SignIn({ sessionExpired = false }: SignInProps) {
   const setUser = useAuthStore((state) => state.setUser);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
-      const res = await fetch('/api/auth/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/auth/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
-        credentials: 'include',
+        credentials: "include",
       });
 
       if (!res.ok) {
-        throw new Error('Failed to send magic link');
+        throw new Error("Failed to send magic link");
       }
 
       setSent(true);
     } catch {
-      setError('Failed to send magic link. Please try again.');
-    } finally{
+      setError("Failed to send magic link. Please try again.");
+    } finally {
       setLoading(false);
     }
   };
 
   const handleDemo = async () => {
-    console.log('Demo mode button clicked');
+    console.log("Demo mode button clicked");
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
-      console.log('Fetching /api/auth/demo...');
-      const res = await fetch('/api/auth/demo', {
-        method: 'POST',
-        credentials: 'include',
+      console.log("Fetching /api/auth/demo...");
+      const res = await fetch("/api/auth/demo", {
+        method: "POST",
+        credentials: "include",
       });
 
-      console.log('Demo response status:', res.status);
+      console.log("Demo response status:", res.status);
 
       if (!res.ok) {
         const errorText = await res.text();
-        console.error('Demo login failed:', errorText);
-        throw new Error('Demo login failed');
+        console.error("Demo login failed:", errorText);
+        throw new Error("Demo login failed");
       }
 
       const data = await res.json();
-      console.log('Demo response data:', data);
+      console.log("Demo response data:", data);
 
       if (data.user) {
-        console.log('Setting user in auth store:', data.user);
+        console.log("Setting user in auth store:", data.user);
         setUser({
           userId: data.user.id,
           email: data.user.email,
           createdAt: data.user.createdAt || new Date().toISOString(),
         });
-        console.log('User set successfully');
+        console.log("User set successfully");
       }
     } catch (err) {
-      console.error('Demo login error:', err);
-      setError('Demo login failed. Please try again.');
+      console.error("Demo login error:", err);
+      setError("Demo login failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -142,7 +142,7 @@ export function SignIn({ sessionExpired = false }: SignInProps) {
             disabled={loading}
             className="w-full bg-amber-500 hover:bg-amber-600 text-gray-900 font-semibold py-2 px-4 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {loading ? 'Sending...' : 'Send magic link'}
+            {loading ? "Sending..." : "Send magic link"}
           </button>
         </form>
 

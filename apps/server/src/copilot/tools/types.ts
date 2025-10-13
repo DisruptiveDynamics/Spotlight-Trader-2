@@ -1,10 +1,10 @@
-import type { Bar } from '@spotlight/shared';
+import type { Bar } from "@spotlight/shared";
 
 export interface GetChartSnapshotParams {
   symbol: string;
   timeframe: string;
-  lookback?: number;  // Legacy parameter name
-  barCount?: number;  // Voice tool parameter name
+  lookback?: number; // Legacy parameter name
+  barCount?: number; // Voice tool parameter name
 }
 
 export interface ChartSnapshot {
@@ -12,7 +12,7 @@ export interface ChartSnapshot {
   timeframe: string;
   bars: Bar[];
   indicators: {
-    vwap?: { value: number; mode: 'session' | 'anchored' };
+    vwap?: { value: number; mode: "session" | "anchored" };
     avwaps?: Array<{ anchorMs: number; value: number }>;
     emas?: Array<{ period: number; value: number }>;
     rsi?: { period: number; value: number };
@@ -23,8 +23,8 @@ export interface ChartSnapshot {
     low: number;
     open: number;
   };
-  volatility: 'low' | 'medium' | 'high';
-  regime: 'trend-up' | 'trend-down' | 'chop' | 'news';
+  volatility: "low" | "medium" | "high";
+  regime: "trend-up" | "trend-down" | "chop" | "news";
 }
 
 export interface SubscribeMarketStreamParams {
@@ -38,29 +38,29 @@ export interface SubscribeMarketStreamResult {
 }
 
 export interface ProposeCalloutParams {
-  kind: 'watch' | 'entry' | 'exit' | 'note';
+  kind: "watch" | "entry" | "exit" | "note";
   context: {
     symbol: string;
     timeframe: string;
     setupTag: string;
     rationale: string;
-    qualityGrade?: 'A' | 'B' | 'C';
-    urgency?: 'now' | 'soon' | 'watch';
+    qualityGrade?: "A" | "B" | "C";
+    urgency?: "now" | "soon" | "watch";
   };
 }
 
 export interface CalloutResult {
   id: string;
-  kind: 'watch' | 'entry' | 'exit' | 'note';
+  kind: "watch" | "entry" | "exit" | "note";
   setupTag: string;
   rationale: string;
-  qualityGrade: 'A' | 'B' | 'C';
-  urgency: 'now' | 'soon' | 'watch';
+  qualityGrade: "A" | "B" | "C";
+  urgency: "now" | "soon" | "watch";
   timestamp: number;
 }
 
 export interface ProposeEntryExitParams {
-  type: 'entry' | 'exit';
+  type: "entry" | "exit";
   symbol: string;
   timeframe: string;
   price: number;
@@ -73,7 +73,7 @@ export interface ProposeEntryExitParams {
 
 export interface EntryExitProposal {
   id: string;
-  type: 'entry' | 'exit';
+  type: "entry" | "exit";
   symbol: string;
   timeframe: string;
   price: number;
@@ -95,7 +95,7 @@ export interface EvaluateRulesParams {
     symbol: string;
     timeframe: string;
     riskAmount?: number;
-    setupQuality?: 'A' | 'B' | 'C';
+    setupQuality?: "A" | "B" | "C";
     regime?: string;
     breadth?: { advances: number; declines: number };
   };
@@ -116,13 +116,13 @@ export interface RulesEvaluation {
 }
 
 export interface LogJournalEventParams {
-  type: 'entry' | 'exit' | 'note' | 'decision';
+  type: "entry" | "exit" | "note" | "decision";
   payload: {
     symbol: string;
     timeframe: string;
     indicators?: Record<string, unknown>;
     proposal?: unknown;
-    decision?: 'accept' | 'reject' | 'modify';
+    decision?: "accept" | "reject" | "modify";
     mae?: number;
     mfe?: number;
     realizedR?: number;
@@ -138,7 +138,7 @@ export interface JournalEventResult {
 }
 
 export interface SummarizeSessionParams {
-  range: 'today' | 'week' | 'month' | { start: number; end: number };
+  range: "today" | "week" | "month" | { start: number; end: number };
 }
 
 export interface SessionSummary {
@@ -185,7 +185,7 @@ export interface RiskBox {
   target2: number;
   expectedHoldBars: number;
   atr: number;
-  confidence: 'high' | 'medium' | 'low';
+  confidence: "high" | "medium" | "low";
 }
 
 export interface GenerateTradePlanParams {

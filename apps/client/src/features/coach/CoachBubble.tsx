@@ -1,14 +1,14 @@
-import { useState, useEffect, useRef } from 'react';
-import { VoiceClient } from '../../voice/VoiceClient';
-import { NexaMenu } from './NexaMenu';
+import { useState, useEffect, useRef } from "react";
+import { VoiceClient } from "../../voice/VoiceClient";
+import { NexaMenu } from "./NexaMenu";
 
-type CoachState = 'idle' | 'listening' | 'thinking' | 'speaking';
+type CoachState = "idle" | "listening" | "thinking" | "speaking";
 
 export function CoachBubble() {
   const [isPowered, setIsPowered] = useState(false);
   const [isMicActive, setIsMicActive] = useState(false);
-  const [coachState, setCoachState] = useState<CoachState>('idle');
-  const [connectionState, setConnectionState] = useState<string>('disconnected');
+  const [coachState, setCoachState] = useState<CoachState>("idle");
+  const [connectionState, setConnectionState] = useState<string>("disconnected");
 
   const voiceClient = useRef<VoiceClient | null>(null);
   const tokenRef = useRef<string | null>(null);
@@ -25,30 +25,30 @@ export function CoachBubble() {
     });
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 't' || e.key === 'T') {
+      if (e.key === "t" || e.key === "T") {
         e.preventDefault();
         toggleMic();
-      } else if (e.key === 'Escape') {
+      } else if (e.key === "Escape") {
         e.preventDefault();
         handlePowerOff();
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
 
     return () => {
       unsubscribe();
       unsubscribeCoachState();
       voiceClient.current?.disconnect();
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
 
   const fetchToken = async (): Promise<string> => {
-    const response = await fetch('/api/voice/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
+    const response = await fetch("/api/voice/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
     });
     if (!response.ok) {
       throw new Error(`Token fetch failed: ${response.status}`);
@@ -64,7 +64,7 @@ export function CoachBubble() {
       await voiceClient.current?.connect(token);
       setIsPowered(true);
     } catch (error) {
-      console.error('Failed to connect:', error);
+      console.error("Failed to connect:", error);
     }
   };
 
@@ -72,7 +72,7 @@ export function CoachBubble() {
     voiceClient.current?.disconnect();
     setIsPowered(false);
     setIsMicActive(false);
-    setCoachState('idle');
+    setCoachState("idle");
   };
 
   const togglePower = () => {
@@ -97,14 +97,14 @@ export function CoachBubble() {
 
   const getStateColor = () => {
     switch (coachState) {
-      case 'listening':
-        return 'bg-green-500';
-      case 'thinking':
-        return 'bg-yellow-500';
-      case 'speaking':
-        return 'bg-blue-500';
+      case "listening":
+        return "bg-green-500";
+      case "thinking":
+        return "bg-yellow-500";
+      case "speaking":
+        return "bg-blue-500";
       default:
-        return 'bg-gray-400';
+        return "bg-gray-400";
     }
   };
 
@@ -128,8 +128,8 @@ export function CoachBubble() {
             disabled={!isPowered}
             className={`p-3 rounded-full transition-colors ${
               isMicActive
-                ? 'bg-red-500 hover:bg-red-600 text-white'
-                : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                ? "bg-red-500 hover:bg-red-600 text-white"
+                : "bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
             } disabled:opacity-50 disabled:cursor-not-allowed`}
             title="Toggle mic (T)"
           >
@@ -147,8 +147,8 @@ export function CoachBubble() {
             onClick={togglePower}
             className={`p-3 rounded-full transition-colors ${
               isPowered
-                ? 'bg-green-500 hover:bg-green-600 text-white'
-                : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                ? "bg-green-500 hover:bg-green-600 text-white"
+                : "bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
             }`}
             title="Power (Esc to disconnect)"
           >

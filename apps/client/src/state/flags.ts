@@ -3,7 +3,7 @@
  * Syncs with server every 30s for runtime flag updates
  */
 
-import { create } from 'zustand';
+import { create } from "zustand";
 
 export interface Flags {
   enableRiskGovernorV2: boolean;
@@ -48,7 +48,7 @@ export const useFlagsStore = create<FlagsStore>((set) => ({
     try {
       set({ loading: true, error: null });
 
-      const res = await fetch('/api/flags');
+      const res = await fetch("/api/flags");
 
       if (!res.ok) {
         throw new Error(`Failed to fetch flags: ${res.status}`);
@@ -57,9 +57,9 @@ export const useFlagsStore = create<FlagsStore>((set) => ({
       const flags = await res.json();
       set({ flags, loading: false, lastSync: Date.now() });
     } catch (error) {
-      console.error('Failed to sync flags:', error);
+      console.error("Failed to sync flags:", error);
       set({
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? error.message : "Unknown error",
         loading: false,
       });
     }

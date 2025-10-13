@@ -18,7 +18,7 @@ export interface EvaluatedRule {
   name: string;
   passed: boolean;
   confidence: number;
-  signal?: 'long' | 'short' | 'flat';
+  signal?: "long" | "short" | "flat";
   explanation?: string;
   barSeq: number;
   timestamp: number;
@@ -31,7 +31,7 @@ export interface Signal {
   timeframe: string;
   ruleId: string;
   ruleVersion: string;
-  direction: 'long' | 'short' | 'flat';
+  direction: "long" | "short" | "flat";
   confidence: number;
   ctx: Record<string, unknown>;
   ts: Date;

@@ -9,26 +9,26 @@ export async function ensureiOSAudioUnlocked(): Promise<void> {
     if (!audioContext) {
       audioContext = new AudioContext({ sampleRate: 24000 });
     }
-    
+
     // Resume AudioContext (required for iOS)
-    if (audioContext.state === 'suspended') {
+    if (audioContext.state === "suspended") {
       await audioContext.resume();
     }
-    
+
     // Play silent buffer to unlock (iOS Safari quirk)
     const buffer = audioContext.createBuffer(1, 1, 22050);
     const source = audioContext.createBufferSource();
     source.buffer = buffer;
     source.connect(audioContext.destination);
     source.start(0);
-    
+
     // Wait for playback to complete
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
     iosUnlocked = true;
-    console.log('[iOS] Audio context unlocked successfully');
+    console.log("[iOS] Audio context unlocked successfully");
   } catch (error) {
-    console.error('Failed to unlock iOS audio:', error);
+    console.error("Failed to unlock iOS audio:", error);
     throw error;
   }
 }

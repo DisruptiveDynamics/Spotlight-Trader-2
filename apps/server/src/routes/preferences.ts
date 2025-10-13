@@ -1,8 +1,8 @@
-import type { Express } from 'express';
-import { requireUser, AuthRequest } from '../middleware/requireUser.js';
-import { db } from '../db/index.js';
-import { userPreferences } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import type { Express } from "express";
+import { requireUser, AuthRequest } from "../middleware/requireUser.js";
+import { db } from "../db/index.js";
+import { userPreferences } from "../db/schema.js";
+import { eq } from "drizzle-orm";
 
 interface UserPreferences {
   favoriteSymbols?: string[];
@@ -22,7 +22,7 @@ interface UserPreferences {
 
 export function setupPreferencesRoutes(app: Express) {
   // GET /api/nexa/preferences - Get user preferences
-  app.get('/api/nexa/preferences', requireUser, async (req: AuthRequest, res) => {
+  app.get("/api/nexa/preferences", requireUser, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.userId;
 
@@ -35,13 +35,13 @@ export function setupPreferencesRoutes(app: Express) {
       if (prefs.length === 0) {
         // Return defaults if no preferences exist
         return res.json({
-          favoriteSymbols: ['SPY', 'QQQ', 'NVDA'],
-          defaultTimeframe: '1m',
-          chartTheme: 'dark',
-          focusMode: 'normal',
-          signalDensity: 'medium',
+          favoriteSymbols: ["SPY", "QQQ", "NVDA"],
+          defaultTimeframe: "1m",
+          chartTheme: "dark",
+          focusMode: "normal",
+          signalDensity: "medium",
           signalAudio: true,
-          colorVision: 'normal',
+          colorVision: "normal",
           highContrast: false,
           notifications: {
             voice: true,
@@ -64,15 +64,15 @@ export function setupPreferencesRoutes(app: Express) {
         notifications: pref.notifications as { voice: boolean; visual: boolean; sound: boolean },
       });
     } catch (error) {
-      console.error('Get preferences error:', error);
+      console.error("Get preferences error:", error);
       res.status(500).json({
-        error: error instanceof Error ? error.message : 'Internal server error',
+        error: error instanceof Error ? error.message : "Internal server error",
       });
     }
   });
 
   // PUT /api/nexa/preferences - Update all preferences (for migration)
-  app.put('/api/nexa/preferences', requireUser, async (req: AuthRequest, res) => {
+  app.put("/api/nexa/preferences", requireUser, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.userId;
       const updates: UserPreferences = req.body;
@@ -86,13 +86,13 @@ export function setupPreferencesRoutes(app: Express) {
 
       const data = {
         userId,
-        favoriteSymbols: updates.favoriteSymbols ?? ['SPY', 'QQQ', 'NVDA'],
-        defaultTimeframe: updates.defaultTimeframe ?? '1m',
-        chartTheme: updates.chartTheme ?? 'dark',
-        focusMode: updates.focusMode ?? 'normal',
-        signalDensity: updates.signalDensity ?? 'medium',
+        favoriteSymbols: updates.favoriteSymbols ?? ["SPY", "QQQ", "NVDA"],
+        defaultTimeframe: updates.defaultTimeframe ?? "1m",
+        chartTheme: updates.chartTheme ?? "dark",
+        focusMode: updates.focusMode ?? "normal",
+        signalDensity: updates.signalDensity ?? "medium",
         signalAudio: updates.signalAudio ?? true,
-        colorVision: updates.colorVision ?? 'normal',
+        colorVision: updates.colorVision ?? "normal",
         highContrast: updates.highContrast ?? false,
         notifications: updates.notifications ?? {
           voice: true,
@@ -107,29 +107,26 @@ export function setupPreferencesRoutes(app: Express) {
         await db.insert(userPreferences).values(data);
       } else {
         // Update existing preferences
-        await db
-          .update(userPreferences)
-          .set(data)
-          .where(eq(userPreferences.userId, userId));
+        await db.update(userPreferences).set(data).where(eq(userPreferences.userId, userId));
       }
 
       res.json({ success: true });
     } catch (error) {
-      console.error('Update preferences error:', error);
+      console.error("Update preferences error:", error);
       res.status(500).json({
-        error: error instanceof Error ? error.message : 'Internal server error',
+        error: error instanceof Error ? error.message : "Internal server error",
       });
     }
   });
 
   // PATCH /api/nexa/preferences - Partial update with deep merge
-  app.patch('/api/nexa/preferences', requireUser, async (req: AuthRequest, res) => {
+  app.patch("/api/nexa/preferences", requireUser, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.userId;
       const updates: Partial<UserPreferences> = req.body;
 
       if (Object.keys(updates).length === 0) {
-        return res.status(400).json({ error: 'No updates provided' });
+        return res.status(400).json({ error: "No updates provided" });
       }
 
       // Load existing preferences or defaults
@@ -144,13 +141,13 @@ export function setupPreferencesRoutes(app: Express) {
           ? existing[0]!
           : {
               userId,
-              favoriteSymbols: ['SPY', 'QQQ', 'NVDA'],
-              defaultTimeframe: '1m',
-              chartTheme: 'dark',
-              focusMode: 'normal',
-              signalDensity: 'medium',
+              favoriteSymbols: ["SPY", "QQQ", "NVDA"],
+              defaultTimeframe: "1m",
+              chartTheme: "dark",
+              focusMode: "normal",
+              signalDensity: "medium",
               signalAudio: true,
-              colorVision: 'normal',
+              colorVision: "normal",
               highContrast: false,
               notifications: {
                 voice: true,
@@ -191,17 +188,14 @@ export function setupPreferencesRoutes(app: Express) {
         await db.insert(userPreferences).values(mergedData);
       } else {
         // Update existing with merged data
-        await db
-          .update(userPreferences)
-          .set(mergedData)
-          .where(eq(userPreferences.userId, userId));
+        await db.update(userPreferences).set(mergedData).where(eq(userPreferences.userId, userId));
       }
 
       res.json({ success: true });
     } catch (error) {
-      console.error('Patch preferences error:', error);
+      console.error("Patch preferences error:", error);
       res.status(500).json({
-        error: error instanceof Error ? error.message : 'Internal server error',
+        error: error instanceof Error ? error.message : "Internal server error",
       });
     }
   });

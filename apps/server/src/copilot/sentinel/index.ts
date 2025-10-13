@@ -7,7 +7,7 @@ export interface RuleContext {
   symbol: string;
   timeframe: string;
   riskAmount?: number;
-  setupQuality?: 'A' | 'B' | 'C';
+  setupQuality?: "A" | "B" | "C";
   regime?: string;
   breadth?: { advances: number; declines: number };
   accountSize?: number;
@@ -26,12 +26,12 @@ export interface CircuitBreaker {
 }
 
 export class RulesSentinel {
-  private version = '1.0.0';
+  private version = "1.0.0";
   private rules: Rule[] = [];
   private circuitBreaker: CircuitBreaker = { active: false };
   private consecutiveLosses: number = 0;
   private dailyPnLR: number = 0;
-  
+
   private readonly MAX_RISK_PER_TRADE = 0.02; // 2%
   private readonly MAX_DAILY_LOSS = 0.05; // 5%
   private readonly MAX_CONCURRENT_POSITIONS = 3;
@@ -45,7 +45,7 @@ export class RulesSentinel {
   private initializeRules(): void {
     this.rules = [
       {
-        name: 'max_risk_per_trade',
+        name: "max_risk_per_trade",
         evaluate: (ctx) => {
           if (!ctx.riskAmount || !ctx.accountSize) {
             return { pass: true };
@@ -53,48 +53,51 @@ export class RulesSentinel {
           const riskPct = ctx.riskAmount / ctx.accountSize;
           return {
             pass: riskPct <= this.MAX_RISK_PER_TRADE,
-            reason: riskPct > this.MAX_RISK_PER_TRADE 
-              ? `Risk ${(riskPct * 100).toFixed(1)}% exceeds max ${(this.MAX_RISK_PER_TRADE * 100)}%`
-              : undefined,
+            reason:
+              riskPct > this.MAX_RISK_PER_TRADE
+                ? `Risk ${(riskPct * 100).toFixed(1)}% exceeds max ${this.MAX_RISK_PER_TRADE * 100}%`
+                : undefined,
           };
         },
       },
       {
-        name: 'daily_loss_limit',
+        name: "daily_loss_limit",
         evaluate: (ctx) => {
           return {
             pass: Math.abs(this.dailyPnLR) < this.MAX_DAILY_LOSS,
-            reason: Math.abs(this.dailyPnLR) >= this.MAX_DAILY_LOSS
-              ? `Daily loss ${(this.dailyPnLR * 100).toFixed(1)}% exceeds limit ${(this.MAX_DAILY_LOSS * 100)}%`
-              : undefined,
+            reason:
+              Math.abs(this.dailyPnLR) >= this.MAX_DAILY_LOSS
+                ? `Daily loss ${(this.dailyPnLR * 100).toFixed(1)}% exceeds limit ${this.MAX_DAILY_LOSS * 100}%`
+                : undefined,
           };
         },
       },
       {
-        name: 'concurrent_positions',
+        name: "concurrent_positions",
         evaluate: (ctx) => {
           const current = ctx.currentPositions || 0;
           return {
             pass: current < this.MAX_CONCURRENT_POSITIONS,
-            reason: current >= this.MAX_CONCURRENT_POSITIONS
-              ? `Already at max positions (${this.MAX_CONCURRENT_POSITIONS})`
-              : undefined,
+            reason:
+              current >= this.MAX_CONCURRENT_POSITIONS
+                ? `Already at max positions (${this.MAX_CONCURRENT_POSITIONS})`
+                : undefined,
           };
         },
       },
       {
-        name: 'a_plus_criteria',
+        name: "a_plus_criteria",
         evaluate: (ctx) => {
-          if (ctx.setupQuality === 'A') {
-            const hasRegime = Boolean(ctx.regime && (ctx.regime === 'trend-up' || ctx.regime === 'trend-down'));
+          if (ctx.setupQuality === "A") {
+            const hasRegime = Boolean(
+              ctx.regime && (ctx.regime === "trend-up" || ctx.regime === "trend-down"),
+            );
             const hasBreadth = Boolean(ctx.breadth && ctx.breadth.advances > ctx.breadth.declines);
             const meetsAll = hasRegime && hasBreadth;
-            
+
             return {
               pass: meetsAll,
-              reason: !meetsAll 
-                ? `A+ requires trending regime and positive breadth`
-                : undefined,
+              reason: !meetsAll ? `A+ requires trending regime and positive breadth` : undefined,
             };
           }
           return { pass: true, reason: undefined };
@@ -124,11 +127,11 @@ export class RulesSentinel {
 
     if (realizedR < 0) {
       this.consecutiveLosses++;
-      
+
       if (this.consecutiveLosses >= this.CONSECUTIVE_LOSS_LIMIT) {
         this.activateCircuitBreaker(
           `${this.consecutiveLosses} consecutive losses - cooling off`,
-          this.COOLDOWN_MS
+          this.COOLDOWN_MS,
         );
       }
     } else {
@@ -138,7 +141,7 @@ export class RulesSentinel {
     if (this.dailyPnLR <= -this.MAX_DAILY_LOSS) {
       this.activateCircuitBreaker(
         `Daily loss limit reached: ${(this.dailyPnLR * 100).toFixed(1)}%`,
-        24 * 60 * 60 * 1000 // Rest of day
+        24 * 60 * 60 * 1000, // Rest of day
       );
     }
   }

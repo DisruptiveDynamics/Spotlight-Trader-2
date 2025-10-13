@@ -1,72 +1,72 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
-type ColorVisionPreset = 'normal' | 'protanopia' | 'deuteranopia' | 'tritanopia';
+type ColorVisionPreset = "normal" | "protanopia" | "deuteranopia" | "tritanopia";
 
 const COLOR_PALETTES: Record<ColorVisionPreset, { up: string; down: string; neutral: string }> = {
   normal: {
-    up: '#10b981',
-    down: '#ef4444',
-    neutral: '#6b7280',
+    up: "#10b981",
+    down: "#ef4444",
+    neutral: "#6b7280",
   },
   protanopia: {
-    up: '#3b82f6',
-    down: '#eab308',
-    neutral: '#6b7280',
+    up: "#3b82f6",
+    down: "#eab308",
+    neutral: "#6b7280",
   },
   deuteranopia: {
-    up: '#3b82f6',
-    down: '#f59e0b',
-    neutral: '#6b7280',
+    up: "#3b82f6",
+    down: "#f59e0b",
+    neutral: "#6b7280",
   },
   tritanopia: {
-    up: '#06b6d4',
-    down: '#f43f5e',
-    neutral: '#6b7280',
+    up: "#06b6d4",
+    down: "#f43f5e",
+    neutral: "#6b7280",
   },
 };
 
 export function AccessibilityControls() {
-  const [colorVision, setColorVision] = useState<ColorVisionPreset>('normal');
+  const [colorVision, setColorVision] = useState<ColorVisionPreset>("normal");
   const [highContrast, setHighContrast] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
 
   useEffect(() => {
-    const savedVision = localStorage.getItem('color-vision');
+    const savedVision = localStorage.getItem("color-vision");
     if (
       savedVision &&
-      (savedVision === 'normal' ||
-        savedVision === 'protanopia' ||
-        savedVision === 'deuteranopia' ||
-        savedVision === 'tritanopia')
+      (savedVision === "normal" ||
+        savedVision === "protanopia" ||
+        savedVision === "deuteranopia" ||
+        savedVision === "tritanopia")
     ) {
       setColorVision(savedVision);
     }
 
-    const savedContrast = localStorage.getItem('high-contrast');
+    const savedContrast = localStorage.getItem("high-contrast");
     if (savedContrast !== null) {
-      setHighContrast(savedContrast === 'true');
+      setHighContrast(savedContrast === "true");
     }
 
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     setReducedMotion(prefersReducedMotion);
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('color-vision', colorVision);
+    localStorage.setItem("color-vision", colorVision);
     const palette = COLOR_PALETTES[colorVision];
 
-    document.documentElement.style.setProperty('--color-up', palette.up);
-    document.documentElement.style.setProperty('--color-down', palette.down);
-    document.documentElement.style.setProperty('--color-neutral', palette.neutral);
+    document.documentElement.style.setProperty("--color-up", palette.up);
+    document.documentElement.style.setProperty("--color-down", palette.down);
+    document.documentElement.style.setProperty("--color-neutral", palette.neutral);
   }, [colorVision]);
 
   useEffect(() => {
-    localStorage.setItem('high-contrast', String(highContrast));
+    localStorage.setItem("high-contrast", String(highContrast));
 
     if (highContrast) {
-      document.documentElement.classList.add('high-contrast');
+      document.documentElement.classList.add("high-contrast");
     } else {
-      document.documentElement.classList.remove('high-contrast');
+      document.documentElement.classList.remove("high-contrast");
     }
   }, [highContrast]);
 
@@ -93,12 +93,12 @@ export function AccessibilityControls() {
         <button
           onClick={() => setHighContrast(!highContrast)}
           className={`relative w-11 h-6 rounded-full transition-colors ${
-            highContrast ? 'bg-blue-500' : 'bg-gray-700'
+            highContrast ? "bg-blue-500" : "bg-gray-700"
           }`}
         >
           <div
             className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${
-              highContrast ? 'translate-x-5' : 'translate-x-0'
+              highContrast ? "translate-x-5" : "translate-x-0"
             }`}
           />
         </button>

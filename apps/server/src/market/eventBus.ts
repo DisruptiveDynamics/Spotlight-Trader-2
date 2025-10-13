@@ -1,15 +1,15 @@
-import { EventEmitter } from 'events';
+import { EventEmitter } from "events";
 
 export interface Tick {
   ts: number;
   price: number;
   size: number;
-  side?: 'buy' | 'sell';
+  side?: "buy" | "sell";
 }
 
 export interface Microbar {
   symbol: string;
-  tf: '250ms';
+  tf: "250ms";
   ts: number;
   open: number;
   high: number;
@@ -18,7 +18,7 @@ export interface Microbar {
   volume: number;
 }
 
-export type Timeframe = '1m' | '2m' | '5m' | '10m' | '15m' | '30m' | '1h';
+export type Timeframe = "1m" | "2m" | "5m" | "10m" | "15m" | "30m" | "1h";
 
 export interface Bar {
   symbol: string;
@@ -35,15 +35,15 @@ export interface Bar {
   };
 }
 
-import type { EvaluatedRule, Signal } from '@shared/types/rules';
+import type { EvaluatedRule, Signal } from "@shared/types/rules";
 
 type EventMap = {
   [key: `tick:${string}`]: Tick;
   [key: `microbar:${string}`]: Microbar;
   [key: `bar:new:${string}:${Timeframe}`]: Bar;
-  'rule:evaluated': EvaluatedRule;
-  'signal:new': Signal;
-  'signal:approved': Signal;
+  "rule:evaluated": EvaluatedRule;
+  "signal:new": Signal;
+  "signal:approved": Signal;
 };
 
 class TypedEventBus extends EventEmitter {

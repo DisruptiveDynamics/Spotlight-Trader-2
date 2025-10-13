@@ -1,4 +1,4 @@
-const KEY = 'spotlight_auth_v1';
+const KEY = "spotlight_auth_v1";
 
 export interface AuthSnapshot {
   user?: {
@@ -24,7 +24,7 @@ export const authStorage = {
     try {
       localStorage.setItem(KEY, JSON.stringify(snapshot));
     } catch (error) {
-      console.error('Failed to save auth state:', error);
+      console.error("Failed to save auth state:", error);
     }
   },
 
@@ -32,7 +32,7 @@ export const authStorage = {
     try {
       localStorage.removeItem(KEY);
     } catch (error) {
-      console.error('Failed to clear auth state:', error);
+      console.error("Failed to clear auth state:", error);
     }
   },
 
@@ -40,5 +40,5 @@ export const authStorage = {
     const snapshot = this.get();
     if (!snapshot?.expiresAt) return true;
     return Date.now() > snapshot.expiresAt;
-  }
+  },
 };

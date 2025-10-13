@@ -1,4 +1,4 @@
-import type { Response } from 'express';
+import type { Response } from "express";
 
 interface BufferedEvent {
   id?: string;
@@ -16,12 +16,12 @@ export class BackpressureController {
 
   constructor(
     private res: Response,
-    maxSize = 100
+    maxSize = 100,
   ) {
     this.maxSize = maxSize;
 
     this.drainHandler = () => this.handleDrain();
-    res.on('drain', this.drainHandler);
+    res.on("drain", this.drainHandler);
   }
 
   write(event: string, data: any, id?: string): void {
@@ -49,11 +49,11 @@ export class BackpressureController {
   }
 
   private dropEvent(newEvent: BufferedEvent): void {
-    const microbarIndex = this.buffer.findIndex((e) => e.event === 'microbar');
+    const microbarIndex = this.buffer.findIndex((e) => e.event === "microbar");
     if (microbarIndex !== -1) {
       this.buffer.splice(microbarIndex, 1);
       this.buffer.push(newEvent);
-    } else if (newEvent.event === 'microbar') {
+    } else if (newEvent.event === "microbar") {
       // Drop the new microbar instead of queuing
     } else {
       this.buffer.shift();
@@ -63,7 +63,7 @@ export class BackpressureController {
   }
 
   private writeEvent(event: BufferedEvent): boolean {
-    let message = '';
+    let message = "";
     if (event.id) message += `id: ${event.id}\n`;
     message += `event: ${event.event}\n`;
     message += `data: ${event.data}\n\n`;
@@ -102,7 +102,7 @@ export class BackpressureController {
   }
 
   destroy() {
-    this.res.off('drain', this.drainHandler);
+    this.res.off("drain", this.drainHandler);
     this.buffer = [];
     this.isPaused = false;
   }

@@ -1,40 +1,40 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import path from 'path';
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import path from "path";
 
 export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@shared': path.resolve(__dirname, '../../packages/shared/src'),
+      "@": path.resolve(__dirname, "./src"),
+      "@shared": path.resolve(__dirname, "../../packages/shared/src"),
     },
   },
   server: {
-    host: '0.0.0.0',
+    host: "0.0.0.0",
     port: 5000,
     strictPort: true,
     allowedHosts: true,
     hmr: {
-      protocol: 'ws',
-      host: '0.0.0.0',
+      protocol: "ws",
+      host: "0.0.0.0",
       port: 5000,
-      path: '/__vite_hmr',
+      path: "/__vite_hmr",
       clientPort: 5000,
     },
     proxy: {
-      '/api': {
-        target: 'http://0.0.0.0:8080',
+      "/api": {
+        target: "http://0.0.0.0:8080",
         changeOrigin: true,
         secure: false,
       },
-      '/stream': {
-        target: 'http://0.0.0.0:8080',
+      "/stream": {
+        target: "http://0.0.0.0:8080",
         changeOrigin: true,
         secure: false,
       },
-      '/ws': {
-        target: 'http://0.0.0.0:8080',
+      "/ws": {
+        target: "http://0.0.0.0:8080",
         ws: true,
         changeOrigin: true,
         secure: false,
@@ -46,8 +46,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          react: ['react', 'react-dom'],
-          charts: ['lightweight-charts'],
+          react: ["react", "react-dom"],
+          charts: ["lightweight-charts"],
         },
       },
     },

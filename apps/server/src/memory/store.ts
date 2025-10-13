@@ -1,10 +1,10 @@
-import { db } from '../db/index.js';
-import { coachMemories } from '../db/schema.js';
-import { eq, and, sql } from 'drizzle-orm';
-import { nanoid } from 'nanoid';
-import { embedText } from './embed.js';
+import { db } from "../db/index.js";
+import { coachMemories } from "../db/schema.js";
+import { eq, and, sql } from "drizzle-orm";
+import { nanoid } from "nanoid";
+import { embedText } from "./embed.js";
 
-export type MemoryKind = 'playbook' | 'glossary' | 'postmortem' | 'knowledge';
+export type MemoryKind = "playbook" | "glossary" | "postmortem" | "knowledge";
 
 export interface Memory {
   id: string;
@@ -23,7 +23,7 @@ export async function saveMemory(
   userId: string,
   kind: MemoryKind,
   text: string,
-  tags: string[]
+  tags: string[],
 ): Promise<string> {
   const id = nanoid();
   const embedding = await embedText(text);
@@ -46,7 +46,7 @@ export async function listMemories(
     kind?: MemoryKind;
     limit?: number;
     tag?: string;
-  }
+  },
 ): Promise<Memory[]> {
   const conditions = [eq(coachMemories.userId, userId)];
 
@@ -107,13 +107,13 @@ export async function retrieveTopK(
   k = 4,
   decayHalfLifeDays = 10,
   _diversityPenalty = 0.1,
-  excludeKnowledge = true
+  excludeKnowledge = true,
 ): Promise<MemoryWithScore[]> {
   const queryEmbedding = await embedText(query);
-  const embeddingLiteral = `'[${queryEmbedding.join(',')}]'::vector`;
+  const embeddingLiteral = `'[${queryEmbedding.join(",")}]'::vector`;
 
   const conditions = [eq(coachMemories.userId, userId)];
-  
+
   // Exclude knowledge kind by default to prevent uploaded content from polluting personal memories
   if (excludeKnowledge) {
     conditions.push(sql`${coachMemories.kind} != 'knowledge'`);

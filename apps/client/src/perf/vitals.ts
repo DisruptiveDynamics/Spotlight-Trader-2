@@ -3,7 +3,7 @@
  * Captures Core Web Vitals and sends to server
  */
 
-import { onCLS, onFID, onLCP, onINP, type Metric } from 'web-vitals';
+import { onCLS, onFID, onLCP, onINP, type Metric } from "web-vitals";
 
 interface VitalsData {
   cls?: number;
@@ -24,17 +24,17 @@ async function reportVitals() {
   }
 
   try {
-    await fetch('/api/metrics/vitals', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    await fetch("/api/metrics/vitals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(vitalsData),
-      credentials: 'include',
+      credentials: "include",
     });
 
     // Reset after reporting
     vitalsData = {};
   } catch (error) {
-    console.error('Failed to report web vitals:', error);
+    console.error("Failed to report web vitals:", error);
   }
 }
 
@@ -57,16 +57,16 @@ function handleMetric(metric: Metric) {
   const { name, value } = metric;
 
   switch (name) {
-    case 'CLS':
+    case "CLS":
       vitalsData.cls = value;
       break;
-    case 'FID':
+    case "FID":
       vitalsData.fid = value;
       break;
-    case 'LCP':
+    case "LCP":
       vitalsData.lcp = value;
       break;
-    case 'INP':
+    case "INP":
       vitalsData.inp = value;
       break;
   }

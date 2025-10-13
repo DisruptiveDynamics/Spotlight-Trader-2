@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
 interface Alert {
   id: string;
   symbol: string;
-  direction: 'long' | 'short' | 'flat';
+  direction: "long" | "short" | "flat";
   confidence: number;
   timestamp: string;
 }
@@ -13,9 +13,9 @@ export function AlertsPanel() {
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    const eventSource = new EventSource('/stream/market?symbols=SPY');
+    const eventSource = new EventSource("/stream/market?symbols=SPY");
 
-    eventSource.addEventListener('alert', (event) => {
+    eventSource.addEventListener("alert", (event) => {
       const alert = JSON.parse(event.data) as Alert;
       setAlerts((prev) => [alert, ...prev].slice(0, 50));
     });
@@ -35,21 +35,21 @@ export function AlertsPanel() {
 
   const getDirectionColor = (direction: string) => {
     switch (direction) {
-      case 'long':
-        return 'text-green-600 bg-green-50';
-      case 'short':
-        return 'text-red-600 bg-red-50';
+      case "long":
+        return "text-green-600 bg-green-50";
+      case "short":
+        return "text-red-600 bg-red-50";
       default:
-        return 'text-gray-600 bg-gray-50';
+        return "text-gray-600 bg-gray-50";
     }
   };
 
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
+    return date.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
     });
   };
 
@@ -58,15 +58,15 @@ export function AlertsPanel() {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold">Trade Alerts</h2>
         <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-          <span className="text-xs text-gray-600">{isConnected ? 'Live' : 'Disconnected'}</span>
+          <div className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"}`} />
+          <span className="text-xs text-gray-600">{isConnected ? "Live" : "Disconnected"}</span>
         </div>
       </div>
 
       {alerts.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
           <p className="text-gray-400 text-sm">
-            {isConnected ? 'Waiting for alerts...' : 'Connecting...'}
+            {isConnected ? "Waiting for alerts..." : "Connecting..."}
           </p>
         </div>
       ) : (

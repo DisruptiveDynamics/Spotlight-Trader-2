@@ -1,6 +1,6 @@
-import { validateEnv } from '@shared/env';
-import { ringBuffer } from '@server/cache/ring';
-import type { Bar, Timeframe } from '@server/market/eventBus';
+import { validateEnv } from "@shared/env";
+import { ringBuffer } from "@server/cache/ring";
+import type { Bar, Timeframe } from "@server/market/eventBus";
 
 const env = validateEnv(process.env);
 
@@ -14,12 +14,12 @@ interface HistoryQuery {
 
 interface PolygonAggResponse {
   results?: Array<{
-    t: number;  // timestamp
-    o: number;  // open
-    h: number;  // high
-    l: number;  // low
-    c: number;  // close
-    v: number;  // volume
+    t: number; // timestamp
+    o: number; // open
+    h: number; // high
+    l: number; // low
+    c: number; // close
+    v: number; // volume
   }>;
   status: string;
   count?: number;
@@ -32,7 +32,7 @@ interface PolygonAggResponse {
  * 3. High-quality mock generator (fallback)
  */
 export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
-  const { symbol, timeframe = '1m', limit = 1000, before, sinceSeq } = query;
+  const { symbol, timeframe = "1m", limit = 1000, before, sinceSeq } = query;
 
   // Priority 1: Check ring buffer for gap backfill
   if (sinceSeq !== undefined) {
@@ -115,13 +115,13 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
  */
 function timeframeToMultiplier(timeframe: Timeframe): number {
   const map: Record<Timeframe, number> = {
-    '1m': 1,
-    '2m': 2,
-    '5m': 5,
-    '10m': 10,
-    '15m': 15,
-    '30m': 30,
-    '1h': 60,
+    "1m": 1,
+    "2m": 2,
+    "5m": 5,
+    "10m": 10,
+    "15m": 15,
+    "30m": 30,
+    "1h": 60,
   };
   return map[timeframe] || 1;
 }
@@ -141,40 +141,40 @@ async function fetchPolygonHistory(
   symbol: string,
   timeframe: Timeframe,
   limit: number,
-  before?: number
+  before?: number,
 ): Promise<Bar[]> {
   const toMs = before || Date.now();
-  
+
   // Default to 60 days of history for proper context (configurable)
   const daysBack = 60;
-  const fromMs = toMs - (daysBack * 24 * 60 * 60 * 1000);
+  const fromMs = toMs - daysBack * 24 * 60 * 60 * 1000;
 
   // Format dates for Polygon API (YYYY-MM-DD)
-  const fromDate = new Date(fromMs).toISOString().split('T')[0];
-  const toDate = new Date(toMs).toISOString().split('T')[0];
+  const fromDate = new Date(fromMs).toISOString().split("T")[0];
+  const toDate = new Date(toMs).toISOString().split("T")[0];
 
   const multiplier = timeframeToMultiplier(timeframe);
   const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/minute/${fromDate}/${toDate}`;
   const params = new URLSearchParams({
-    adjusted: 'true',
-    sort: 'asc',
+    adjusted: "true",
+    sort: "asc",
     limit: String(50000), // Max results, Polygon will paginate
     apiKey: env.POLYGON_API_KEY,
   });
 
   try {
     const response = await fetch(`${url}?${params.toString()}`, {
-      headers: { 'Accept': 'application/json' },
+      headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(10000), // 10s timeout
     });
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error');
+      const errorText = await response.text().catch(() => "Unknown error");
       console.warn(`Polygon API error (${response.status}): ${errorText}`);
       return [];
     }
 
-    const data = await response.json() as PolygonAggResponse;
+    const data = (await response.json()) as PolygonAggResponse;
 
     if (!data.results || data.results.length === 0) {
       console.warn(`No historical data from Polygon for ${symbol}`);
@@ -204,9 +204,8 @@ async function fetchPolygonHistory(
 
     console.log(`✅ Fetched ${bars.length} historical bars from Polygon for ${symbol}`);
     return bars;
-
   } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+    const errorMsg = err instanceof Error ? err.message : "Unknown error";
     console.warn(`Polygon API request failed: ${errorMsg}`);
     return [];
   }
@@ -216,14 +215,9 @@ async function fetchPolygonHistory(
  * Generate realistic mock bars with proper price action and volume
  * Uses current market prices and realistic volatility patterns
  */
-function generateRealisticBars(
-  symbol: string,
-  fromMs: number,
-  toMs: number,
-  limit: number
-): Bar[] {
+function generateRealisticBars(symbol: string, fromMs: number, toMs: number, limit: number): Bar[] {
   const bars: Bar[] = [];
-  
+
   // Current realistic base prices (updated Oct 2025)
   const basePrices: Record<string, number> = {
     SPY: 580,
@@ -234,9 +228,9 @@ function generateRealisticBars(
 
   // Volatility profiles (% movement per bar)
   const volatilities: Record<string, number> = {
-    SPY: 0.015,  // 1.5% typical range
-    QQQ: 0.02,   // 2% typical range
-    TSLA: 0.04,  // 4% high volatility
+    SPY: 0.015, // 1.5% typical range
+    QQQ: 0.02, // 2% typical range
+    TSLA: 0.04, // 4% high volatility
     AAPL: 0.025, // 2.5% moderate volatility
   };
 
@@ -266,7 +260,7 @@ function generateRealisticBars(
     const close = open + priceChange;
     const rangeFactor = 0.3 + Math.random() * 0.7; // 30-100% of daily range
     const spread = Math.abs(priceChange) * rangeFactor;
-    
+
     const high = Math.max(open, close) + spread * Math.random();
     const low = Math.min(open, close) - spread * Math.random();
 
@@ -277,7 +271,7 @@ function generateRealisticBars(
 
     bars.push({
       symbol,
-      timeframe: '1m',
+      timeframe: "1m",
       seq: Math.floor(bar_start / 60000),
       bar_start,
       bar_end,

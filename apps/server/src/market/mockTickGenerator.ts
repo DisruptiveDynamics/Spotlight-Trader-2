@@ -1,4 +1,4 @@
-import { eventBus, type Tick } from './eventBus';
+import { eventBus, type Tick } from "./eventBus";
 
 interface SymbolConfig {
   basePrice: number;
@@ -38,7 +38,9 @@ export class MockTickGenerator {
     }, intervalMs);
 
     this.intervals.set(symbol, interval);
-    console.log(`🎬 Mock tick generator started for ${symbol} (${finalConfig.ticksPerSecond} ticks/sec)`);
+    console.log(
+      `🎬 Mock tick generator started for ${symbol} (${finalConfig.ticksPerSecond} ticks/sec)`,
+    );
   }
 
   private generateTick(symbol: string, config: SymbolConfig) {
@@ -56,7 +58,8 @@ export class MockTickGenerator {
     }
 
     // Calculate price change
-    const change = (trendPull + meanReversion + randomWalk) * config.volatility * config.basePrice / 100;
+    const change =
+      ((trendPull + meanReversion + randomWalk) * config.volatility * config.basePrice) / 100;
     const newPrice = Math.max(currentPrice + change, config.basePrice * 0.9); // Floor at 90% of base
     const newPriceRounded = Math.round(newPrice * 100) / 100;
 
@@ -69,19 +72,19 @@ export class MockTickGenerator {
 
     // Determine tick side (buy/sell) based on price direction
     const lastPrice = this.lastPrices.get(symbol);
-    let side: 'buy' | 'sell' | undefined;
-    
+    let side: "buy" | "sell" | undefined;
+
     if (lastPrice !== undefined) {
       if (newPriceRounded > lastPrice) {
-        side = 'buy'; // Uptick
+        side = "buy"; // Uptick
       } else if (newPriceRounded < lastPrice) {
-        side = 'sell'; // Downtick
+        side = "sell"; // Downtick
       } else {
         // For same price, use volume bias (larger volume = more likely aggressor)
-        side = Math.random() > 0.5 ? 'buy' : 'sell';
+        side = Math.random() > 0.5 ? "buy" : "sell";
       }
     }
-    
+
     this.lastPrices.set(symbol, newPriceRounded);
 
     const tick: Tick = {

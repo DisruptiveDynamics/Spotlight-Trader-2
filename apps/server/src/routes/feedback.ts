@@ -1,7 +1,7 @@
-import { Router } from 'express';
-import { z } from 'zod';
-import { saveFeedback, getRuleMetrics } from '../learning/loop';
-import { AuthRequest } from '../middleware/requireUser.js';
+import { Router } from "express";
+import { z } from "zod";
+import { saveFeedback, getRuleMetrics } from "../learning/loop";
+import { AuthRequest } from "../middleware/requireUser.js";
 
 export const feedbackRouter: Router = Router();
 
@@ -9,7 +9,7 @@ const FeedbackSchema = z.object({
   symbol: z.string(),
   seq: z.number(),
   ruleId: z.string(),
-  label: z.enum(['good', 'bad', 'missed', 'late']),
+  label: z.enum(["good", "bad", "missed", "late"]),
   notes: z.string().optional(),
 });
 
@@ -17,7 +17,7 @@ const FeedbackSchema = z.object({
  * POST /api/feedback
  * Submit feedback for a signal
  */
-feedbackRouter.post('/', async (req: AuthRequest, res) => {
+feedbackRouter.post("/", async (req: AuthRequest, res) => {
   try {
     const parsed = FeedbackSchema.parse(req.body);
     const userId = req.user!.userId;
@@ -33,8 +33,8 @@ feedbackRouter.post('/', async (req: AuthRequest, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Feedback error:', error);
-    res.status(400).json({ error: 'Invalid feedback' });
+    console.error("Feedback error:", error);
+    res.status(400).json({ error: "Invalid feedback" });
   }
 });
 
@@ -42,11 +42,11 @@ feedbackRouter.post('/', async (req: AuthRequest, res) => {
  * GET /api/rules/metrics?ruleId=...
  * Get aggregated metrics and score for a rule
  */
-feedbackRouter.get('/rules/metrics', async (req: AuthRequest, res) => {
+feedbackRouter.get("/rules/metrics", async (req: AuthRequest, res) => {
   try {
     const ruleId = req.query.ruleId as string;
     if (!ruleId) {
-      return res.status(400).json({ error: 'Missing ruleId' });
+      return res.status(400).json({ error: "Missing ruleId" });
     }
 
     const userId = req.user!.userId;
@@ -54,7 +54,7 @@ feedbackRouter.get('/rules/metrics', async (req: AuthRequest, res) => {
 
     res.json({ metrics });
   } catch (error) {
-    console.error('Metrics error:', error);
-    res.status(500).json({ error: 'Failed to get metrics' });
+    console.error("Metrics error:", error);
+    res.status(500).json({ error: "Failed to get metrics" });
   }
 });

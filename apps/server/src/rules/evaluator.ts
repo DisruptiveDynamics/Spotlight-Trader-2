@@ -1,47 +1,47 @@
-import { create, all, type ConfigOptions, type EvalFunction } from 'mathjs';
-import type { Rule, EvaluatedRule, RuleContext } from '@shared/types/rules';
+import { create, all, type ConfigOptions, type EvalFunction } from "mathjs";
+import type { Rule, EvaluatedRule, RuleContext } from "@shared/types/rules";
 
-const ALLOWED_FUNCTIONS = new Set(['abs', 'max', 'min', 'mean', 'sqrt', 'pow', 'log', 'exp']);
+const ALLOWED_FUNCTIONS = new Set(["abs", "max", "min", "mean", "sqrt", "pow", "log", "exp"]);
 
 const ALLOWED_OPERATORS = new Set([
-  '+',
-  '-',
-  '*',
-  '/',
-  '>',
-  '<',
-  '>=',
-  '<=',
-  '==',
-  '!=',
-  '&&',
-  '||',
-  '!',
-  '(',
-  ')',
-  ',',
+  "+",
+  "-",
+  "*",
+  "/",
+  ">",
+  "<",
+  ">=",
+  "<=",
+  "==",
+  "!=",
+  "&&",
+  "||",
+  "!",
+  "(",
+  ")",
+  ",",
 ]);
 
 const ALLOWED_SCOPE_VARS = new Set([
-  'open',
-  'high',
-  'low',
-  'close',
-  'volume',
-  'vwap',
-  'ema20',
-  'ema50',
-  'ema200',
-  'sma20',
-  'sma50',
-  'rsi',
-  'atr',
+  "open",
+  "high",
+  "low",
+  "close",
+  "volume",
+  "vwap",
+  "ema20",
+  "ema50",
+  "ema200",
+  "sma20",
+  "sma50",
+  "rsi",
+  "atr",
 ]);
 
 const mathConfig: ConfigOptions = {
   epsilon: 1e-12,
-  matrix: 'Matrix',
-  number: 'number',
+  matrix: "Matrix",
+  number: "number",
   precision: 64,
   predictable: false,
   randomSeed: null,
@@ -96,7 +96,7 @@ export class RuleEvaluator {
       return compiled;
     } catch (error) {
       throw new Error(
-        `Failed to compile rule ${rule.id}: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to compile rule ${rule.id}: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
     }
   }
@@ -140,8 +140,8 @@ export class RuleEvaluator {
   }
 
   private calculateRuleConfidence(rule: Rule, context: RuleContext): number {
-    if (rule.expression.includes('>')) {
-      const parts = rule.expression.split('>').map((s) => s.trim());
+    if (rule.expression.includes(">")) {
+      const parts = rule.expression.split(">").map((s) => s.trim());
       if (parts.length === 2 && parts[0] && parts[1]) {
         const leftValue = this.evaluateSimpleExpression(parts[0], context);
         const rightValue = this.evaluateSimpleExpression(parts[1], context);
@@ -151,8 +151,8 @@ export class RuleEvaluator {
       }
     }
 
-    if (rule.expression.includes('<')) {
-      const parts = rule.expression.split('<').map((s) => s.trim());
+    if (rule.expression.includes("<")) {
+      const parts = rule.expression.split("<").map((s) => s.trim());
       if (parts.length === 2 && parts[0] && parts[1]) {
         const leftValue = this.evaluateSimpleExpression(parts[0], context);
         const rightValue = this.evaluateSimpleExpression(parts[1], context);
@@ -178,15 +178,15 @@ export class RuleEvaluator {
     return null;
   }
 
-  private determineSignal(rule: Rule, context: RuleContext): 'long' | 'short' | 'flat' | undefined {
+  private determineSignal(rule: Rule, context: RuleContext): "long" | "short" | "flat" | undefined {
     const expr = rule.expression.toLowerCase();
 
-    if (expr.includes('long') || (expr.includes('>') && context.close)) {
-      return 'long';
+    if (expr.includes("long") || (expr.includes(">") && context.close)) {
+      return "long";
     }
 
-    if (expr.includes('short') || (expr.includes('<') && context.close)) {
-      return 'short';
+    if (expr.includes("short") || (expr.includes("<") && context.close)) {
+      return "short";
     }
 
     return undefined;

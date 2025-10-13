@@ -1,8 +1,8 @@
-import type { Rule } from '@shared/types/rules';
-import { ruleEvaluator } from './evaluator';
-import { db } from '../db';
-import { rules, ruleVersions, userRules, userRuleVersions } from '../db/schema';
-import { eq, and } from 'drizzle-orm';
+import type { Rule } from "@shared/types/rules";
+import { ruleEvaluator } from "./evaluator";
+import { db } from "../db";
+import { rules, ruleVersions, userRules, userRuleVersions } from "../db/schema";
+import { eq, and } from "drizzle-orm";
 
 export class RuleRegistry {
   private activeRulesCache = new Map<string, Rule[]>();
@@ -30,7 +30,7 @@ export class RuleRegistry {
     return activeRules;
   }
 
-  async createRule(userId: string, rule: Omit<Rule, 'id' | 'createdAt'>): Promise<Rule> {
+  async createRule(userId: string, rule: Omit<Rule, "id" | "createdAt">): Promise<Rule> {
     const ruleId = `rule_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
     const versionId = `rv_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
     const userRuleId = `ur_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
@@ -77,7 +77,7 @@ export class RuleRegistry {
   async updateRule(
     ruleId: string,
     userId: string,
-    updates: Partial<Omit<Rule, 'id' | 'createdAt'>>
+    updates: Partial<Omit<Rule, "id" | "createdAt">>,
   ): Promise<Rule> {
     const existingRules = await this.getActiveRules(userId);
     const existing = existingRules.find((r) => r.id === ruleId);

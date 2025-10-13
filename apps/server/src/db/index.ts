@@ -1,7 +1,7 @@
-import { drizzle } from 'drizzle-orm/neon-http';
-import { neon } from '@neondatabase/serverless';
-import { validateEnv } from '@shared/env';
-import * as schema from './schema';
+import { drizzle } from "drizzle-orm/neon-http";
+import { neon } from "@neondatabase/serverless";
+import { validateEnv } from "@shared/env";
+import * as schema from "./schema";
 
 const env = validateEnv(process.env);
 const sql = neon(env.DATABASE_URL);

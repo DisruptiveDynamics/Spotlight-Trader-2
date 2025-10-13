@@ -4,10 +4,10 @@
  */
 
 export type MiniSnapshot = {
-  focusSymbol?: string;                  // e.g., "ES"
+  focusSymbol?: string; // e.g., "ES"
   timeframe?: "1m" | "5m" | "1h" | "1d"; // e.g., "1m"
-  lastAction?: string;                   // e.g., "entered long @ 5023.25"
-  constraints?: string[];                // e.g., ["no live orders", "explain in 2 lines"]
+  lastAction?: string; // e.g., "entered long @ 5023.25"
+  constraints?: string[]; // e.g., ["no live orders", "explain in 2 lines"]
   hud?: {
     rtt?: number | null;
     sseReconnects?: number | null;
@@ -25,7 +25,7 @@ export function composeMiniContext(s: MiniSnapshot = {}): string {
   const hud = s.hud ?? {};
   if (hud.rtt != null || hud.sseReconnects != null || hud.market) {
     lines.push(
-      `hud: rtt=${hud.rtt ?? "n/a"}, sseReconnects=${hud.sseReconnects ?? "n/a"}, market=${hud.market ?? "unknown"}`
+      `hud: rtt=${hud.rtt ?? "n/a"}, sseReconnects=${hud.sseReconnects ?? "n/a"}, market=${hud.market ?? "unknown"}`,
     );
   }
   return lines.length ? `[[session_context]]\n${lines.join("\n")}\n[[/session_context]]\n` : "";

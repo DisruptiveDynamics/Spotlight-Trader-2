@@ -3,10 +3,10 @@
  * Listens to feedback and maintains per-rule rolling metrics
  */
 
-import { eventBus } from '../market/eventBus';
-import { db } from '../db';
-import { feedback, ruleMetricsDaily } from '../db/schema';
-import { eq, and, gte, sql } from 'drizzle-orm';
+import { eventBus } from "../market/eventBus";
+import { db } from "../db";
+import { feedback, ruleMetricsDaily } from "../db/schema";
+import { eq, and, gte, sql } from "drizzle-orm";
 
 interface RuleMetrics {
   ruleId: string;
@@ -29,12 +29,12 @@ const metricsCache = new Map<string, RuleMetrics>();
  */
 export function initializeLearningLoop() {
   // Listen to signal:new events to open feedback slots
-  eventBus.on('signal:new', (signal) => {
+  eventBus.on("signal:new", (signal) => {
     console.log(`📊 Feedback slot opened for signal: ${signal.id} (rule: ${signal.ruleId})`);
     // The slot is implicitly "open" - user can POST feedback at any time
   });
 
-  console.log('✅ Learning loop initialized');
+  console.log("✅ Learning loop initialized");
 }
 
 export interface FeedbackInput {
@@ -42,7 +42,7 @@ export interface FeedbackInput {
   symbol: string;
   seq: number;
   ruleId: string;
-  label: 'good' | 'bad' | 'missed' | 'late';
+  label: "good" | "bad" | "missed" | "late";
   notes?: string | null;
 }
 
@@ -50,7 +50,7 @@ export interface FeedbackInput {
  * Save feedback and update aggregates
  */
 export async function saveFeedback(input: FeedbackInput): Promise<void> {
-  const today = new Date().toISOString().split('T')[0]!;
+  const today = new Date().toISOString().split("T")[0]!;
 
   // Save feedback
   await db.insert(feedback).values({
@@ -70,8 +70,8 @@ export async function saveFeedback(input: FeedbackInput): Promise<void> {
       and(
         eq(ruleMetricsDaily.userId, input.userId),
         eq(ruleMetricsDaily.ruleId, input.ruleId),
-        eq(ruleMetricsDaily.day, today)
-      )
+        eq(ruleMetricsDaily.day, today),
+      ),
     )
     .limit(1);
 
@@ -81,10 +81,10 @@ export async function saveFeedback(input: FeedbackInput): Promise<void> {
       fired: sql`${ruleMetricsDaily.fired} + 1`,
     };
 
-    if (input.label === 'good') {
+    if (input.label === "good") {
       updates.good = sql`${ruleMetricsDaily.good} + 1`;
       updates.actionable = sql`${ruleMetricsDaily.actionable} + 1`;
-    } else if (input.label === 'bad') {
+    } else if (input.label === "bad") {
       updates.bad = sql`${ruleMetricsDaily.bad} + 1`;
       updates.actionable = sql`${ruleMetricsDaily.actionable} + 1`;
     }
@@ -96,8 +96,8 @@ export async function saveFeedback(input: FeedbackInput): Promise<void> {
         and(
           eq(ruleMetricsDaily.userId, input.userId),
           eq(ruleMetricsDaily.ruleId, input.ruleId),
-          eq(ruleMetricsDaily.day, today)
-        )
+          eq(ruleMetricsDaily.day, today),
+        ),
       );
   } else {
     // Insert new record
@@ -106,9 +106,9 @@ export async function saveFeedback(input: FeedbackInput): Promise<void> {
       ruleId: input.ruleId,
       day: today,
       fired: 1,
-      actionable: input.label === 'good' || input.label === 'bad' ? 1 : 0,
-      good: input.label === 'good' ? 1 : 0,
-      bad: input.label === 'bad' ? 1 : 0,
+      actionable: input.label === "good" || input.label === "bad" ? 1 : 0,
+      good: input.label === "good" ? 1 : 0,
+      bad: input.label === "bad" ? 1 : 0,
       expectancy: null,
     });
   }
@@ -154,8 +154,8 @@ export async function getRuleScore(userId: string, ruleId: string): Promise<numb
         and(
           eq(ruleMetricsDaily.userId, userId),
           eq(ruleMetricsDaily.ruleId, ruleId),
-          gte(ruleMetricsDaily.day, sevenDaysAgo.toISOString().split('T')[0]!)
-        )
+          gte(ruleMetricsDaily.day, sevenDaysAgo.toISOString().split("T")[0]!),
+        ),
       ),
     db
       .select({
@@ -169,8 +169,8 @@ export async function getRuleScore(userId: string, ruleId: string): Promise<numb
         and(
           eq(ruleMetricsDaily.userId, userId),
           eq(ruleMetricsDaily.ruleId, ruleId),
-          gte(ruleMetricsDaily.day, thirtyDaysAgo.toISOString().split('T')[0]!)
-        )
+          gte(ruleMetricsDaily.day, thirtyDaysAgo.toISOString().split("T")[0]!),
+        ),
       ),
   ]);
 
@@ -214,7 +214,7 @@ function calculateScore(metrics: RuleMetrics): number {
  */
 export async function getRuleMetrics(
   userId: string,
-  ruleId: string
+  ruleId: string,
 ): Promise<{
   fired7d: number;
   actionable7d: number;

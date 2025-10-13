@@ -1,13 +1,13 @@
-import { eventBus } from '../market/eventBus';
-import type { Signal, SignalExplanation } from '@shared/types/rules';
-import { db } from '../db';
-import { signalExplanations } from '../db/schema';
+import { eventBus } from "../market/eventBus";
+import type { Signal, SignalExplanation } from "@shared/types/rules";
+import { db } from "../db";
+import { signalExplanations } from "../db/schema";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 export class CoachAdvisor {
   start(): void {
-    eventBus.on('signal:new', this.handleNewSignal.bind(this));
+    eventBus.on("signal:new", this.handleNewSignal.bind(this));
   }
 
   private async handleNewSignal(signal: Signal): Promise<void> {
@@ -17,7 +17,7 @@ export class CoachAdvisor {
 
       console.log(`Coach explanation for signal ${signal.id}:`, explanation.text);
     } catch (error) {
-      console.error('Failed to generate signal explanation:', error);
+      console.error("Failed to generate signal explanation:", error);
     }
   }
 
@@ -28,30 +28,30 @@ export class CoachAdvisor {
         id: `exp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
         signalId: signal.id,
         text: fallbackText,
-        tokens: '0',
-        model: 'fallback',
+        tokens: "0",
+        model: "fallback",
       };
     }
 
     const prompt = this.buildPrompt(signal);
 
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${OPENAI_API_KEY}`,
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: "gpt-4o-mini",
           messages: [
             {
-              role: 'system',
+              role: "system",
               content:
-                'You are a concise trading coach. Explain trade setups in 1-2 sentences. Focus on entry, risk level, and key technical factors.',
+                "You are a concise trading coach. Explain trade setups in 1-2 sentences. Focus on entry, risk level, and key technical factors.",
             },
             {
-              role: 'user',
+              role: "user",
               content: prompt,
             },
           ],
@@ -69,25 +69,25 @@ export class CoachAdvisor {
         usage?: { total_tokens?: number };
         model?: string;
       };
-      const text = data.choices?.[0]?.message?.content || 'No explanation generated';
-      const tokens = data.usage?.total_tokens?.toString() || '0';
+      const text = data.choices?.[0]?.message?.content || "No explanation generated";
+      const tokens = data.usage?.total_tokens?.toString() || "0";
 
       return {
         id: `exp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
         signalId: signal.id,
         text,
         tokens,
-        model: data.model || 'gpt-4o-mini',
+        model: data.model || "gpt-4o-mini",
       };
     } catch (error) {
-      console.error('OpenAI API call failed:', error);
+      console.error("OpenAI API call failed:", error);
       const fallbackText = `Signal detected for ${signal.symbol}: ${signal.direction} setup with ${(signal.confidence * 100).toFixed(0)}% confidence.`;
       return {
         id: `exp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
         signalId: signal.id,
         text: fallbackText,
-        tokens: '0',
-        model: 'fallback',
+        tokens: "0",
+        model: "fallback",
       };
     }
   }
@@ -107,7 +107,7 @@ export class CoachAdvisor {
   }
 
   stop(): void {
-    eventBus.off('signal:new', this.handleNewSignal.bind(this));
+    eventBus.off("signal:new", this.handleNewSignal.bind(this));
   }
 }
 

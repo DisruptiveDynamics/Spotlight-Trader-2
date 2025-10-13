@@ -1,8 +1,8 @@
 // Deterministic roll-up engine: 1m → 2m/5m/10m/15m/30m/1h
 // Ensures single source of truth and TradingView/TOS-level consistency
 
-import { TIMEFRAME_TO_BUCKET_MIN, type Timeframe } from '@shared/types/market';
-import type { Bar } from '@shared/types';
+import { TIMEFRAME_TO_BUCKET_MIN, type Timeframe } from "@shared/types/market";
+import type { Bar } from "@shared/types";
 
 interface Bar1m {
   symbol: string;
@@ -43,7 +43,7 @@ function floorToKMinute(tsMs: number, k: number): number {
     d.getUTCHours(),
     flooredMin,
     0,
-    0
+    0,
   ).getTime();
 }
 
@@ -104,7 +104,7 @@ export function apply1mCloseToRollup(
   symbol: string,
   timeframe: Timeframe,
   closed1mBar: Bar1m,
-  currentRolledBar: RolledBar | null
+  currentRolledBar: RolledBar | null,
 ): RolledBar | null {
   const k = TIMEFRAME_TO_BUCKET_MIN[timeframe];
   const kMs = k * 60000;
@@ -130,7 +130,10 @@ export function apply1mCloseToRollup(
   }
 
   // If the 1m bar belongs to the same bucket, update the rolled bar
-  if (closed1mBar.bar_start >= currentRolledBar.bar_start && closed1mBar.bar_start < currentRolledBar.bar_end) {
+  if (
+    closed1mBar.bar_start >= currentRolledBar.bar_start &&
+    closed1mBar.bar_start < currentRolledBar.bar_end
+  ) {
     return {
       ...currentRolledBar,
       ohlcv: {

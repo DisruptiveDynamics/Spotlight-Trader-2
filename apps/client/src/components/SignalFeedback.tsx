@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Signal } from '@shared/types/rules';
+import { useState } from "react";
+import { Signal } from "@shared/types/rules";
 
 interface SignalFeedbackProps {
   signal: Signal;
@@ -10,13 +10,13 @@ interface FeedbackData {
   symbol: string;
   seq: number;
   ruleId: string;
-  label: 'good' | 'bad' | 'missed' | 'late';
+  label: "good" | "bad" | "missed" | "late";
   notes: string | undefined;
 }
 
 export function SignalFeedback({ signal, onSubmit }: SignalFeedbackProps) {
-  const [label, setLabel] = useState<FeedbackData['label'] | null>(null);
-  const [notes, setNotes] = useState('');
+  const [label, setLabel] = useState<FeedbackData["label"] | null>(null);
+  const [notes, setNotes] = useState("");
   const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = () => {
@@ -37,7 +37,7 @@ export function SignalFeedback({ signal, onSubmit }: SignalFeedbackProps) {
     setTimeout(() => {
       setSubmitted(false);
       setLabel(null);
-      setNotes('');
+      setNotes("");
     }, 2000);
   };
 
@@ -56,41 +56,41 @@ export function SignalFeedback({ signal, onSubmit }: SignalFeedbackProps) {
 
       <div className="flex gap-2">
         <button
-          onClick={() => setLabel('good')}
+          onClick={() => setLabel("good")}
           className={`flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-            label === 'good'
-              ? 'bg-green-600 text-white'
-              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            label === "good"
+              ? "bg-green-600 text-white"
+              : "bg-gray-700 text-gray-300 hover:bg-gray-600"
           }`}
         >
           Good
         </button>
         <button
-          onClick={() => setLabel('bad')}
+          onClick={() => setLabel("bad")}
           className={`flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-            label === 'bad'
-              ? 'bg-red-600 text-white'
-              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            label === "bad"
+              ? "bg-red-600 text-white"
+              : "bg-gray-700 text-gray-300 hover:bg-gray-600"
           }`}
         >
           Bad
         </button>
         <button
-          onClick={() => setLabel('missed')}
+          onClick={() => setLabel("missed")}
           className={`flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-            label === 'missed'
-              ? 'bg-yellow-600 text-white'
-              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            label === "missed"
+              ? "bg-yellow-600 text-white"
+              : "bg-gray-700 text-gray-300 hover:bg-gray-600"
           }`}
         >
           Missed
         </button>
         <button
-          onClick={() => setLabel('late')}
+          onClick={() => setLabel("late")}
           className={`flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-            label === 'late'
-              ? 'bg-orange-600 text-white'
-              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            label === "late"
+              ? "bg-orange-600 text-white"
+              : "bg-gray-700 text-gray-300 hover:bg-gray-600"
           }`}
         >
           Late

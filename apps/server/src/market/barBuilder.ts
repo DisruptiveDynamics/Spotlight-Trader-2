@@ -1,7 +1,7 @@
-import { eventBus, type Tick, type Microbar, type Bar } from './eventBus';
-import { toZonedTime, fromZonedTime } from 'date-fns-tz';
+import { eventBus, type Tick, type Microbar, type Bar } from "./eventBus";
+import { toZonedTime, fromZonedTime } from "date-fns-tz";
 
-const ET = 'America/New_York';
+const ET = "America/New_York";
 
 interface BarState {
   open: number;
@@ -41,12 +41,12 @@ export class BarBuilder {
       d.getHours(),
       flooredMin,
       0,
-      0
+      0,
     );
     return fromZonedTime(wall, ET).getTime();
   }
 
-  subscribe(symbol: string, timeframe: string = '1m') {
+  subscribe(symbol: string, timeframe: string = "1m") {
     const stateKey = `${symbol}:${timeframe}`;
     if (this.states.has(stateKey)) return;
 
@@ -74,7 +74,7 @@ export class BarBuilder {
     // Create and store tick listener reference for proper cleanup
     const tickListener = (tick: Tick) => this.handleTick(symbol, timeframe, tick);
     this.tickListeners.set(stateKey, tickListener);
-    
+
     eventBus.on(`tick:${symbol}` as const, tickListener);
     this.startMicrobarTimer(symbol, timeframe);
     this.startBarFinalizeTimer(symbol, timeframe);
@@ -83,32 +83,32 @@ export class BarBuilder {
   private parseTimeframe(timeframe: string): number {
     const match = timeframe.match(/^(\d+)([mh])$/);
     if (!match || !match[1] || !match[2]) return 1; // default to 1 minute
-    
+
     const value = parseInt(match[1], 10);
     const unit = match[2];
-    
-    return unit === 'h' ? value * 60 : value;
+
+    return unit === "h" ? value * 60 : value;
   }
 
-  unsubscribe(symbol: string, timeframe: string = '1m') {
+  unsubscribe(symbol: string, timeframe: string = "1m") {
     const stateKey = `${symbol}:${timeframe}`;
-    
+
     // Remove tick listener using stored reference
     const tickListener = this.tickListeners.get(stateKey);
     if (tickListener) {
       eventBus.off(`tick:${symbol}` as any, tickListener);
       this.tickListeners.delete(stateKey);
     }
-    
+
     // Clean up state and timers
     this.states.delete(stateKey);
-    
+
     const microTimer = this.microbarTimers.get(stateKey);
     if (microTimer) {
       clearInterval(microTimer);
       this.microbarTimers.delete(stateKey);
     }
-    
+
     const finalizeTimer = this.barFinalizeTimers.get(stateKey);
     if (finalizeTimer) {
       clearInterval(finalizeTimer);
@@ -146,7 +146,7 @@ export class BarBuilder {
       state.currentBar.high = Math.max(state.currentBar.high, tick.price);
       state.currentBar.low = Math.min(state.currentBar.low, tick.price);
       state.currentBar.close = tick.price;
-      state.currentBar.volume += (tick.size ?? 0);
+      state.currentBar.volume += tick.size ?? 0;
     }
   }
 
@@ -181,7 +181,7 @@ export class BarBuilder {
     eventBus.emit(`bar:new:${symbol}:${timeframe}` as any, finalizedBar);
   }
 
-  private startMicrobarTimer(symbol: string, timeframe: string = '1m') {
+  private startMicrobarTimer(symbol: string, timeframe: string = "1m") {
     const stateKey = `${symbol}:${timeframe}`;
     const timer = setInterval(() => {
       const state = this.states.get(stateKey);
@@ -189,7 +189,7 @@ export class BarBuilder {
 
       const microbar: Microbar = {
         symbol,
-        tf: '250ms',
+        tf: "250ms",
         ts: Date.now(),
         open: state.currentBar.open,
         high: state.currentBar.high,
@@ -204,7 +204,7 @@ export class BarBuilder {
     this.microbarTimers.set(stateKey, timer);
   }
 
-  private startBarFinalizeTimer(symbol: string, timeframe: string = '1m') {
+  private startBarFinalizeTimer(symbol: string, timeframe: string = "1m") {
     const stateKey = `${symbol}:${timeframe}`;
     // Check every second if the current bar needs to be finalized
     const timer = setInterval(() => {
@@ -212,7 +212,7 @@ export class BarBuilder {
       if (!state) return;
 
       const now = Date.now();
-      
+
       // If current time has crossed bar_end, finalize even without new ticks
       if (now >= state.bar_end && state.currentBar) {
         this.finalizeBar(symbol, timeframe, state);
@@ -229,7 +229,7 @@ export class BarBuilder {
     this.barFinalizeTimers.set(stateKey, timer);
   }
 
-  getState(symbol: string, timeframe: string = '1m'): SymbolState | undefined {
+  getState(symbol: string, timeframe: string = "1m"): SymbolState | undefined {
     const stateKey = `${symbol}:${timeframe}`;
     return this.states.get(stateKey);
   }

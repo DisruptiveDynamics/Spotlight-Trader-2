@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo } from "react";
 import {
   createChart,
   IChartApi,
@@ -6,9 +6,9 @@ import {
   UTCTimestamp,
   LineStyle,
   CrosshairMode,
-} from 'lightweight-charts';
-import { useChartState } from '../../state/chartState';
-import { fetchHistory, sessionStartMs } from '../../lib/history';
+} from "lightweight-charts";
+import { useChartState } from "../../state/chartState";
+import { fetchHistory, sessionStartMs } from "../../lib/history";
 import {
   emaBatch,
   bollingerBatch,
@@ -16,20 +16,20 @@ import {
   vwapAnchoredBatch,
   volumeSmaBatch,
   type Candle,
-} from '@spotlight/shared';
-import { useChartContext } from './hooks/useChartContext';
+} from "@spotlight/shared";
+import { useChartContext } from "./hooks/useChartContext";
 
 interface PaneProps {
   paneId: number;
   className?: string;
 }
 
-export function Pane({ className = '' }: PaneProps) {
+export function Pane({ className = "" }: PaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<'Candlestick' | 'Line' | 'Bar'> | null>(null);
-  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-  const overlaySeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
+  const seriesRef = useRef<ISeriesApi<"Candlestick" | "Line" | "Bar"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const overlaySeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
 
   const [candles, setCandles] = useState<Candle[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -63,13 +63,13 @@ export function Pane({ className = '' }: PaneProps) {
 
     let vwap: number[] | null = null;
     if (overlays.vwap) {
-      if (overlays.vwap.mode === 'session' && candles.length > 0) {
+      if (overlays.vwap.mode === "session" && candles.length > 0) {
         const lastCandle = candles[candles.length - 1];
         if (lastCandle) {
           const sessionStart = sessionStartMs(active.symbol, lastCandle.t);
           vwap = vwapSessionBatch(candlesForIndicators, sessionStart);
         }
-      } else if (overlays.vwap.mode === 'anchored' && overlays.vwap.anchorMs) {
+      } else if (overlays.vwap.mode === "anchored" && overlays.vwap.anchorMs) {
         vwap = vwapAnchoredBatch(candlesForIndicators, overlays.vwap.anchorMs);
       }
     }
@@ -91,32 +91,32 @@ export function Pane({ className = '' }: PaneProps) {
 
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { color: '#1a1a1a' },
-        textColor: '#9ca3af',
+        background: { color: "#1a1a1a" },
+        textColor: "#9ca3af",
         fontSize: 12,
       },
       grid: {
-        vertLines: { color: '#2a2a2a' },
-        horzLines: { color: '#2a2a2a' },
+        vertLines: { color: "#2a2a2a" },
+        horzLines: { color: "#2a2a2a" },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: {
-          color: '#6b7280',
+          color: "#6b7280",
           width: 1,
           style: LineStyle.Dashed,
         },
         horzLine: {
-          color: '#6b7280',
+          color: "#6b7280",
           width: 1,
           style: LineStyle.Dashed,
         },
       },
       rightPriceScale: {
-        borderColor: '#374151',
+        borderColor: "#374151",
       },
       timeScale: {
-        borderColor: '#374151',
+        borderColor: "#374151",
         timeVisible: true,
         secondsVisible: false,
       },
@@ -126,36 +126,36 @@ export function Pane({ className = '' }: PaneProps) {
 
     // Create main series based on chart style
     let series: ISeriesApi<any>;
-    if (chartStyle === 'candles') {
+    if (chartStyle === "candles") {
       series = chart.addCandlestickSeries({
-        upColor: '#10b981',
-        downColor: '#ef4444',
-        borderUpColor: '#10b981',
-        borderDownColor: '#ef4444',
-        wickUpColor: '#10b981',
-        wickDownColor: '#ef4444',
+        upColor: "#10b981",
+        downColor: "#ef4444",
+        borderUpColor: "#10b981",
+        borderDownColor: "#ef4444",
+        wickUpColor: "#10b981",
+        wickDownColor: "#ef4444",
       });
-    } else if (chartStyle === 'line') {
+    } else if (chartStyle === "line") {
       series = chart.addLineSeries({
-        color: '#3b82f6',
+        color: "#3b82f6",
         lineWidth: 2,
       });
     } else {
       series = chart.addBarSeries({
-        upColor: '#10b981',
-        downColor: '#ef4444',
+        upColor: "#10b981",
+        downColor: "#ef4444",
       });
     }
 
     // Create volume series
     const volumeSeries = chart.addHistogramSeries({
       priceFormat: {
-        type: 'volume',
+        type: "volume",
       },
-      priceScaleId: 'volume',
+      priceScaleId: "volume",
     });
 
-    chart.priceScale('volume').applyOptions({
+    chart.priceScale("volume").applyOptions({
       scaleMargins: {
         top: 0.8,
         bottom: 0,
@@ -176,7 +176,7 @@ export function Pane({ className = '' }: PaneProps) {
       }
     };
 
-    window.addEventListener('resize', handleResize);
+    window.addEventListener("resize", handleResize);
 
     // Handle crosshair move for tooltip
     chart.subscribeCrosshairMove((param) => {
@@ -198,7 +198,7 @@ export function Pane({ className = '' }: PaneProps) {
     });
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener("resize", handleResize);
       chart.remove();
     };
   }, [chartStyle]);
@@ -229,7 +229,7 @@ export function Pane({ className = '' }: PaneProps) {
 
         // Update chart with candles
         if (seriesRef.current) {
-          if (chartStyle === 'line') {
+          if (chartStyle === "line") {
             const lineData = history.map((bar) => ({
               time: bar.time as UTCTimestamp,
               value: bar.close,
@@ -252,7 +252,7 @@ export function Pane({ className = '' }: PaneProps) {
           const volumeData = history.map((bar) => ({
             time: bar.time as UTCTimestamp,
             value: bar.volume,
-            color: bar.close >= bar.open ? '#10b98166' : '#ef444466',
+            color: bar.close >= bar.open ? "#10b98166" : "#ef444466",
           }));
           volumeSeriesRef.current.setData(volumeData);
         }
@@ -267,7 +267,7 @@ export function Pane({ className = '' }: PaneProps) {
 
         setIsLoading(false);
       } catch (error) {
-        console.error('Failed to load history:', error);
+        console.error("Failed to load history:", error);
         setIsLoading(false);
       }
     };
@@ -289,7 +289,7 @@ export function Pane({ className = '' }: PaneProps) {
         try {
           chartRef.current.removeSeries(series);
         } catch (e) {
-          console.warn('Failed to remove series:', e);
+          console.warn("Failed to remove series:", e);
         }
       }
     });
@@ -298,7 +298,7 @@ export function Pane({ className = '' }: PaneProps) {
     // Add EMA lines
     indicators.emaLines.forEach(({ period, values }) => {
       const emaSeries = chartRef.current!.addLineSeries({
-        color: period === 20 ? '#f59e0b' : '#8b5cf6',
+        color: period === 20 ? "#f59e0b" : "#8b5cf6",
         lineWidth: 1,
         title: `EMA(${period})`,
       });
@@ -317,19 +317,19 @@ export function Pane({ className = '' }: PaneProps) {
     // Add Bollinger Bands
     if (indicators.bollinger) {
       const midSeries = chartRef.current!.addLineSeries({
-        color: '#6366f1',
+        color: "#6366f1",
         lineWidth: 1,
-        title: 'BB Mid',
+        title: "BB Mid",
       });
       const upperSeries = chartRef.current!.addLineSeries({
-        color: '#6366f166',
+        color: "#6366f166",
         lineWidth: 1,
-        title: 'BB Upper',
+        title: "BB Upper",
       });
       const lowerSeries = chartRef.current!.addLineSeries({
-        color: '#6366f166',
+        color: "#6366f166",
         lineWidth: 1,
-        title: 'BB Lower',
+        title: "BB Lower",
       });
 
       const midData = indicators.bollinger
@@ -357,18 +357,18 @@ export function Pane({ className = '' }: PaneProps) {
       upperSeries.setData(upperData);
       lowerSeries.setData(lowerData);
 
-      overlaySeriesRef.current.set('bb-mid', midSeries);
-      overlaySeriesRef.current.set('bb-upper', upperSeries);
-      overlaySeriesRef.current.set('bb-lower', lowerSeries);
+      overlaySeriesRef.current.set("bb-mid", midSeries);
+      overlaySeriesRef.current.set("bb-upper", upperSeries);
+      overlaySeriesRef.current.set("bb-lower", lowerSeries);
     }
 
     // Add VWAP
     if (indicators.vwap) {
       const vwapSeries = chartRef.current!.addLineSeries({
-        color: '#ec4899',
+        color: "#ec4899",
         lineWidth: 2,
-        lineStyle: overlays.vwap?.mode === 'anchored' ? LineStyle.Dashed : LineStyle.Solid,
-        title: overlays.vwap?.mode === 'anchored' ? 'VWAP (Anchored)' : 'VWAP (Session)',
+        lineStyle: overlays.vwap?.mode === "anchored" ? LineStyle.Dashed : LineStyle.Solid,
+        title: overlays.vwap?.mode === "anchored" ? "VWAP (Anchored)" : "VWAP (Session)",
       });
 
       const vwapData = indicators.vwap
@@ -379,15 +379,15 @@ export function Pane({ className = '' }: PaneProps) {
         .filter((d: any) => !isNaN(d.value));
 
       vwapSeries.setData(vwapData);
-      overlaySeriesRef.current.set('vwap', vwapSeries);
+      overlaySeriesRef.current.set("vwap", vwapSeries);
     }
 
     // Add Volume SMA
     if (volumeSeriesRef.current && indicators.volumeSma) {
       const volumeSmaSeries = chartRef.current!.addLineSeries({
-        color: '#3b82f6',
+        color: "#3b82f6",
         lineWidth: 1,
-        priceScaleId: 'volume',
+        priceScaleId: "volume",
         title: `Vol SMA(${overlays.volumeSma})`,
       });
 
@@ -399,7 +399,7 @@ export function Pane({ className = '' }: PaneProps) {
         .filter((d: any) => !isNaN(d.value));
 
       volumeSmaSeries.setData(volSmaData);
-      overlaySeriesRef.current.set('vol-sma', volumeSmaSeries);
+      overlaySeriesRef.current.set("vol-sma", volumeSmaSeries);
     }
   }, [indicators, candles, overlays]);
 
@@ -422,12 +422,12 @@ export function Pane({ className = '' }: PaneProps) {
 
     const container = containerRef.current;
     if (container) {
-      container.addEventListener('contextmenu', handleContextMenu);
+      container.addEventListener("contextmenu", handleContextMenu);
     }
 
     return () => {
       if (container) {
-        container.removeEventListener('contextmenu', handleContextMenu);
+        container.removeEventListener("contextmenu", handleContextMenu);
       }
     };
   }, [setVwapAnchor]);
@@ -435,9 +435,9 @@ export function Pane({ className = '' }: PaneProps) {
   const handleExplainChart = () => {
     const context = getCurrentContext(100);
     window.dispatchEvent(
-      new CustomEvent('chart:explain-request', {
+      new CustomEvent("chart:explain-request", {
         detail: { context },
-      })
+      }),
     );
   };
 
@@ -451,7 +451,7 @@ export function Pane({ className = '' }: PaneProps) {
 
       <div ref={containerRef} className="w-full h-full" />
 
-      {tooltip && chartStyle === 'candles' && (
+      {tooltip && chartStyle === "candles" && (
         <div
           className="absolute z-20 px-2 py-1 text-xs font-mono text-white bg-gray-900 border border-gray-700 rounded shadow-lg pointer-events-none"
           style={{

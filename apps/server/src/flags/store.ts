@@ -4,8 +4,8 @@
  * Supports optional DB persistence
  */
 
-import { db } from '../db';
-import { sql } from 'drizzle-orm';
+import { db } from "../db";
+import { sql } from "drizzle-orm";
 
 export interface Flags {
   // Existing flags
@@ -54,7 +54,7 @@ export async function updateFlags(patch: Partial<Flags>, persist = true): Promis
     try {
       await persistFlags(currentFlags);
     } catch (error) {
-      console.error('Failed to persist flags:', error);
+      console.error("Failed to persist flags:", error);
     }
   }
 
@@ -77,11 +77,11 @@ export async function loadFlags(): Promise<void> {
     if (result.rows.length > 0 && result.rows[0]) {
       const stored = result.rows[0].value as Partial<Flags>;
       currentFlags = { ...defaults, ...stored };
-      console.log('✅ Feature flags loaded from database');
+      console.log("✅ Feature flags loaded from database");
     }
   } catch {
     // Table might not exist yet, that's ok
-    console.log('ℹ️  Feature flags using defaults (DB table not found)');
+    console.log("ℹ️  Feature flags using defaults (DB table not found)");
   }
 }
 
@@ -107,7 +107,7 @@ export async function resetFlags(): Promise<Flags> {
     try {
       await db.execute(sql`DELETE FROM feature_flags WHERE key = 'global'`);
     } catch (error) {
-      console.error('Failed to reset flags:', error);
+      console.error("Failed to reset flags:", error);
     }
   }
 
@@ -119,5 +119,5 @@ export async function resetFlags(): Promise<Flags> {
  */
 export function isEnabled(flag: keyof Flags): boolean {
   const value = currentFlags[flag];
-  return typeof value === 'number' ? value > 0 : Boolean(value);
+  return typeof value === "number" ? value > 0 : Boolean(value);
 }

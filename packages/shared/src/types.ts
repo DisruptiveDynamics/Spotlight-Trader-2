@@ -3,7 +3,7 @@ export interface Tick {
   ts: number;
   price: number;
   size: number;
-  side?: 'buy' | 'sell' | 'unknown';
+  side?: "buy" | "sell" | "unknown";
 }
 
 export interface Bar {
@@ -20,11 +20,11 @@ export interface Bar {
 }
 
 export interface Microbar extends Bar {
-  timeframe: '250ms';
+  timeframe: "250ms";
 }
 
 export interface MinuteBar extends Bar {
-  timeframe: '1m';
+  timeframe: "1m";
 }
 
 export interface Alert {

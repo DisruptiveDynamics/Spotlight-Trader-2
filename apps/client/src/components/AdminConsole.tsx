@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
 interface Metric {
   name: string;
@@ -39,16 +39,16 @@ export function AdminConsole() {
 
   const fetchSnapshot = async () => {
     try {
-      const res = await fetch('/api/admin/snapshot');
+      const res = await fetch("/api/admin/snapshot");
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || 'Failed to fetch snapshot');
+        throw new Error(data.error || "Failed to fetch snapshot");
       }
       const data = await res.json();
       setSnapshot(data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
@@ -62,19 +62,19 @@ export function AdminConsole() {
 
   const handleFlagToggle = async (key: string, enabled: boolean) => {
     try {
-      const res = await fetch('/api/flags', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/flags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key, enabled }),
       });
 
       if (!res.ok) {
-        throw new Error('Failed to update flag');
+        throw new Error("Failed to update flag");
       }
 
       fetchSnapshot();
     } catch (err) {
-      console.error('Error updating flag:', err);
+      console.error("Error updating flag:", err);
     }
   };
 
@@ -125,10 +125,10 @@ export function AdminConsole() {
                   <button
                     onClick={() => handleFlagToggle(key, !enabled)}
                     className={`px-3 py-1 rounded text-xs font-medium transition ${
-                      enabled ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-600 hover:bg-gray-500'
+                      enabled ? "bg-green-600 hover:bg-green-700" : "bg-gray-600 hover:bg-gray-500"
                     }`}
                   >
-                    {enabled ? 'ENABLED' : 'DISABLED'}
+                    {enabled ? "ENABLED" : "DISABLED"}
                   </button>
                 </div>
               ))}

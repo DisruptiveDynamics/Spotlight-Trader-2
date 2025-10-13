@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import type { Rule, EvaluatedRule } from '@shared/types/rules';
+import { useState, useEffect } from "react";
+import type { Rule, EvaluatedRule } from "@shared/types/rules";
 
 export function RulesBrowser() {
   const [rules, setRules] = useState<Rule[]>([]);
@@ -13,11 +13,11 @@ export function RulesBrowser() {
 
   const fetchRules = async () => {
     try {
-      const response = await fetch('/api/rules?userId=demo-user');
+      const response = await fetch("/api/rules?userId=demo-user");
       const data = await response.json();
       setRules(data.rules || []);
     } catch (error) {
-      console.error('Failed to fetch rules:', error);
+      console.error("Failed to fetch rules:", error);
     }
   };
 
@@ -29,7 +29,7 @@ export function RulesBrowser() {
       setDryRunResults(data.evaluations || []);
       setSelectedRule(rule);
     } catch (error) {
-      console.error('Failed to run dry run:', error);
+      console.error("Failed to run dry run:", error);
     } finally {
       setIsLoading(false);
     }
@@ -54,8 +54,8 @@ export function RulesBrowser() {
                 key={rule.id}
                 className={`p-3 border rounded cursor-pointer transition-colors ${
                   selectedRule?.id === rule.id
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300'
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-200 hover:border-gray-300"
                 }`}
                 onClick={() => setSelectedRule(rule)}
               >
@@ -106,19 +106,19 @@ export function RulesBrowser() {
                       key={idx}
                       className={`p-2 text-sm rounded ${
                         result.passed
-                          ? 'bg-green-50 border border-green-200'
-                          : 'bg-gray-50 border border-gray-200'
+                          ? "bg-green-50 border border-green-200"
+                          : "bg-gray-50 border border-gray-200"
                       }`}
                     >
                       <div className="flex justify-between">
                         <span className="font-mono">Seq {result.barSeq}</span>
-                        <span className={result.passed ? 'text-green-600' : 'text-gray-400'}>
-                          {result.passed ? '✓ PASS' : '✗ FAIL'}
+                        <span className={result.passed ? "text-green-600" : "text-gray-400"}>
+                          {result.passed ? "✓ PASS" : "✗ FAIL"}
                         </span>
                       </div>
                       {result.passed && (
                         <div className="mt-1 text-xs text-gray-600">
-                          Signal: {result.signal?.toUpperCase()} | Confidence:{' '}
+                          Signal: {result.signal?.toUpperCase()} | Confidence:{" "}
                           {(result.confidence * 100).toFixed(0)}%
                         </div>
                       )}

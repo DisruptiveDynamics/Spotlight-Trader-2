@@ -19,37 +19,35 @@ import type {
   RiskBox,
   GenerateTradePlanParams,
   TradePlan,
-} from './types';
-import { patternMemory } from '../patterns/lookup';
-import { rulesSentinel } from '../sentinel';
-import { nanoid } from 'nanoid';
-import { db } from '@server/db';
-import { callouts, journalEvents } from '@server/db/schema';
-import { copilotBroadcaster } from '../broadcaster';
-import { perfMonitor } from '../performance';
-import { ringBuffer } from '@server/cache/ring';
-import { bars1m } from '@server/chart/bars1m';
-import { rollupFrom1m } from '@server/chart/rollups';
-import { flags } from '@shared/flags';
-import type { Timeframe } from '@shared/types/market';
-import { getSessionVWAPForSymbol } from '@server/indicators/vwap';
+} from "./types";
+import { patternMemory } from "../patterns/lookup";
+import { rulesSentinel } from "../sentinel";
+import { nanoid } from "nanoid";
+import { db } from "@server/db";
+import { callouts, journalEvents } from "@server/db/schema";
+import { copilotBroadcaster } from "../broadcaster";
+import { perfMonitor } from "../performance";
+import { ringBuffer } from "@server/cache/ring";
+import { bars1m } from "@server/chart/bars1m";
+import { rollupFrom1m } from "@server/chart/rollups";
+import { flags } from "@shared/flags";
+import type { Timeframe } from "@shared/types/market";
+import { getSessionVWAPForSymbol } from "@server/indicators/vwap";
 
-export async function getChartSnapshot(
-  params: GetChartSnapshotParams
-): Promise<ChartSnapshot> {
+export async function getChartSnapshot(params: GetChartSnapshotParams): Promise<ChartSnapshot> {
   // Support both 'barCount' (voice tool) and 'lookback' (legacy) parameter names
   const barCount = params.barCount || params.lookback || 50;
-  
+
   let cachedBars: any[];
-  
+
   // Use new rollup system if enabled
-  if (flags.timeframeRollups && params.timeframe !== '1m') {
+  if (flags.timeframeRollups && params.timeframe !== "1m") {
     // Get more 1m bars to ensure we have enough for rollup
     const bars1mData = bars1m.getRecent(params.symbol, barCount * 5);
     const rolled = rollupFrom1m(bars1mData, params.timeframe as Timeframe);
-    
+
     // Convert rolled bars to cached bar format
-    cachedBars = rolled.slice(-barCount).map(bar => ({
+    cachedBars = rolled.slice(-barCount).map((bar) => ({
       seq: bar.seq,
       bar_start: bar.bar_start,
       bar_end: bar.bar_end,
@@ -59,10 +57,10 @@ export async function getChartSnapshot(
       close: bar.ohlcv.c,
       volume: bar.ohlcv.v,
     }));
-  } else if (params.timeframe === '1m') {
+  } else if (params.timeframe === "1m") {
     // For 1m, use bars1m buffer directly
     const bars1mData = bars1m.getRecent(params.symbol, barCount);
-    cachedBars = bars1mData.map(bar => ({
+    cachedBars = bars1mData.map((bar) => ({
       seq: bar.seq,
       bar_start: bar.bar_start,
       bar_end: bar.bar_end,
@@ -76,7 +74,7 @@ export async function getChartSnapshot(
     // Fallback to old ring buffer system
     cachedBars = ringBuffer.getRecent(params.symbol, barCount);
   }
-  
+
   if (cachedBars.length === 0) {
     return {
       symbol: params.symbol,
@@ -84,8 +82,8 @@ export async function getChartSnapshot(
       bars: [],
       indicators: {},
       session: { high: 0, low: 0, open: 0 },
-      volatility: 'medium',
-      regime: 'chop',
+      volatility: "medium",
+      regime: "chop",
     };
   }
 
@@ -115,31 +113,31 @@ export async function getChartSnapshot(
   const avgRange = cachedBars.reduce((sum, b) => sum + (b.high - b.low), 0) / cachedBars.length;
   const avgPrice = cachedBars.reduce((sum, b) => sum + b.close, 0) / cachedBars.length;
   const rangePercent = (avgRange / avgPrice) * 100;
-  
-  const volatility = rangePercent > 1.5 ? 'high' : rangePercent > 0.7 ? 'medium' : 'low';
+
+  const volatility = rangePercent > 1.5 ? "high" : rangePercent > 0.7 ? "medium" : "low";
 
   // Detect regime: trend vs chop based on EMA crossovers and price action
   const closes = cachedBars.map((b) => b.close);
   const ema9 = calculateEMA(closes, 9);
   const ema21 = calculateEMA(closes, 21);
-  
+
   const currentClose = closes[closes.length - 1] || 0;
   const currentEMA9 = ema9[ema9.length - 1] || 0;
   const currentEMA21 = ema21[ema21.length - 1] || 0;
-  
-  let regime: 'trend-up' | 'trend-down' | 'chop' = 'chop';
+
+  let regime: "trend-up" | "trend-down" | "chop" = "chop";
   if (currentEMA9 > currentEMA21 && currentClose > currentEMA9) {
-    regime = 'trend-up';
+    regime = "trend-up";
   } else if (currentEMA9 < currentEMA21 && currentClose < currentEMA9) {
-    regime = 'trend-down';
+    regime = "trend-down";
   }
 
-  const indicators: ChartSnapshot['indicators'] = {};
-  
+  const indicators: ChartSnapshot["indicators"] = {};
+
   if (currentVWAP > 0) {
-    indicators.vwap = { value: currentVWAP, mode: 'session' as const };
+    indicators.vwap = { value: currentVWAP, mode: "session" as const };
   }
-  
+
   if (currentEMA9 > 0 && currentEMA21 > 0) {
     indicators.emas = [
       { period: 9, value: currentEMA9 },
@@ -152,10 +150,10 @@ export async function getChartSnapshot(
     timeframe: params.timeframe,
     bars,
     indicators,
-    session: { 
-      high: sessionHigh, 
-      low: sessionLow, 
-      open: sessionOpen 
+    session: {
+      high: sessionHigh,
+      low: sessionLow,
+      open: sessionOpen,
     },
     volatility,
     regime,
@@ -165,47 +163,45 @@ export async function getChartSnapshot(
 // Helper: Calculate Exponential Moving Average
 function calculateEMA(prices: number[], period: number): number[] {
   if (prices.length === 0 || prices.length < period) return [];
-  
+
   const k = 2 / (period + 1);
   const emaArray: number[] = [];
-  
+
   // Start with SMA
   const firstPrices = prices.slice(0, period);
   let ema = firstPrices.reduce((sum, p) => sum + p, 0) / period;
   emaArray.push(ema);
-  
+
   // Calculate EMA for remaining prices
   for (let i = period; i < prices.length; i++) {
     ema = prices[i]! * k + ema * (1 - k);
     emaArray.push(ema);
   }
-  
+
   return emaArray;
 }
 
 export async function subscribeMarketStream(
-  params: SubscribeMarketStreamParams
+  params: SubscribeMarketStreamParams,
 ): Promise<SubscribeMarketStreamResult> {
   const subscriptionId = nanoid();
   const streamUrl = `/api/telemetry/stream?symbol=${params.symbol}&timeframe=${params.timeframe}`;
-  
+
   return {
     subscriptionId,
     streamUrl,
   };
 }
 
-export async function proposeCallout(
-  params: ProposeCalloutParams
-): Promise<CalloutResult> {
+export async function proposeCallout(params: ProposeCalloutParams): Promise<CalloutResult> {
   const startTime = Date.now();
   const id = nanoid();
-  const qualityGrade = params.context.qualityGrade || 'B';
-  const urgency = params.context.urgency || 'now';
+  const qualityGrade = params.context.qualityGrade || "B";
+  const urgency = params.context.urgency || "now";
 
   await db.insert(callouts).values({
     id,
-    userId: 'demo-user',
+    userId: "demo-user",
     symbol: params.context.symbol,
     timeframe: params.context.timeframe,
     kind: params.kind,
@@ -218,7 +214,7 @@ export async function proposeCallout(
 
   const calloutEvent = {
     id,
-    userId: 'demo-user',
+    userId: "demo-user",
     kind: params.kind,
     setupTag: params.context.setupTag,
     rationale: params.context.rationale,
@@ -228,14 +224,12 @@ export async function proposeCallout(
   };
 
   copilotBroadcaster.broadcastCallout(calloutEvent);
-  perfMonitor.recordLatency('callout-broadcast', startTime);
+  perfMonitor.recordLatency("callout-broadcast", startTime);
 
   return calloutEvent;
 }
 
-export async function proposeEntryExit(
-  params: ProposeEntryExitParams
-): Promise<EntryExitProposal> {
+export async function proposeEntryExit(params: ProposeEntryExitParams): Promise<EntryExitProposal> {
   const id = nanoid();
   const riskPerShare = Math.abs(params.price - params.stop);
   const target1R = (params.target1 - params.price) / riskPerShare;
@@ -266,31 +260,27 @@ export async function proposeEntryExit(
   };
 }
 
-export async function evaluateRules(
-  params: EvaluateRulesParams
-): Promise<RulesEvaluation> {
+export async function evaluateRules(params: EvaluateRulesParams): Promise<RulesEvaluation> {
   if (!params.context) {
-    throw new Error('Missing required context parameter');
+    throw new Error("Missing required context parameter");
   }
   return rulesSentinel.evaluate(params.context);
 }
 
-export async function logJournalEvent(
-  params: LogJournalEventParams
-): Promise<JournalEventResult> {
+export async function logJournalEvent(params: LogJournalEventParams): Promise<JournalEventResult> {
   if (!params.payload) {
-    throw new Error('Missing required payload parameter');
+    throw new Error("Missing required payload parameter");
   }
-  
+
   if (!params.payload.symbol || !params.payload.timeframe) {
-    throw new Error('Missing required fields: symbol and timeframe');
+    throw new Error("Missing required fields: symbol and timeframe");
   }
 
   const id = nanoid();
 
   await db.insert(journalEvents).values({
     id,
-    userId: 'demo-user',
+    userId: "demo-user",
     type: params.type,
     symbol: params.payload.symbol,
     timeframe: params.payload.timeframe,
@@ -311,23 +301,19 @@ export async function logJournalEvent(
   };
 }
 
-export async function summarizeSession(
-  params: SummarizeSessionParams
-): Promise<SessionSummary> {
+export async function summarizeSession(params: SummarizeSessionParams): Promise<SessionSummary> {
   return {
-    period: typeof params.range === 'string' ? params.range : 'custom',
+    period: typeof params.range === "string" ? params.range : "custom",
     expectancyBySetup: [],
     ruleViolations: [],
     plInR: 0,
     winRate: 0,
-    focusList: ['SPY', 'QQQ', 'NVDA'],
-    markdown: '## Session Summary\n\nNo trades yet.',
+    focusList: ["SPY", "QQQ", "NVDA"],
+    markdown: "## Session Summary\n\nNo trades yet.",
   };
 }
 
-export async function getPatternSummary(
-  params: GetPatternSummaryParams
-): Promise<PatternSummary> {
+export async function getPatternSummary(params: GetPatternSummaryParams): Promise<PatternSummary> {
   const stats = await patternMemory.getPatternStats(params.symbol, params.timeframe);
 
   return {
@@ -348,11 +334,9 @@ export async function getPatternSummary(
   };
 }
 
-export async function getRecommendedRiskBox(
-  params: GetRecommendedRiskBoxParams
-): Promise<RiskBox> {
+export async function getRecommendedRiskBox(params: GetRecommendedRiskBoxParams): Promise<RiskBox> {
   const stats = await patternMemory.getPatternStats(params.symbol, params.timeframe, params.setup);
-  
+
   const avgStats = stats.length > 0 ? stats[0] : null;
   const atr = 1.5;
 
@@ -363,7 +347,7 @@ export async function getRecommendedRiskBox(
       target2: atr * 3,
       expectedHoldBars: 10,
       atr,
-      confidence: 'low',
+      confidence: "low",
     };
   }
 
@@ -373,13 +357,11 @@ export async function getRecommendedRiskBox(
     target2: avgStats.mfeP80,
     expectedHoldBars: avgStats.timeToTarget,
     atr,
-    confidence: avgStats.winRate > 0.6 ? 'high' : avgStats.winRate > 0.4 ? 'medium' : 'low',
+    confidence: avgStats.winRate > 0.6 ? "high" : avgStats.winRate > 0.4 ? "medium" : "low",
   };
 }
 
-export async function generateTradePlan(
-  params: GenerateTradePlanParams
-): Promise<TradePlan> {
+export async function generateTradePlan(params: GenerateTradePlanParams): Promise<TradePlan> {
   const stats = await patternMemory.getPatternStats(params.symbol, params.timeframe);
 
   return {
@@ -397,9 +379,9 @@ export async function generateTradePlan(
     },
     atr: 1.5,
     gamePlan: [
-      'Watch for VWAP reclaim with volume',
-      'Target PDH breakout if SPY leads',
-      'Use 9EMA as support on pullbacks',
+      "Watch for VWAP reclaim with volume",
+      "Target PDH breakout if SPY leads",
+      "Use 9EMA as support on pullbacks",
     ],
   };
 }

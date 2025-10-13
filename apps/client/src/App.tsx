@@ -1,40 +1,42 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { LatencyHUD } from './components/LatencyHUD';
-import { SignalDensityControl } from './components/SignalDensityControl';
-import { Brand } from './components/Brand';
-import { Splash } from './components/Splash';
-import { Toolbar } from './features/chart/Toolbar';
-import { focusManager } from './services/FocusManager';
-import { startFlagSync, stopFlagSync } from './state/flags';
-import type { InsightContext } from '@spotlight/shared';
-import { MarketStatus } from './features/hud/MarketStatus';
-import { useAuthStore } from './stores/authStore';
-import { SignIn } from './features/auth/SignIn';
-import { useChartState } from './state/chartState';
+import React, { useState, useEffect, Suspense, lazy } from "react";
+import { LatencyHUD } from "./components/LatencyHUD";
+import { SignalDensityControl } from "./components/SignalDensityControl";
+import { Brand } from "./components/Brand";
+import { Splash } from "./components/Splash";
+import { Toolbar } from "./features/chart/Toolbar";
+import { focusManager } from "./services/FocusManager";
+import { startFlagSync, stopFlagSync } from "./state/flags";
+import type { InsightContext } from "@spotlight/shared";
+import { MarketStatus } from "./features/hud/MarketStatus";
+import { useAuthStore } from "./stores/authStore";
+import { SignIn } from "./features/auth/SignIn";
+import { useChartState } from "./state/chartState";
 
 // Lazy load heavy components for code-splitting
 const MultiChart = lazy(() =>
-  import('./features/chart/MultiChart').then((m) => ({ default: m.MultiChart }))
+  import("./features/chart/MultiChart").then((m) => ({ default: m.MultiChart })),
 );
-const TapePeek = lazy(() => import('./components/TapePeek').then((m) => ({ default: m.TapePeek })));
-const TapePanel = lazy(() => import('./components/TapePanel').then((m) => ({ default: m.TapePanel })));
+const TapePeek = lazy(() => import("./components/TapePeek").then((m) => ({ default: m.TapePeek })));
+const TapePanel = lazy(() =>
+  import("./components/TapePanel").then((m) => ({ default: m.TapePanel })),
+);
 const PresenceBubble = lazy(() =>
-  import('./features/coach/PresenceBubble').then((m) => ({ default: m.PresenceBubble }))
+  import("./features/coach/PresenceBubble").then((m) => ({ default: m.PresenceBubble })),
 );
 const CalloutsOverlay = lazy(() =>
-  import('./features/copilot/CalloutsOverlay').then((m) => ({ default: m.CalloutsOverlay }))
+  import("./features/copilot/CalloutsOverlay").then((m) => ({ default: m.CalloutsOverlay })),
 );
 const ExplainPanel = lazy(() =>
-  import('./features/coach/ExplainPanel').then((m) => ({ default: m.ExplainPanel }))
+  import("./features/coach/ExplainPanel").then((m) => ({ default: m.ExplainPanel })),
 );
 const CommandPalette = lazy(() =>
-  import('./components/CommandPalette').then((m) => ({ default: m.CommandPalette }))
+  import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })),
 );
 const AdminConsole = lazy(() =>
-  import('./components/AdminConsole').then((m) => ({ default: m.AdminConsole }))
+  import("./components/AdminConsole").then((m) => ({ default: m.AdminConsole })),
 );
 const SettingsPanel = lazy(() =>
-  import('./components/SettingsPanel').then((m) => ({ default: m.SettingsPanel }))
+  import("./components/SettingsPanel").then((m) => ({ default: m.SettingsPanel })),
 );
 
 // Minimal loading fallback for Suspense boundaries
@@ -70,25 +72,25 @@ function App() {
       setExplainPanelOpen(true);
     };
 
-    window.addEventListener('chart:explain-request', handleExplainRequest as EventListener);
+    window.addEventListener("chart:explain-request", handleExplainRequest as EventListener);
 
     const handleFocusTrade = () => focusManager.toggleTradeMode();
     const handleFocusReview = () => focusManager.toggleReviewMode();
     const handleToggleAdmin = () => setShowAdminConsole((prev) => !prev);
     const handleToggleSettings = () => setShowSettings((prev) => !prev);
 
-    window.addEventListener('command:focus-trade', handleFocusTrade);
-    window.addEventListener('command:focus-review', handleFocusReview);
-    window.addEventListener('command:toggle-admin', handleToggleAdmin);
-    window.addEventListener('command:toggle-settings', handleToggleSettings);
+    window.addEventListener("command:focus-trade", handleFocusTrade);
+    window.addEventListener("command:focus-review", handleFocusReview);
+    window.addEventListener("command:toggle-admin", handleToggleAdmin);
+    window.addEventListener("command:toggle-settings", handleToggleSettings);
 
     return () => {
       unsubscribe();
-      window.removeEventListener('command:focus-trade', handleFocusTrade);
-      window.removeEventListener('command:focus-review', handleFocusReview);
-      window.removeEventListener('command:toggle-admin', handleToggleAdmin);
-      window.removeEventListener('command:toggle-settings', handleToggleSettings);
-      window.removeEventListener('chart:explain-request', handleExplainRequest as EventListener);
+      window.removeEventListener("command:focus-trade", handleFocusTrade);
+      window.removeEventListener("command:focus-review", handleFocusReview);
+      window.removeEventListener("command:toggle-admin", handleToggleAdmin);
+      window.removeEventListener("command:toggle-settings", handleToggleSettings);
+      window.removeEventListener("chart:explain-request", handleExplainRequest as EventListener);
     };
   }, []);
 
@@ -102,7 +104,7 @@ function App() {
     };
 
     // Listen for SSE connection event (from market stream)
-    window.addEventListener('sse:connected', handleSseConnect);
+    window.addEventListener("sse:connected", handleSseConnect);
 
     // Fallback timeout: hide splash after 1.5s regardless
     const timeoutId = setTimeout(() => {
@@ -112,7 +114,7 @@ function App() {
     }, 1500);
 
     return () => {
-      window.removeEventListener('sse:connected', handleSseConnect);
+      window.removeEventListener("sse:connected", handleSseConnect);
       clearTimeout(timeoutId);
     };
   }, []);
@@ -141,7 +143,7 @@ function App() {
             </div>
             <div className="flex items-center gap-4">
               <LatencyHUD />
-              {focusMode !== 'normal' && (
+              {focusMode !== "normal" && (
                 <div className="px-3 py-1 bg-blue-500 rounded text-sm font-semibold">
                   {focusMode.toUpperCase()} MODE
                 </div>
@@ -195,21 +197,21 @@ function App() {
                 </Suspense>
               </div>
 
-              {focusManager.isPanelVisible('coach') && (
+              {focusManager.isPanelVisible("coach") && (
                 <div className="bg-gray-800 p-4 rounded-lg">
                   <h3 className="text-sm font-semibold mb-2">Coach</h3>
                   <p className="text-xs text-gray-400">AI trading coach</p>
                 </div>
               )}
 
-              {focusManager.isPanelVisible('rules') && (
+              {focusManager.isPanelVisible("rules") && (
                 <div className="bg-gray-800 p-4 rounded-lg" style={{ opacity }}>
                   <h3 className="text-sm font-semibold mb-2">Rules</h3>
                   <p className="text-xs text-gray-400">Trading rules engine</p>
                 </div>
               )}
 
-              {focusManager.isPanelVisible('journal') && (
+              {focusManager.isPanelVisible("journal") && (
                 <div className="bg-gray-800 p-4 rounded-lg" style={{ opacity }}>
                   <h3 className="text-sm font-semibold mb-2">Journal</h3>
                   <p className="text-xs text-gray-400">Trading journal and notes</p>

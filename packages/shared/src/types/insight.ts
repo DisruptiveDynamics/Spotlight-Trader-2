@@ -19,7 +19,7 @@ export interface InsightOverlays {
 
 export interface InsightSignal {
   rule: string;
-  direction: 'long' | 'short';
+  direction: "long" | "short";
   confidence: number;
   ts: number;
 }
@@ -45,7 +45,7 @@ export interface InsightResponse {
 }
 
 export interface InsightJournalEntry {
-  type: 'insight';
+  type: "insight";
   symbol: string;
   timeframe: string;
   question: string;

@@ -1,11 +1,11 @@
-import { Router, type RequestHandler } from 'express';
-import { requireAdmin } from '../middleware/requireAdmin';
-import { metrics } from '../metrics/registry';
-import { getFlags } from '../flags/store';
+import { Router, type RequestHandler } from "express";
+import { requireAdmin } from "../middleware/requireAdmin";
+import { metrics } from "../metrics/registry";
+import { getFlags } from "../flags/store";
 
 const router: Router = Router();
 
-router.get('/snapshot', requireAdmin, (async (req, res) => {
+router.get("/snapshot", requireAdmin, (async (req, res) => {
   try {
     const metricsData = metrics.getMetrics();
     const flags = getFlags();
@@ -25,8 +25,8 @@ router.get('/snapshot', requireAdmin, (async (req, res) => {
 
     res.json(snapshot);
   } catch (error) {
-    console.error('Error generating snapshot:', error);
-    res.status(500).json({ error: 'Failed to generate snapshot' });
+    console.error("Error generating snapshot:", error);
+    res.status(500).json({ error: "Failed to generate snapshot" });
   }
 }) as RequestHandler);
 

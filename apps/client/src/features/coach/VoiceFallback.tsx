@@ -1,4 +1,4 @@
-import { useState, KeyboardEvent } from 'react';
+import { useState, KeyboardEvent } from "react";
 
 interface VoiceFallbackProps {
   onSendMessage: (message: string) => void;
@@ -6,17 +6,17 @@ interface VoiceFallbackProps {
 }
 
 export function VoiceFallback({ onSendMessage, onClose }: VoiceFallbackProps) {
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState("");
 
   const handleSubmit = () => {
     if (message.trim()) {
       onSendMessage(message.trim());
-      setMessage('');
+      setMessage("");
     }
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       e.preventDefault();
       handleSubmit();
     }

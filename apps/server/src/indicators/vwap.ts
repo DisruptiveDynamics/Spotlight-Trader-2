@@ -1,9 +1,9 @@
 // Session tick VWAP calculator - single source of truth for chart, tape, and voice
 // Uses the SAME tick stream as Tape for consistency
 
-import { eventBus } from '@server/market/eventBus';
-import type { Tick } from '@shared/types';
-import type { Bar } from '@shared/types';
+import { eventBus } from "@server/market/eventBus";
+import type { Tick } from "@shared/types";
+import type { Bar } from "@shared/types";
 
 interface VWAPState {
   sumPriceVolume: number;

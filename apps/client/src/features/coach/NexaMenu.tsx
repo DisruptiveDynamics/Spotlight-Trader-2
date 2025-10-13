@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { KnowledgeUploadModal } from './KnowledgeUploadModal';
-import { MemoryViewer } from './MemoryViewer';
-import { VoiceSelector } from './VoiceSelector';
+import { useState } from "react";
+import { KnowledgeUploadModal } from "./KnowledgeUploadModal";
+import { MemoryViewer } from "./MemoryViewer";
+import { VoiceSelector } from "./VoiceSelector";
 
 interface NexaMenuProps {
   isConnected: boolean;
@@ -13,7 +13,7 @@ export function NexaMenu({ isConnected, onDisconnect }: NexaMenuProps) {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showMemoryViewer, setShowMemoryViewer] = useState(false);
   const [showVoiceSelector, setShowVoiceSelector] = useState(false);
-  const [currentVoice, setCurrentVoice] = useState('nova'); // Default voice
+  const [currentVoice, setCurrentVoice] = useState("nova"); // Default voice
 
   return (
     <>
@@ -22,8 +22,8 @@ export function NexaMenu({ isConnected, onDisconnect }: NexaMenuProps) {
           onClick={() => setShowMenu(!showMenu)}
           className={`p-3 rounded-full transition-all ${
             isConnected
-              ? 'bg-blue-500 hover:bg-blue-600 text-white shadow-lg shadow-blue-500/50'
-              : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              ? "bg-blue-500 hover:bg-blue-600 text-white shadow-lg shadow-blue-500/50"
+              : "bg-gray-700 hover:bg-gray-600 text-gray-300"
           }`}
           title="Nexa Menu"
         >
@@ -42,7 +42,7 @@ export function NexaMenu({ isConnected, onDisconnect }: NexaMenuProps) {
             <div className="p-3 border-b border-gray-700 bg-gray-800/50">
               <div className="flex items-center gap-2">
                 <div
-                  className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-500'}`}
+                  className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-500" : "bg-gray-500"}`}
                 />
                 <span className="text-sm font-medium text-white">Nexa</span>
                 <span className="text-xs text-gray-400">she/her</span>

@@ -1,0 +1,249 @@
+You’re right—that VWAP miss is a textbook “answered without tools” problem. Let’s lock it down so Nexa **must** pull real data before speaking numbers.
+
+Below is a surgical, copy-paste fix set that’s additive, safe, and reversible.
+
+---
+
+# 1) Harden the system prompt (tool mandate)
+
+**`apps/server/src/coach/sessionContext.ts`** — strengthen instructions so the model knows the rule:
+
+```ts
+export const BASE_SYSTEM = `
+You are Nexa, a warm, intelligent trading coach (she/her).
+CRITICAL POLICY — NO HALLUCINATIONS:
+• For ANY market metric (price, VWAP, volume, high/low, ATR, RSI, support/resistance, entries/stops/targets) you MUST call tools to fetch real data for the requested symbol/timeframe before answering.
+• If tools are unavailable or fail, SAY SO and ask to retry. Do NOT guess or estimate.
+
+Answer conversationally but concisely. Prefer facts over speculation.
+`;
+```
+
+When you build `systemPrompt`, prepend `BASE_SYSTEM` and your user prefs/memories as before.
+
+---
+
+# 2) Force tool usage via a server “policy guard” (pre-answer)
+
+Intercept market questions on the **server** and prefetch live context so the model never has a chance to guess.
+
+**A) Simple classifier (fast + robust):**
+
+**`apps/server/src/coach/marketClassifier.ts`**
+
+```ts
+const MARKET_TERMS = [
+  'vwap','price','last price','ltp','close','open','high','low','ohlc','volume',
+  'atr','rsi','macd','support','resistance','levels','trend','breakout','pullback',
+  'entry','stop','target','risk reward','rr','r/r'
+];
+
+export function isMarketQuestion(text: string): boolean {
+  const t = text.toLowerCase();
+  return MARKET_TERMS.some(k => t.includes(k));
+}
+```
+
+**B) Guard that fetches a snapshot before asking the model to speak:**
+
+**`apps/server/src/coach/ensureMarketContext.ts`**
+
+```ts
+import { isMarketQuestion } from './marketClassifier';
+import { getLatestSnapshot } from '../services/chartService';
+
+export type SnapshotCtx = {
+  symbol?: string;
+  timeframe?: string;
+  snapshotJSON?: string; // stringified to inject as context
+};
+
+export async function ensureMarketContext(userId: string, userUtterance: string): Promise<SnapshotCtx | null> {
+  if (!isMarketQuestion(userUtterance)) return null;
+
+  // naive symbol/timeframe parse; replace with your parser if you have one
+  // Fallbacks: last focused chart from your app state (preferred)
+  const mSym = userUtterance.match(/\b([A-Z]{1,5})\b/);
+  const mTf  = userUtterance.match(/\b(1m|2m|5m|10m|15m|30m|1h|1d)\b/i);
+
+  const symbol = (mSym?.[1] ?? 'SPY').toUpperCase();
+  const timeframe = (mTf?.[1] ?? '1m').toLowerCase();
+
+  const snap = await getLatestSnapshot(symbol, timeframe, userId);
+  const payload = {
+    symbol, timeframe,
+    points: snap?.points?.slice(-500) ?? [],
+    lastSeq: snap?.lastSeq
+  };
+
+  return { symbol, timeframe, snapshotJSON: JSON.stringify(payload) };
+}
+```
+
+**C) Inject this context into the model turn (instead of letting it wing it):**
+
+Where your voice proxy funnels a **user utterance** into the model, do:
+
+**`apps/server/src/realtime/voiceProxy.ts`**
+
+```ts
+import { ensureMarketContext } from '../coach/ensureMarketContext';
+
+async function handleUserUtterance(userId: string, text: string) {
+  // 1) If a market question, fetch fresh data
+  const ctx = await ensureMarketContext(userId, text);
+
+  // 2) Build the prompt augmentation (tool-first hint)
+  const augmentation = ctx ? `
+The user asked a market metric: "${text}"
+Here is the latest server-fetched snapshot (JSON) for ${ctx.symbol} ${ctx.timeframe}:
+${ctx.snapshotJSON}
+
+You MUST cross-check and/or call tools (e.g., get_chart_snapshot) to confirm values before stating any numbers.
+` : '';
+
+  // 3) Send to model (Realtime): include augmentation in instructions/messages
+  // Pseudocode — adapt to your existing session.update / input flow:
+  await realtimeSession.appendUserMessage(text);
+  if (augmentation) await realtimeSession.appendSystemMessage(augmentation);
+
+  // If your Realtime stack supports “tool_choice” or forcing tool calls:
+  // Prefer low temperature for market answers
+  await realtimeSession.update({
+    temperature: 0.1,
+    // Some runtimes support tool bias; if available, prefer/require:
+    // tool_choice: 'required'
+  });
+
+  // Let your streaming response flow continue as-is
+}
+```
+
+> This guarantees the model starts from **real** server data and strongly biases a tool call. If Realtime doesn’t honor `tool_choice`, the pre-injected snapshot still prevents guessing.
+
+---
+
+# 3) Add a **server validator** (hard stop on numeric claims without tools)
+
+If you also want a hard gate: when the model tries to speak numeric market claims but **no tool call** was made in the last 3 seconds, block and force a retry with a tool call.
+
+**`apps/server/src/coach/responseGuard.ts`**
+
+```ts
+const NUMERIC_MARKET_REGEX = /\b(vwap|price|last|close|open|high|low|volume|atr|rsi|entry|stop|target)\b/i;
+const HAS_NUMBER = /-?\d+(\.\d+)?/;
+
+export function appearsToClaimMarketNumber(text: string): boolean {
+  return NUMERIC_MARKET_REGEX.test(text) && HAS_NUMBER.test(text);
+}
+```
+
+In your voice stream handler (where assistant speech/text chunks are about to be sent to the client):
+
+```ts
+import { appearsToClaimMarketNumber } from '../coach/responseGuard';
+
+let lastToolCallAt = 0; // update this timestamp whenever a tool executes successfully
+
+function onToolExecuted() {
+  lastToolCallAt = Date.now();
+}
+
+function onAssistantDelta(chunkText: string, wsToClient: WebSocket) {
+  if (appearsToClaimMarketNumber(chunkText) && Date.now() - lastToolCallAt > 3000) {
+    // Block this hallucination
+    console.warn('[Guard] Blocking numeric claim without fresh tool call');
+    // Option A: inject a server-side tool call, then resume
+    // Option B: replace with a friendly interjection
+    wsToClient.send(JSON.stringify({
+      type: 'assistant.notice',
+      text: "Let me pull the live data first…"
+    }));
+    // trigger a get_chart_snapshot server-side (same symbol/timeframe as context), then resume stream
+    return; // don't forward this chunk
+  }
+  // otherwise, pass through
+  wsToClient.send(JSON.stringify({ type: 'assistant.delta', text: chunkText }));
+}
+```
+
+> This is belt-and-suspenders: even if the model “forgets,” the guard prevents bad numbers from reaching the user.
+
+---
+
+# 4) Register **get_chart_snapshot** and mark tool completions
+
+Where your tool handlers live, add a consistent post-hook:
+
+```ts
+// apps/server/src/agent/tools/index.ts
+import { getChartSnapshot } from './chartTools';
+export const tools = [ getChartSnapshot /*, ... */ ];
+
+// After a successful tool exec:
+function reportToolExecuted() {
+  // e.g., emit an event your proxy listens to and sets lastToolCallAt
+}
+```
+
+In the tool implementation:
+
+```ts
+const result = await getLatestSnapshot(symbol, timeframe, ctx.userId);
+reportToolExecuted();
+return result;
+```
+
+---
+
+# 5) Reduce hallucination propensity (generation params)
+
+When you send/update the Realtime session for market Q&A:
+
+* `temperature: 0.1`
+* `top_p: 0.8`
+* `max_output_tokens`: moderate (to avoid rambling after tool data)
+* Keep your prompt budgeter to inject only the **minimal** memory needed.
+
+---
+
+# 6) Logging you should now see
+
+On a VWAP question you should observe:
+
+```
+[VoiceProxy] Client WebSocket connected
+[VoiceProxy] User said: "What's VWAP on SPY 1m?"
+[VoiceProxy] ensureMarketContext -> snapshot fetched for SPY 1m (points: 500)
+[VoiceProxy] session.update { temperature: 0.1 }
+[Tools] get_chart_snapshot called { symbol: 'SPY', timeframe: '1m' }
+[Tools] get_chart_snapshot OK (latency: 42ms)
+[Guard] ok to stream — fresh tool call within 3s
+```
+
+If the model tries to speak a number without tools:
+
+```
+[Guard] Blocking numeric claim without fresh tool call
+[VoiceProxy] Forcing tool fetch…
+```
+
+---
+
+## Quick Test Script (VWAP)
+
+1. Ask: “Nexa, what’s the **VWAP** for **SPY** on **1m** right now?”
+2. Verify logs show `ensureMarketContext` and a tool call.
+3. Ask again immediately; it should still call tools (freshness rule).
+4. Temporarily disable the tool; Nexa should **say she can’t fetch data** rather than guess.
+
+---
+
+### TL;DR
+
+* **Pre-fetch live snapshot** server-side when the user asks market stuff.
+* **Mandate tools** in the system prompt and generation params.
+* **Guard outgoing speech** so numeric claims are blocked unless a recent tool call happened.
+* **Log everything** so you can see exactly why/when tools are called.
+
+This combo stops the VWAP hallucination cold and keeps Nexa confidently factual.

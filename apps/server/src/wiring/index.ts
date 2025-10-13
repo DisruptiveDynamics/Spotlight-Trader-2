@@ -5,6 +5,7 @@ import { sseMarketStream } from '@server/stream/sse';
 import { getHistory } from '@server/history/service';
 import { eventBus } from '@server/market/eventBus';
 import { ringBuffer } from '@server/cache/ring';
+import { bars1m } from '@server/chart/bars1m';
 import { rulesEngineService } from '@server/rules/service';
 import { signalsService } from '@server/signals/service';
 import { coachAdvisor } from '@server/coach/advisor';
@@ -38,6 +39,21 @@ function subscribeSymbolTimeframe(symbol: string, timeframe: string) {
   // Create and store bar listener reference for proper cleanup
   const barListener = (bar: any) => {
     ringBuffer.putBars(symbol, [bar]);
+    
+    // Feed 1m bars into authoritative buffer (single source of truth)
+    if (timeframe === '1m') {
+      bars1m.append(symbol, {
+        symbol: bar.symbol,
+        seq: bar.seq,
+        bar_start: bar.bar_start,
+        bar_end: bar.bar_end,
+        o: bar.ohlcv.o,
+        h: bar.ohlcv.h,
+        l: bar.ohlcv.l,
+        c: bar.ohlcv.c,
+        v: bar.ohlcv.v,
+      });
+    }
   };
   barListeners.set(symbol, barListener);
   
@@ -100,33 +116,9 @@ export function initializeMarketPipeline(app: Express) {
 
   app.get('/stream/market', sseMarketStream);
 
-  // Endpoint to change timeframe for a symbol
-  app.post('/api/chart/timeframe', (req, res) => {
-    try {
-      const { symbol, timeframe } = req.body;
-
-      if (!symbol || typeof symbol !== 'string') {
-        return res.status(400).json({ error: 'symbol is required' });
-      }
-
-      const validTimeframes = ['1m', '2m', '5m', '10m', '15m', '30m', '1h'];
-      if (!timeframe || !validTimeframes.includes(timeframe)) {
-        return res.status(400).json({ error: 'Invalid timeframe' });
-      }
-
-      subscribeSymbolTimeframe(symbol.toUpperCase(), timeframe);
-
-      res.json({ 
-        success: true, 
-        symbol: symbol.toUpperCase(), 
-        timeframe,
-        message: `Switched to ${timeframe} timeframe for ${symbol}`
-      });
-    } catch (err) {
-      console.error('Timeframe change error:', err);
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  });
+  // Endpoint to change timeframe for a symbol (replaced with new implementation)
+  const { handleChartTimeframe } = require('@server/routes/chartTimeframe');
+  app.post('/api/chart/timeframe', handleChartTimeframe);
 
   app.get('/api/market/status', (_req, res) => {
     const source = getMarketSource();

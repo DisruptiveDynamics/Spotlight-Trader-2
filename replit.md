@@ -6,6 +6,20 @@ Spotlight Trader is a production-grade, real-time trading coach application desi
 
 ## Recent Changes
 
+**October 13, 2025** - 24/7 Real Polygon Data Pipeline: Extended Hours & REST API Fallback:
+
+- **Extended Hours Support**: System now uses Polygon WebSocket during ALL extended trading hours (4 AM - 8 PM ET)
+  - Previously: Only connected during regular hours (9:30 AM - 4 PM ET)
+  - Now: Real-time ticks during pre-market (4-9:30 AM), regular (9:30 AM-4 PM), and after-hours (4-8 PM ET)
+- **Overnight REST API Fallback**: Outside extended hours (8 PM - 4 AM ET), system uses Polygon REST API for historical data
+  - WebSocket unavailable overnight, but REST API provides last close, historical bars
+  - Mock tick generator simulates live feed for smooth UI experience
+- **Separated Concerns**: Split `useMockData` (auth failure) from `useWebSocket` (extended hours availability)
+  - `isUsingMockData()`: Returns true only if Polygon auth fails
+  - `isUsingWebSocket()`: Returns true during extended hours when WebSocket is active
+- **Smart Fallback Logic**: Priority order: WebSocket ticks → REST API bars → Mock data (auth failure only)
+- **Verified Real Data**: System confirmed streaming real Polygon ticks (SPY $662.7, QQQ $601.835) during after-hours testing
+
 **October 13, 2025** - Mock Data Pricing Fix: Eliminated Historical Data Pollution:
 
 - **Root Cause Fix**: Voice tools were returning stale historical prices (~$431) instead of current mock prices (~$580)

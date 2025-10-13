@@ -55,6 +55,8 @@ export function setupVoiceTokenRoute(app: Express) {
   // POST /api/voice/token - Generate voice session token and tools bridge JWT
   app.post('/api/voice/token', requireUser, async (req: AuthRequest, res) => {
     try {
+      console.log('[VOICE] Token request received, user:', req.user);
+      
       const userId = req.user!.userId;
       const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const clientIp = req.ip || req.connection.remoteAddress || 'unknown';

@@ -48,7 +48,9 @@ export class RealtimeVoiceClient {
       });
 
       if (!tokenRes.ok) {
-        throw new Error('Failed to get voice token');
+        const errorText = await tokenRes.text();
+        console.error(`[RealtimeVoiceClient] Token request failed with status ${tokenRes.status}:`, errorText);
+        throw new Error(`Failed to get voice token: ${tokenRes.status} ${errorText}`);
       }
 
       const { token, toolsBridgeToken, sessionId } = await tokenRes.json();

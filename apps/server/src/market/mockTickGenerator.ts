@@ -72,7 +72,7 @@ export class MockTickGenerator {
 
     // Determine tick side (buy/sell) based on price direction
     const lastPrice = this.lastPrices.get(symbol);
-    let side: "buy" | "sell" | undefined;
+    let side: "buy" | "sell";
 
     if (lastPrice !== undefined) {
       if (newPriceRounded > lastPrice) {
@@ -83,6 +83,9 @@ export class MockTickGenerator {
         // For same price, use volume bias (larger volume = more likely aggressor)
         side = Math.random() > 0.5 ? "buy" : "sell";
       }
+    } else {
+      // First tick defaults to buy
+      side = "buy";
     }
 
     this.lastPrices.set(symbol, newPriceRounded);

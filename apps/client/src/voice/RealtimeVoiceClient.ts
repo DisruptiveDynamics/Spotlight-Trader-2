@@ -25,11 +25,11 @@ export class RealtimeVoiceClient {
   constructor(config: VoiceClientConfig) {
     this.config = config;
     
+    // Don't pass tools here - we'll configure them on the session
     this.agent = new RealtimeAgent({
       name: 'Nexa',
       instructions: config.instructions,
       voice: config.voice || 'alloy',
-      tools: toolSchemas as any,
     });
   }
 
@@ -67,34 +67,104 @@ export class RealtimeVoiceClient {
       await session.connect({ apiKey: token });
       this.session = session;
 
-      (this.session as any).on('function_call', async (call: any) => {
-        console.log('[RealtimeVoiceClient] Function call:', call.name, call.arguments);
+      // Configure session with tool schemas (Realtime API pattern)
+      const s = this.session as any;
+      if (typeof s.update === 'function') {
+        await s.update({
+          tool_choice: 'auto',
+          tools: toolSchemas,
+        });
+        console.log('[RealtimeVoiceClient] Configured tools:', toolSchemas.length);
+      }
 
-        if (!this.toolBridge) {
-          console.error('[RealtimeVoiceClient] Tool bridge not connected');
+      // Track pending function calls
+      type PendingCall = { name: string; argsJson: string[] };
+      const pendingCalls: Record<string, PendingCall> = {};
+
+      // Event listener 1: Function call created
+      s.on?.('response.function_call.created', (ev: { id: string; name: string }) => {
+        console.log('[RealtimeVoiceClient] Function call created:', ev.name, ev.id);
+        pendingCalls[ev.id] = { name: ev.name, argsJson: [] };
+      });
+
+      // Event listener 2: Arguments stream in chunks
+      s.on?.('response.function_call.arguments.delta', (ev: { id: string; delta: string }) => {
+        if (pendingCalls[ev.id]) {
+          pendingCalls[ev.id].argsJson.push(ev.delta);
+        }
+      });
+
+      // Event listener 3: Arguments complete - execute tool and send result back
+      s.on?.('response.function_call.completed', async (ev: { id: string }) => {
+        const call = pendingCalls[ev.id];
+        if (!call) {
+          console.error('[RealtimeVoiceClient] No pending call for:', ev.id);
           return;
         }
 
+        console.log('[RealtimeVoiceClient] Function call completed:', call.name, ev.id);
+
+        // Parse arguments
+        let args: any;
         try {
-          const result = await this.toolBridge.exec(call.name, call.arguments || {});
-          
-          if (result.ok) {
-            console.log(`[RealtimeVoiceClient] Tool ${call.name} succeeded:`, result.output);
-            await call.response.create({
-              output: JSON.stringify(result.output),
-            });
-          } else {
-            console.error(`[RealtimeVoiceClient] Tool ${call.name} failed:`, result.error);
-            await call.response.create({
-              output: JSON.stringify({ error: result.error }),
-            });
-          }
-        } catch (err: any) {
-          console.error(`[RealtimeVoiceClient] Tool execution error:`, err);
-          await call.response.create({
-            output: JSON.stringify({ error: err.message }),
+          args = JSON.parse(call.argsJson.join('') || '{}');
+          console.log('[RealtimeVoiceClient] Parsed args:', args);
+        } catch (e) {
+          console.error('[RealtimeVoiceClient] Bad tool args JSON:', e);
+          // Send error back to Realtime
+          await s.response?.function_call?.output?.create({
+            call_id: ev.id,
+            output: JSON.stringify({ error: 'Bad tool args JSON' }),
           });
+          delete pendingCalls[ev.id];
+          return;
         }
+
+        // Execute tool via ToolBridge
+        if (!this.toolBridge) {
+          console.error('[RealtimeVoiceClient] Tool bridge not connected');
+          await s.response?.function_call?.output?.create({
+            call_id: ev.id,
+            output: JSON.stringify({ error: 'Tool bridge not connected' }),
+          });
+          delete pendingCalls[ev.id];
+          return;
+        }
+
+        let result: any;
+        try {
+          console.log(`[RealtimeVoiceClient] Executing tool via bridge: ${call.name}`, args);
+          const bridgeResult = await this.toolBridge.exec(call.name, args);
+          
+          if (bridgeResult.ok) {
+            result = bridgeResult.output;
+            console.log(`[RealtimeVoiceClient] Tool ${call.name} succeeded:`, result);
+          } else {
+            result = { error: bridgeResult.error || 'Tool execution failed' };
+            console.error(`[RealtimeVoiceClient] Tool ${call.name} failed:`, bridgeResult.error);
+          }
+        } catch (e: any) {
+          result = { error: e?.message ?? 'Tool execution failed' };
+          console.error(`[RealtimeVoiceClient] Tool execution error:`, e);
+        }
+
+        // Send result back to Realtime
+        await s.response?.function_call?.output?.create({
+          call_id: ev.id,
+          output: JSON.stringify(result),
+        });
+
+        // Tell the model it can continue producing its response
+        await s.response?.create({});
+
+        delete pendingCalls[ev.id];
+        console.log(`[RealtimeVoiceClient] Sent tool result for ${call.name}`);
+      });
+
+      // Add error listener
+      s.on?.('error', (err: any) => {
+        console.error('[RealtimeVoiceClient] Session error:', err);
+        this.config.onError?.(err);
       });
 
       this.connectionState = 'connected';

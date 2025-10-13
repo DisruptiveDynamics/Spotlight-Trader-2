@@ -92,9 +92,7 @@ export class RealtimeVoiceClient {
 
       // Event listener 2: Arguments stream in chunks
       s.on?.("response.function_call.arguments.delta", (ev: { id: string; delta: string }) => {
-        if (pendingCalls[ev.id]) {
-          pendingCalls[ev.id].argsJson.push(ev.delta);
-        }
+        pendingCalls[ev.id]?.argsJson.push(ev.delta);
       });
 
       // Event listener 3: Arguments complete - execute tool and send result back

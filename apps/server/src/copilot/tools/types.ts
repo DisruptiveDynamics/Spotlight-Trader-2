@@ -3,7 +3,7 @@ import type { Bar } from '@spotlight/shared';
 export interface GetChartSnapshotParams {
   symbol: string;
   timeframe: string;
-  barCount?: number; // Optional, matches voice tool schema parameter name
+  lookback: number;
 }
 
 export interface ChartSnapshot {

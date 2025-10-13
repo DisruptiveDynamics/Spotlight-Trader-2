@@ -26,7 +26,7 @@ export async function buildSessionContext(userId: string): Promise<string> {
   const defaultProfile: CoachProfile = {
     agentName: 'Nexa',
     pronouns: 'she/her',
-    voiceId: 'alloy', // Professional, consistent voice for trading coach
+    voiceId: 'nova',
     personality: 'warm and intelligent',
     jargonLevel: 0.5,
     decisiveness: 0.7,
@@ -90,7 +90,7 @@ export async function getInitialSessionUpdate(userId: string) {
     .limit(1);
 
   const voiceId =
-    profileResults.length > 0 && profileResults[0] ? profileResults[0].voiceId : 'alloy';
+    profileResults.length > 0 && profileResults[0] ? profileResults[0].voiceId : 'nova';
 
   const contextBlock = await buildSessionContext(userId);
 

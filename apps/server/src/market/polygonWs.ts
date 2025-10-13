@@ -51,6 +51,13 @@ export class PolygonWebSocket {
           this.lastMessageTime = Date.now();
           this.startHeartbeat();
 
+          // Stop mock generators when switching to real WebSocket data
+          if (this.useWebSocket) {
+            this.subscribedSymbols.forEach(symbol => {
+              mockTickGenerator.stop(symbol);
+            });
+          }
+
           // Manually send auth message (library not doing it automatically)
           ws.send(JSON.stringify({ action: "auth", params: env.POLYGON_API_KEY }));
 
@@ -91,12 +98,12 @@ export class PolygonWebSocket {
     if (msg.ev === "status") {
       console.log("Polygon status:", msg.message);
       
-      // Detect authentication failure
+      // Detect TRUE authentication failures only (not benign errors)
       const authFailed = msg.status === "auth_failed" || 
-                        msg.status === "error" || 
-                        (msg.message && (
-                          msg.message.toLowerCase().includes("auth") && 
-                          msg.message.toLowerCase().includes("fail")
+                        (msg.status === "error" && msg.message && (
+                          msg.message.toLowerCase().includes("authentication") ||
+                          msg.message.toLowerCase().includes("unauthorized") ||
+                          msg.message.toLowerCase().includes("invalid api key")
                         ));
       
       if (authFailed) {

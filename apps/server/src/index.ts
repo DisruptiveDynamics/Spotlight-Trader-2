@@ -37,6 +37,10 @@ import { initializeMarketSource } from "./market/bootstrap";
 import { initializeTelemetryBridge } from "./telemetry/bridge";
 import { telemetryBus } from "./telemetry/bus";
 import { proactiveCoachingEngine } from "./coach/proactiveCoaching";
+import { bars1m } from "./chart/bars1m";
+import { polygonWs } from "./market/polygonWs";
+import { barBuilder } from "./market/barBuilder";
+import { mockTickGenerator } from "./market/mockTickGenerator";
 
 const env = validateEnv(process.env);
 const app = express();
@@ -60,6 +64,26 @@ app.get("/api/health", (_req, res) => {
 
 app.get("/api/voice/health", (_req, res) => {
   res.json({ ok: true, timestamp: Date.now() });
+});
+
+// Diagnostic endpoint to check current prices from bars1m buffer
+app.get("/api/debug/price/:symbol", (_req, res) => {
+  const symbol = _req.params.symbol.toUpperCase();
+  const lastBar = bars1m.peekLast(symbol);
+  const bufferSize = bars1m.size(symbol);
+  const isUsingMock = polygonWs.isUsingMockData();
+  const barBuilderState = barBuilder.getState(symbol, "1m");
+  const isMockRunning = mockTickGenerator.isRunning(symbol);
+  
+  res.json({
+    symbol,
+    lastBar,
+    bufferSize,
+    isUsingMock,
+    isMockRunning,
+    barBuilderState,
+    timestamp: Date.now(),
+  });
 });
 
 app.use("/api/auth", authRouter);

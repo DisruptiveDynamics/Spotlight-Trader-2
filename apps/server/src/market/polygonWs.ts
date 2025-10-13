@@ -90,6 +90,32 @@ export class PolygonWebSocket {
   private handleMessage(msg: any) {
     if (msg.ev === "status") {
       console.log("Polygon status:", msg.message);
+      
+      // Detect authentication failure
+      const authFailed = msg.status === "auth_failed" || 
+                        msg.status === "error" || 
+                        (msg.message && (
+                          msg.message.toLowerCase().includes("auth") && 
+                          msg.message.toLowerCase().includes("fail")
+                        ));
+      
+      if (authFailed) {
+        console.error("❌ Polygon authentication failed - falling back to mock data");
+        this.useMockData = true;
+        this.useWebSocket = false;
+        this.isConnected = false;
+        
+        // Close WebSocket and start mock generators
+        if (this.ws) {
+          (this.ws as any).close();
+          this.ws = null;
+        }
+        
+        // Start mock generators for all subscribed symbols
+        this.subscribedSymbols.forEach(symbol => {
+          mockTickGenerator.start(symbol);
+        });
+      }
       return;
     }
 
@@ -107,8 +133,8 @@ export class PolygonWebSocket {
   subscribe(symbol: string) {
     this.subscribedSymbols.add(symbol);
 
-    if (this.useMockData) {
-      // Start mock tick generator for this symbol
+    if (this.useMockData || !this.useWebSocket) {
+      // Start mock tick generator for this symbol (auth failed OR outside extended hours)
       mockTickGenerator.start(symbol);
       return;
     }
@@ -126,7 +152,8 @@ export class PolygonWebSocket {
   unsubscribe(symbol: string) {
     this.subscribedSymbols.delete(symbol);
 
-    if (this.useMockData) {
+    if (this.useMockData || !this.useWebSocket) {
+      // Stop mock tick generator (auth failed OR outside extended hours)
       mockTickGenerator.stop(symbol);
       return;
     }
@@ -142,8 +169,8 @@ export class PolygonWebSocket {
   }
 
   private resubscribe() {
-    if (this.useMockData) {
-      // Start mock generators for all subscribed symbols
+    if (this.useMockData || !this.useWebSocket) {
+      // Start mock generators for all subscribed symbols (auth failed OR outside extended hours)
       for (const symbol of this.subscribedSymbols) {
         mockTickGenerator.start(symbol);
       }

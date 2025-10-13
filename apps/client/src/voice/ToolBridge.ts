@@ -1,8 +1,8 @@
 export class ToolBridge {
-  private ws?: WebSocket;
+  private ws: WebSocket | undefined;
   private inflightRequests = new Map<string, (result: any) => void>();
   private backoffMs = 250;
-  private reconnectTimer?: number;
+  private reconnectTimer: number | undefined;
 
   constructor(
     private url: string,

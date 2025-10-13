@@ -13,6 +13,7 @@ import { signalsService } from '@server/signals/service';
 import { coachAdvisor } from '@server/coach/advisor';
 import { getMarketSource, getMarketReason } from '@server/market/bootstrap';
 import { isRthOpen } from '@server/market/session';
+import { handleChartTimeframe } from '@server/routes/chartTimeframe';
 
 const DEFAULT_FAVORITES = ['SPY', 'QQQ'];
 const DEFAULT_TIMEFRAME = '1m';
@@ -125,7 +126,6 @@ export function initializeMarketPipeline(app: Express) {
   app.get('/stream/market', sseMarketStream);
 
   // Endpoint to change timeframe for a symbol (replaced with new implementation)
-  const { handleChartTimeframe } = require('@server/routes/chartTimeframe');
   app.post('/api/chart/timeframe', handleChartTimeframe);
 
   app.get('/api/market/status', (_req, res) => {

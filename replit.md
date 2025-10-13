@@ -18,6 +18,7 @@ Spotlight Trader is a production-grade, real-time trading coach application desi
 - **Smart Timeouts**: 1.2s timeout for micro-tools, 2s for snapshots with graceful degradation
 - **Performance Boost**: Simple questions now answered in <1s vs previous 5+ minutes (500-bar fetches eliminated)
 - **Type Safety Fixes**: Fixed LSP errors in ToolBridge with proper TypeScript union types
+- **Codebase Cleanup**: Removed obsolete voice client implementations (VoiceClient.ts, EnhancedVoiceClient.ts, EnhancedVoiceClient.v2.ts, CoachBubble.tsx) - RealtimeVoiceClient.ts is now the sole canonical implementation
 
 **October 13, 2025** - Server-Authoritative Timeframe System with Multi-Timeframe Rollups:
 

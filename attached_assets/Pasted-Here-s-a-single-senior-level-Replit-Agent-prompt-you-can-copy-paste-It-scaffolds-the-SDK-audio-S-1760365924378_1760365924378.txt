@@ -1,0 +1,402 @@
+Here’s a single, senior-level Replit Agent prompt you can copy-paste. It scaffolds the SDK-audio + Server Tool-Bridge architecture, with strict tool schemas, a WebSocket tool bridge, barge-in, and example tools (bars, indicators, rules, scoring, trade proposal). It’s written so the agent can create/modify files end-to-end.
+
+⸻
+
+COPY BELOW INTO REPLIT AGENT
+
+You are a senior full-stack engineer. Update my Spotlight Trader repo to use the SDK-audio + Tool-Bridge pattern:
+
+Goals
+	•	Keep OpenAI Realtime SDK on the client for audio I/O (stable, responsive, barge-in).
+	•	Add a server-executed Tool Bridge over WebSocket at wss://<host>/ws/tools for all data/tools (bars, quotes, indicators, rules, scoring, proposals, journal).
+	•	Enforce strict JSON Schemas (additionalProperties:false, explicit required) so the SDK accepts tool definitions.
+	•	Latency budget: tool RTT ≤ 800ms; incremental indicator calc ≤ 40ms.
+
+Stack assumptions: TypeScript, Vite/React client, Node/Express server, existing bar builder and Polygon access. Use lightweight code that plugs into existing modules without breaking anything.
+
+⸻
+
+1) Server — Tool Bridge WS
+
+Create apps/server/src/voice/toolsBridge.ts:
+
+import { WebSocketServer } from 'ws';
+import type { IncomingMessage } from 'http';
+import http from 'http';
+import jwt from 'jsonwebtoken';
+
+type ToolExecReq = {
+  type: 'tool.exec';
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+  user?: string;
+};
+
+type ToolExecRes =
+  | { type: 'tool.result'; id: string; ok: true; output: unknown; latency_ms: number }
+  | { type: 'tool.result'; id: string; ok: false; error: string; latency_ms: number };
+
+export function mountToolsBridge(server: http.Server) {
+  const wss = new WebSocketServer({ noServer: true });
+
+  server.on('upgrade', (req: IncomingMessage, socket, head) => {
+    if (!req.url?.startsWith('/ws/tools')) return;
+    // Simple auth: query ?t=<JWT>. Replace with your auth later.
+    const token = new URL(req.url, 'http://x').searchParams.get('t') ?? '';
+    try { jwt.verify(token, process.env.TOOLS_JWT_SECRET ?? 'dev'); }
+    catch { socket.destroy(); return; }
+    wss.handleUpgrade(req, socket as any, head, (ws) => wss.emit('connection', ws, req));
+  });
+
+  wss.on('connection', (ws) => {
+    ws.on('message', async (buf) => {
+      let msg: ToolExecReq;
+      try { msg = JSON.parse(String(buf)); } catch { return; }
+      if (msg.type !== 'tool.exec') return;
+      const started = performance.now();
+      try {
+        const output = await dispatchTool(msg.name, msg.args);
+        const res: ToolExecRes = { type: 'tool.result', id: msg.id, ok: true, output,
+          latency_ms: Math.round(performance.now() - started) };
+        ws.send(JSON.stringify(res));
+      } catch (e: any) {
+        const res: ToolExecRes = { type: 'tool.result', id: msg.id, ok: false,
+          error: e?.message ?? 'tool failed', latency_ms: Math.round(performance.now() - started) };
+        ws.send(JSON.stringify(res));
+      }
+    });
+  });
+}
+
+// ---- Tool dispatch ----
+import { tools } from './tools/index';
+async function dispatchTool(name: string, args: Record<string, unknown>) {
+  const t = (tools as any)[name];
+  if (!t) throw new Error(`unknown tool: ${name}`);
+  return t(args);
+}
+
+Wire it inside your HTTP bootstrap (e.g., apps/server/src/index.ts):
+
+import http from 'http';
+import app from './app';
+import { mountToolsBridge } from './voice/toolsBridge';
+
+const server = http.createServer(app);
+mountToolsBridge(server);
+server.listen(process.env.PORT ?? 3000, () => {
+  console.log('Server on', process.env.PORT ?? 3000);
+});
+
+
+⸻
+
+2) Server — Tool implementations
+
+Create apps/server/src/voice/tools/index.ts with strict, pure handlers:
+
+import { z } from 'zod';
+import { computeIndicators } from './indicators';
+import { getBars1m, getQuote, getPositions, getPnL, getRules, scoreSetup, proposeTrade } from './services';
+
+const zSymbol = z.string().min(1);
+const zTF = z.enum(['1m','2m','5m','10m','15m','30m','1h']);
+
+export const tools = {
+  async get_intraday_bars(input: unknown) {
+    const { symbol, timeframe, limit = 1000, sinceSeq, from, to } = z.object({
+      symbol: zSymbol, timeframe: zTF, limit: z.number().int().min(1).max(5000).optional(),
+      sinceSeq: z.number().int().optional(), from: z.number().int().optional(), to: z.number().int().optional(),
+    }).parse(input);
+
+    // Always source from 1m and derive higher frames server-side:
+    const bars1m = await getBars1m({ symbol, limit: Math.max(limit, 1200), from, to, sinceSeq });
+    // TODO: use your existing aggregator
+    return aggregateTimeframe(bars1m, timeframe);
+  },
+
+  async get_indicator_snapshot(input: unknown) {
+    const { symbol, timeframe } = z.object({ symbol: zSymbol, timeframe: zTF }).parse(input);
+    const bars1m = await getBars1m({ symbol, limit: 1200 });
+    const tfBars = aggregateTimeframe(bars1m, timeframe);
+    return computeIndicators(tfBars);
+  },
+
+  async get_quote(input: unknown) {
+    const { symbol } = z.object({ symbol: zSymbol }).parse(input);
+    return getQuote(symbol);
+  },
+
+  async get_positions() { return getPositions(); },
+  async get_pnl(input: unknown) {
+    const { session } = z.object({ session: z.enum(['today','week','month']).default('today') }).parse(input ?? {});
+    return getPnL(session);
+  },
+
+  async get_trading_rules() { return getRules(); },
+
+  async score_setup(input: unknown) {
+    const { symbol, timeframe, direction } = z.object({
+      symbol: zSymbol, timeframe: zTF, direction: z.enum(['long','short']),
+    }).parse(input);
+    return scoreSetup({ symbol, timeframe, direction });
+  },
+
+  async propose_trade(input: unknown) {
+    const { symbol, direction } = z.object({
+      symbol: zSymbol, direction: z.enum(['long','short']),
+    }).parse(input);
+    return proposeTrade({ symbol, direction });
+  },
+};
+
+// --- Helpers (stub: replace with your existing impls) ---
+type Bar = { t:number; o:number; h:number; l:number; c:number; v?:number; seq?:number };
+function aggregateTimeframe(bars1m: Bar[], tf: '1m'|'2m'|'5m'|'10m'|'15m'|'30m'|'1h'): Bar[] {
+  if (tf==='1m') return bars1m;
+  const map: Record<string, Bar> = {};
+  const size = { '2m':2,'5m':5,'10m':10,'15m':15,'30m':30,'1h':60 }[tf]!;
+  for (const b of bars1m) {
+    const bucket = Math.floor(b.t / (size*60_000)) * (size*60_000);
+    const k = String(bucket);
+    const cur = map[k];
+    if (!cur) map[k] = { t: bucket, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v ?? 0, seq: b.seq };
+    else {
+      cur.h = Math.max(cur.h, b.h);
+      cur.l = Math.min(cur.l, b.l);
+      cur.c = b.c;
+      cur.v = (cur.v ?? 0) + (b.v ?? 0);
+      cur.seq = Math.max(cur.seq ?? 0, b.seq ?? 0);
+    }
+  }
+  return Object.values(map).sort((a,b)=>a.t-b.t);
+}
+
+Create apps/server/src/voice/tools/indicators.ts (fast VWAP/EMA/RSI/ATR; incremental friendly):
+
+type Bar = { t:number;o:number;h:number;l:number;c:number;v?:number };
+export function computeIndicators(bars: Bar[]) {
+  const n = bars.length;
+  const ema = (period:number) => {
+    const k = 2/(period+1); const out:number[] = new Array(n).fill(NaN);
+    let prev = bars[0]?.c ?? NaN;
+    for (let i=0;i<n;i++){ const c=bars[i].c; prev = isNaN(prev)?c: (c - prev)*k + prev; out[i]=prev; }
+    return out;
+  };
+  const ema9 = ema(9), ema20 = ema(20), ema50 = ema(50);
+
+  // VWAP
+  let cumPV=0, cumV=0; const vwap:number[] = new Array(n).fill(NaN);
+  for (let i=0;i<n;i++){ const b=bars[i]; const v=b.v ?? 0; const tp=(b.h+b.l+b.c)/3; cumPV+=tp*v; cumV+=v; vwap[i]= cumV? cumPV/cumV : NaN; }
+
+  // ATR(14)
+  const tr:number[]=[]; for (let i=0;i<n;i++){
+    const prev = i? bars[i-1] : bars[i];
+    tr[i] = Math.max(bars[i].h - bars[i].l, Math.abs(bars[i].h - prev.c), Math.abs(bars[i].l - prev.c));
+  }
+  const atr:number[] = (()=>{ const p=14; const out:number[]=[]; let s=0;
+    for(let i=0;i<n;i++){ s = i? (out[i-1]*(p-1)+tr[i])/p : tr[i]; out[i]=s; } return out; })();
+
+  // RSI(14)
+  let up=0, dn=0; const rsi:number[] = new Array(n).fill(50);
+  for (let i=1;i<n;i++){ const ch=bars[i].c - bars[i-1].c;
+    up = (up*13 + Math.max(ch,0))/14; dn = (dn*13 + Math.max(-ch,0))/14;
+    rsi[i] = dn? 100 - 100/(1+up/dn) : 100;
+  }
+
+  const last = n-1;
+  return {
+    last_t: bars[last]?.t ?? null,
+    ema9: ema9[last], ema20: ema20[last], ema50: ema50[last],
+    vwap: vwap[last], atr14: atr[last], rsi14: rsi[last],
+  };
+}
+
+Create apps/server/src/voice/tools/services.ts (hooks into your systems; stubs ok, call your real impls later):
+
+// Replace stubs with your existing data services / caches.
+export async function getBars1m({symbol, limit, from, to, sinceSeq}:{symbol:string;limit:number;from?:number;to?:number;sinceSeq?:number}) {
+  // TODO: call your ring buffer / Polygon cache
+  return []; // [{t,o,h,l,c,v,seq}]
+}
+export async function getQuote(symbol:string){ return { symbol, bid:0, ask:0, last:0, time:Date.now() }; }
+export async function getPositions(){ return []; }
+export async function getPnL(session:'today'|'week'|'month'){ return { session, realized:0, unrealized:0 }; }
+export async function getRules(){ return { maxDailyLossPct:0.5, checklist:['Trend aligned','Above VWAP','Decent volume']}; }
+
+export async function scoreSetup({symbol, timeframe, direction}:{symbol:string; timeframe:string; direction:'long'|'short'}) {
+  // Use your indicators + multi-TF alignment. Return transparent reasons.
+  return {
+    score: 'B+',
+    reasons: ['VWAP reclaimed', 'EMA9>EMA20', 'Volume ~1.3x baseline'],
+    direction, timeframe, symbol,
+    risk: { atr: 0.4, suggestedStopDist: 0.35 },
+  };
+}
+
+export async function proposeTrade({symbol, direction}:{symbol:string; direction:'long'|'short'}) {
+  // Example shape; compute from bars/indicators/ATR.
+  return {
+    symbol, direction,
+    entry: { from: 100, to: 100.05 },
+    stop: 99.7,
+    targets: [100.4, 100.8],
+    r_multiple: [1.0, 2.0],
+    confidence: 0.72,
+    why: ['Structure intact', 'VWAP hold', 'Trend agreement'],
+    sizing: { riskPctOfEquity: 0.5, shares: 300 }
+  };
+}
+
+
+⸻
+
+3) Client — Tool Bridge & SDK wiring
+
+Create apps/client/src/voice/ToolBridge.ts:
+
+export class ToolBridge {
+  private ws?: WebSocket;
+  private inflight = new Map<string, (v:any)=>void>();
+  private backoff = 250;
+  constructor(private url: string, private token: string) {}
+
+  connect() {
+    const u = `${this.url}?t=${encodeURIComponent(this.token)}`;
+    this.ws = new WebSocket(u);
+    this.ws.onopen = () => { this.backoff = 250; };
+    this.ws.onmessage = (ev) => {
+      const msg = JSON.parse(String(ev.data));
+      if (msg.type === 'tool.result') {
+        const cb = this.inflight.get(msg.id);
+        if (cb) { this.inflight.delete(msg.id); cb(msg); }
+      }
+    };
+    this.ws.onclose = () => setTimeout(()=>this.connect(), Math.min(this.backoff*=2, 5000));
+  }
+
+  exec<T=unknown>(name:string, args:Record<string,unknown>, timeoutMs=1200): Promise<{ok:boolean; output?:T; error?:string}> {
+    const id = Math.random().toString(36).slice(2);
+    const req = { type:'tool.exec', id, name, args };
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.resolve({ ok:false, error:'bridge not connected' });
+    return new Promise((resolve)=>{
+      const t = setTimeout(()=>{ this.inflight.delete(id); resolve({ ok:false, error:'timeout' }); }, timeoutMs);
+      this.inflight.set(id, (res:any)=>{ clearTimeout(t); resolve(res.ok? {ok:true, output:res.output}:{ok:false, error:res.error}); });
+      ws.send(JSON.stringify(req));
+    });
+  }
+}
+
+Update your Realtime SDK setup (e.g., apps/client/src/voice/realtimeClient.tsx):
+
+import { RealtimeClient } from '@openai/realtime-api'; // or your existing import
+import { ToolBridge } from './ToolBridge';
+
+export async function startVoice({ toolsUrl, token }: { toolsUrl: string; token: string }) {
+  const bridge = new ToolBridge(toolsUrl, token); bridge.connect();
+
+  const client = new RealtimeClient({ /* your existing SDK config (audio in/out) */ });
+
+  // Register tool schemas (strict)
+  client.setTools([
+    {
+      type: 'function',
+      function: {
+        name: 'get_intraday_bars',
+        description: 'Fetch OHLCV bars for a symbol/timeframe.',
+        parameters: { type:'object', additionalProperties:false, required:['symbol','timeframe','limit'],
+          properties: {
+            symbol:{type:'string',minLength:1},
+            timeframe:{type:'string',enum:['1m','2m','5m','10m','15m','30m','1h']},
+            limit:{type:'integer',minimum:1,maximum:5000},
+            sinceSeq:{type:'integer'}, from:{type:'integer'}, to:{type:'integer'}
+          }
+        }
+      }
+    },
+    { type:'function', function:{
+      name:'get_indicator_snapshot', description:'Compute indicators for the most recent bar(s).',
+      parameters:{ type:'object', additionalProperties:false, required:['symbol','timeframe'],
+        properties:{ symbol:{type:'string'}, timeframe:{type:'string',enum:['1m','2m','5m','10m','15m','30m','1h']} }
+      }
+    }},
+    { type:'function', function:{ name:'get_quote',
+      description:'Latest quote/last trade.', parameters:{ type:'object', additionalProperties:false, required:['symbol'],
+        properties:{ symbol:{type:'string'} } } } },
+    { type:'function', function:{ name:'get_trading_rules',
+      description:'Your rule set / A+ checklist.', parameters:{ type:'object', additionalProperties:false, properties:{} } } },
+    { type:'function', function:{ name:'score_setup',
+      description:'Score setup quality with reasons.', parameters:{ type:'object', additionalProperties:false, required:['symbol','timeframe','direction'],
+        properties:{ symbol:{type:'string'}, timeframe:{type:'string',enum:['1m','2m','5m','10m','15m','30m','1h']}, direction:{type:'string',enum:['long','short']} } } } },
+    { type:'function', function:{ name:'propose_trade',
+      description:'Return entry, stop, targets, sizing, R/R.', parameters:{ type:'object', additionalProperties:false, required:['symbol','direction'],
+        properties:{ symbol:{type:'string'}, direction:{type:'string',enum:['long','short']} } } } },
+  ]);
+
+  // Tool call handling → Bridge → submit outputs
+  client.on('tool_call', async (ev:any) => {
+    const calls = Array.isArray(ev.calls) ? ev.calls : [ev];
+    for (const c of calls) {
+      const r = await bridge.exec(c.name, c.arguments ?? {});
+      if (r.ok) client.submitToolOutputs([{ toolCallId: c.id, output_json: r.output }]);
+      else client.submitToolOutputs([{ toolCallId: c.id, output_json: { error: r.error } }]);
+    }
+  });
+
+  // Barge-in: cancel TTS when user speaks (hook to your VAD)
+  client.on('local_vad_start', () => client.response.cancel());
+
+  // Start as in your existing flow
+  await client.connect();
+  return { client, bridge };
+}
+
+
+⸻
+
+4) Environment & auth
+	•	Add TOOLS_JWT_SECRET to server .env.
+	•	On client, mint a signed token (server endpoint you already have) and pass it into startVoice({ toolsUrl: 'wss://<your-domain>/ws/tools', token }).
+
+⸻
+
+5) Voice UX guardrails
+	•	In your assistant “system” prompt, instruct: Only speak for A-/A setups or risk alerts; otherwise post to side panel.
+	•	Ensure the UI calls client.response.cancel() when mic opens (barge-in).
+
+⸻
+
+6) Scripts
+
+Update root scripts if missing:
+
+{
+  "scripts": {
+    "lint": "eslint --ext .ts,.tsx apps",
+    "typecheck": "tsc -b",
+    "dev:server": "tsx apps/server/src/index.ts",
+    "dev:client": "vite --host",
+    "dev": "run-p dev:server dev:client"
+  }
+}
+
+
+⸻
+
+7) Quick test checklist
+	1.	Connect voice, say: “Nexa, score SPY on 2-minute for a long.”
+Expect: tool_call → score with reasons in < 1s.
+	2.	Interrupt mid-reply → speak again.
+Expect: immediate cancel, new reasoning.
+	3.	Ask: “Propose the trade.”
+Expect: entry/stop/targets/sizing with rule citations.
+
+Do not remove existing proxy code; this change should not break current audio flow. Keep all new code modular and behind the new /ws/tools path.
+
+END OF PROMPT
+
+⸻
+
+If you want me to tailor this to your exact file paths and your existing bar/indicator modules, say the word and I’ll swap the stubs to your real function names.

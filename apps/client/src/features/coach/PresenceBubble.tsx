@@ -358,15 +358,13 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
           // Unlock iOS audio on first user gesture (critical for Safari/iOS)
           await ensureiOSAudioUnlocked();
           
-          // Fetch ephemeral token
-          const ephemeralKey = await fetchEphemeralToken();
-          
-          // Connect client with token (EnhancedVoiceClient handles WebSocket connection)
-          await client.connect(ephemeralKey);
+          // Connect client (RealtimeVoiceClient handles token fetching internally)
+          await client.connect();
 
           showStatusMessage('Voice coach connected ✅', 2000);
         } catch (error) {
           console.error('Failed to connect voice coach:', error);
+          console.error('Error details:', error instanceof Error ? error.message : String(error));
           showStatusMessage('Connection failed. Please try again.', 3000);
         }
       } else if (connectionState === 'connected') {

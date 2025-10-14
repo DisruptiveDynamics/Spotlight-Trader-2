@@ -1,6 +1,7 @@
 import express from "express";
 import { createServer } from "http";
 import cookieParser from "cookie-parser";
+import compression from "compression";
 import { validateEnv } from "@shared/env";
 import { setupSecurity } from "./config/security";
 import { initializeMarketPipeline } from "./wiring";
@@ -46,6 +47,9 @@ const server = createServer(app);
 // Configure server timeouts for better dev restart stability
 server.keepAliveTimeout = 75000; // 75 seconds
 server.headersTimeout = 80000; // 80 seconds
+
+// [PERFORMANCE] Enable gzip compression for all responses
+app.use(compression());
 
 app.use(express.json());
 app.use(cookieParser());

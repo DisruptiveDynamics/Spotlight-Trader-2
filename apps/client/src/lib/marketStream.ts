@@ -1,4 +1,6 @@
 import { STREAM_URL, HISTORY_URL } from "../config";
+import { reconcileBars } from "@shared/utils/barHash";
+import { perfMetrics } from "@shared/perf/metrics";
 
 export type Ohlcv = { o: number; h: number; l: number; c: number; v: number };
 
@@ -69,10 +71,17 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     listeners.status.forEach((fn) => fn(status));
   };
 
+  // [PHASE-5] Track local bars for reconciliation (last 10 bars)
+  const localBars: Bar[] = [];
+  const MAX_LOCAL_BARS = 10;
+
   // [RESILIENCE] Soft reset and resync when server restarts or sequence is stale
   const performResync = async (reason: string) => {
     try {
       console.log(`🔄 Performing resync (${reason})`);
+
+      // [PHASE-5] Track reconnect event
+      perfMetrics.recordReconnectEvent();
 
       // [RESILIENCE] Emit resync event for debounced splash overlay
       window.dispatchEvent(new CustomEvent("market:resync-start", { detail: { reason } }));
@@ -80,10 +89,12 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       emitStatus("replaying_gap");
 
       const symbol = symbols[0] || "SPY";
+      
+      // [PHASE-5] Fetch last 10 bars for reconciliation (reduced from 50)
       const params = new URLSearchParams({
         symbol,
         timeframe: "1m",
-        limit: "50", // Fetch 50-bar snapshot for resync
+        limit: "10", // Fetch 10-bar snapshot for reconciliation
       });
 
       const res = await fetch(`${HISTORY_URL}?${params.toString()}`);
@@ -93,8 +104,8 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
       const rawBars = await res.json();
 
-      // Transform and emit bars
-      const bars: Bar[] = rawBars
+      // Transform server bars
+      const serverBars: Bar[] = rawBars
         .map((b: any) => ({
           symbol: b.symbol || symbol,
           timeframe: b.timeframe || "1m",
@@ -105,14 +116,34 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         }))
         .sort((a: Bar, b: Bar) => a.seq - b.seq);
 
-      // Update lastSeq to highest from snapshot
-      if (bars.length > 0) {
-        lastSeq = bars[bars.length - 1]!.seq;
-        console.log(`✅ Resynced ${bars.length} bars, lastSeq now: ${lastSeq}`);
+      // [PHASE-5] Reconcile using hash comparison
+      const { toUpdate, toAdd, reconciled } = reconcileBars(localBars, serverBars);
 
-        bars.forEach((bar) => {
+      if (reconciled > 0) {
+        perfMetrics.recordBarReconciled(reconciled);
+        
+        const minSeq = Math.min(...[...toUpdate, ...toAdd].map((b) => b.seq));
+        const maxSeq = Math.max(...[...toUpdate, ...toAdd].map((b) => b.seq));
+        
+        console.log(`✅ Recovered ${reconciled} bars (seq ${minSeq}→${maxSeq})`);
+        
+        // Emit all reconciled bars
+        [...toUpdate, ...toAdd].forEach((bar) => {
           listeners.bar.forEach((fn) => fn(bar));
         });
+      }
+
+      // Update lastSeq to highest from snapshot
+      if (serverBars.length > 0) {
+        lastSeq = serverBars[serverBars.length - 1]!.seq;
+        console.log(`✅ Resynced ${serverBars.length} bars, lastSeq now: ${lastSeq}`);
+
+        // If no reconciliation needed, emit all bars
+        if (reconciled === 0) {
+          serverBars.forEach((bar) => {
+            listeners.bar.forEach((fn) => fn(bar));
+          });
+        }
       }
 
       emitStatus("live");
@@ -283,6 +314,13 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         }
 
         lastSeq = b.seq;
+        
+        // [PHASE-5] Track bar in local buffer for reconciliation
+        localBars.push(b);
+        if (localBars.length > MAX_LOCAL_BARS) {
+          localBars.shift(); // Keep only last 10 bars
+        }
+        
         listeners.bar.forEach((fn) => fn(b));
 
         if (currentState === "connected" || currentState === "replaying_gap") {

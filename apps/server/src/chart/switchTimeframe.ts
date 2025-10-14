@@ -6,6 +6,7 @@ import { rollupFrom1m, apply1mCloseToRollup } from "./rollups";
 import { type Timeframe } from "@shared/types/market";
 import { eventBus } from "@server/market/eventBus";
 import { barBuilder } from "@server/market/barBuilder";
+import type { Bar } from "@shared/types";
 
 interface TimeframeState {
   symbol: string;
@@ -74,10 +75,24 @@ export async function switchTimeframe(params: {
     activeStates.set(key, newState);
 
     // Step 4: Emit bar:reset to signal client to redraw
+    // Convert RolledBar (nested ohlcv) to flat Bar format
+    const flatBars: Bar[] = rolled.map((rb) => ({
+      symbol: rb.symbol,
+      timestamp: rb.bar_start,
+      open: rb.ohlcv.o,
+      high: rb.ohlcv.h,
+      low: rb.ohlcv.l,
+      close: rb.ohlcv.c,
+      volume: rb.ohlcv.v,
+      seq: rb.seq,
+      bar_start: rb.bar_start,
+      bar_end: rb.bar_end,
+    }));
+
     eventBus.emit("bar:reset", {
       symbol,
       timeframe,
-      bars: rolled,
+      bars: flatBars,
     });
 
     // Step 5: Subscribe to 1m bar closes for incremental rollup

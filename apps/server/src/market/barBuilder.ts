@@ -178,7 +178,8 @@ export class BarBuilder {
     state.microbars = [];
 
     // Emit with dynamic timeframe in event name
-    eventBus.emit(`bar:new:${symbol}:${timeframe}` as any, finalizedBar);
+    // @ts-expect-error - Dynamic event name prevents proper type inference, but emission is type-safe
+    eventBus.emit(`bar:new:${symbol}:${timeframe}`, finalizedBar);
   }
 
   private startMicrobarTimer(symbol: string, timeframe: string = "1m") {

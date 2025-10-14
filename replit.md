@@ -10,6 +10,15 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### October 14, 2025 - Phase 6: Voice Tool Integrity & Performance
+
+- **Micro Tools Implementation**: Added high-frequency micro tools (`get_last_price`, `get_last_vwap`, `get_last_ema`) with sub-1s latency targets, returning structured `{symbol, value, ts}` responses
+- **Tool Throttling**: Implemented TokenBucket-based rate limiting with per-tool limits (micro tools: 8/sec, snapshot tools: 2/sec, risk tools: 1/sec) and structured error responses with retry timing
+- **Runtime Auditing**: Created middleware to detect price hallucinations in voice responses using regex pattern matching, logs violations when AI mentions prices without tool calls within 2s window, with optional auto-correction
+- **TTS Jitter Buffer**: Client-side buffer smooths audio delivery with 150ms target and 350ms max latency, drops oldest chunks on overflow and tracks `tts_jitter_drop_total` metric
+- **Voice Metrics Expansion**: Added comprehensive voice telemetry including `voice_stt_first_partial_ms`, `voice_tts_first_audio_ms`, `tool_exec_latency_ms` (per-tool histograms), `voice_session_reconnects_total`, `voice_tool_violation_total`
+- **ToolsBridge Integration**: Integrated throttling checks and performance metrics tracking into tool execution pipeline with correlation IDs for distributed tracing
+
 ### October 14, 2025 - Resilience & Observability Improvements
 
 - **Networking Fix**: Updated Vite proxy to use `0.0.0.0:8080` instead of `localhost:8080` for Replit cloud compatibility

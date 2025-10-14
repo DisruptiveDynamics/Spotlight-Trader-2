@@ -6,6 +6,8 @@ import { voiceTools } from "./tools";
 import { toolHandlers as copilotHandlers } from "../copilot/tools/handlers";
 import { randomUUID } from "crypto"; // [RESILIENCE] For correlation IDs
 import { recordToolExecution } from "./toolMetrics"; // [OBS] Metrics tracking
+import { toolThrottler } from "./throttle"; // [PHASE-6] Throttling
+import { perfMetrics } from "@shared/perf/metrics"; // [PHASE-6] Tool latency metrics
 
 type ToolExecRequest = {
   type: "tool.exec";
@@ -72,6 +74,24 @@ export function setupToolsBridge(httpServer: Server) {
       // [OBS] Generate or use provided correlation ID for tracing
       const corrId = msg.corrId || randomUUID();
 
+      // [PHASE-6] Check throttling
+      const throttleCheck = toolThrottler.checkThrottle(msg.name, userId);
+      
+      if (!throttleCheck.allowed) {
+        const response: ToolExecResponse = {
+          type: "tool.result",
+          id: msg.id,
+          ok: false,
+          error: throttleCheck.error!.message,
+          latency_ms: 0,
+          corrId,
+        };
+        
+        console.warn(`[ToolsBridge] [${corrId}] Tool ${msg.name} throttled: ${throttleCheck.error!.message}`);
+        ws.send(JSON.stringify(response));
+        return;
+      }
+
       const started = performance.now();
       console.log(`[ToolsBridge] [${corrId}] Executing tool: ${msg.name}`, msg.args);
 
@@ -97,6 +117,10 @@ export function setupToolsBridge(httpServer: Server) {
 
         console.log(`[ToolsBridge] [${corrId}] Tool ${msg.name} succeeded in ${latency}ms`);
         recordToolExecution(msg.name, latency, true); // [OBS] Record success
+        
+        // [PHASE-6] Record tool latency in performance metrics
+        perfMetrics.recordToolExecLatency(msg.name, latency);
+        
         ws.send(JSON.stringify(response));
       } catch (e: any) {
         const latency = Math.round(performance.now() - started);
@@ -112,12 +136,19 @@ export function setupToolsBridge(httpServer: Server) {
 
         console.error(`[ToolsBridge] [${corrId}] Tool ${msg.name} failed:`, e.message);
         recordToolExecution(msg.name, latency, false); // [OBS] Record failure
+        
+        // [PHASE-6] Record tool latency even on failure
+        perfMetrics.recordToolExecLatency(msg.name, latency);
+        
         ws.send(JSON.stringify(response));
       }
     });
 
     ws.on("close", () => {
       console.log("[ToolsBridge] Client disconnected");
+      
+      // [PHASE-6] Clear throttling state for this user
+      toolThrottler.clearUser(userId);
     });
 
     ws.on("error", (err) => {

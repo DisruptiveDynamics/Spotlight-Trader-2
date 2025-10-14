@@ -57,6 +57,7 @@ type EventMap = {
   [key: `tick:${string}`]: Tick;
   [key: `microbar:${string}`]: Microbar;
   [key: `bar:new:${string}:${Timeframe}`]: MarketBarEvent;
+  "bar:reset": { symbol: string; timeframe: Timeframe; bars: import("@shared/types").Bar[] };
   "rule:evaluated": EvaluatedRule;
   "signal:new": Signal;
   "signal:approved": Signal;

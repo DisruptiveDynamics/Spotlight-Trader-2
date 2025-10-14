@@ -154,6 +154,8 @@ process.on("uncaughtException", (error) => {
     stack: error.stack,
     timestamp: new Date().toISOString(),
   });
+  console.error("[CRITICAL] Process exiting due to uncaught exception");
+  process.exit(1);
 });
 
 process.on("unhandledRejection", (reason, promise) => {
@@ -162,6 +164,8 @@ process.on("unhandledRejection", (reason, promise) => {
     promise,
     timestamp: new Date().toISOString(),
   });
+  console.error("[CRITICAL] Process exiting due to unhandled rejection");
+  process.exit(1);
 });
 
 // Graceful shutdown handlers

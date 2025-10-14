@@ -117,9 +117,11 @@ export function initializeMarketPipeline(app: Express) {
     sessionVWAP.subscribe(symbol);
   }
 
+  // [PERFORMANCE] Paged history endpoint for lazy loading
+  // Supports: initial load, gap-fill (sinceSeq), and scroll-back pagination (before)
   app.get("/api/history", async (req, res) => {
     try {
-      const { symbol, timeframe = "1m", limit = 1000, before, sinceSeq } = req.query;
+      const { symbol, timeframe = "1m", limit = 500, before, sinceSeq } = req.query;
 
       if (!symbol || typeof symbol !== "string") {
         return res.status(400).json({ error: "symbol is required" });
@@ -131,16 +133,22 @@ export function initializeMarketPipeline(app: Express) {
         return res.status(400).json({ error: "Invalid timeframe" });
       }
 
+      // Parse and validate limit (100-1000 bars per page)
+      const parsedLimit = limit ? parseInt(limit as string, 10) : 500;
+      const validatedLimit = Math.min(Math.max(parsedLimit, 100), 1000);
+
       const query: any = {
         symbol: symbol.toUpperCase(),
         timeframe: typeof timeframe === "string" ? timeframe : "1m",
-        limit: limit ? parseInt(limit as string, 10) : 1000,
+        limit: validatedLimit,
       };
 
+      // before: timestamp for scrolling back in time (pagination)
       if (before) {
         query.before = parseInt(before as string, 10);
       }
 
+      // sinceSeq: sequence number for gap-filling
       if (sinceSeq) {
         query.sinceSeq = parseInt(sinceSeq as string, 10);
       }

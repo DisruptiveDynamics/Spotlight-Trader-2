@@ -106,24 +106,65 @@ export async function sseMarketStream(req: Request, res: Response) {
     });
   }
 
-  const listeners: Array<{ event: string; handler: (data: any) => void }> = [];
+  interface TradingSignal {
+    id: string;
+    symbol: string;
+    direction: string;
+    confidence: number;
+    ts: Date | number;
+  }
 
-  const alertHandler = (signal: any) => {
+  interface MicrobarData {
+    symbol: string;
+    ts: number;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+  }
+
+  interface BarData {
+    symbol: string;
+    timeframe: string;
+    seq: number;
+    bar_start: number;
+    bar_end: number;
+    ohlcv: {
+      o: number;
+      h: number;
+      l: number;
+      c: number;
+      v: number;
+    };
+  }
+
+  interface TickData {
+    ts: number;
+    price: number;
+    size: number;
+    side?: "buy" | "sell" | "unknown";
+  }
+
+  type EventHandler = (data: TradingSignal | MicrobarData | BarData | TickData) => void;
+  const listeners: Array<{ event: string; handler: EventHandler }> = [];
+
+  const alertHandler = (signal: TradingSignal) => {
     recordSSEEvent("alert");
     bpc.write("alert", {
       id: signal.id,
       symbol: signal.symbol,
       direction: signal.direction,
       confidence: signal.confidence,
-      timestamp: signal.ts,
+      timestamp: signal.ts instanceof Date ? signal.ts.getTime() : signal.ts,
     });
   };
 
-  eventBus.on("signal:new", alertHandler);
-  listeners.push({ event: "signal:new", handler: alertHandler });
+  eventBus.on("signal:new", alertHandler as any);
+  listeners.push({ event: "signal:new", handler: alertHandler as EventHandler });
 
   for (const symbol of symbols) {
-    const microbarHandler = (data: any) => {
+    const microbarHandler = (data: MicrobarData) => {
       recordSSEEvent("microbar");
       bpc.write("microbar", {
         symbol: data.symbol,
@@ -138,7 +179,7 @@ export async function sseMarketStream(req: Request, res: Response) {
       });
     };
 
-    const barHandler = (data: any) => {
+    const barHandler = (data: BarData) => {
       recordSSEEvent("bar");
       bpc.write(
         "bar",
@@ -155,7 +196,7 @@ export async function sseMarketStream(req: Request, res: Response) {
     };
 
     // Tick streaming for real-time "tape" feel
-    const tickHandler = (tick: any) => {
+    const tickHandler = (tick: TickData) => {
       recordSSEEvent("tick");
       bpc.write("tick", {
         symbol,
@@ -168,14 +209,14 @@ export async function sseMarketStream(req: Request, res: Response) {
 
     const barEventKey = `bar:new:${symbol}:${timeframe}`;
 
-    eventBus.on(`microbar:${symbol}` as const, microbarHandler);
-    eventBus.on(barEventKey as any, barHandler);
-    eventBus.on(`tick:${symbol}` as const, tickHandler);
+    eventBus.on(`microbar:${symbol}` as const, microbarHandler as any);
+    eventBus.on(barEventKey as any, barHandler as any);
+    eventBus.on(`tick:${symbol}` as const, tickHandler as any);
 
     listeners.push(
-      { event: `microbar:${symbol}`, handler: microbarHandler },
-      { event: barEventKey, handler: barHandler },
-      { event: `tick:${symbol}`, handler: tickHandler },
+      { event: `microbar:${symbol}`, handler: microbarHandler as EventHandler },
+      { event: barEventKey, handler: barHandler as EventHandler },
+      { event: `tick:${symbol}`, handler: tickHandler as EventHandler },
     );
   }
 

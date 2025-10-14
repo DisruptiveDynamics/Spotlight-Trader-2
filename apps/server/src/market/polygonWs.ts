@@ -66,20 +66,25 @@ export class PolygonWebSocket {
           this.resubscribe();
         };
 
-        ws.onmessage = (event: any) => {
+        interface WebSocketMessage {
+          data?: string;
+          response?: string;
+        }
+
+        ws.onmessage = (event: WebSocketMessage) => {
           this.lastMessageTime = Date.now();
 
           try {
             const response = event.data || event.response;
             if (!response) return;
-            const messages = JSON.parse(response);
-            messages.forEach((msg: any) => this.handleMessage(msg));
+            const messages: PolygonMessage[] = JSON.parse(response);
+            messages.forEach((msg) => this.handleMessage(msg));
           } catch (err) {
             console.error("Failed to parse Polygon message:", err);
           }
         };
 
-        ws.onerror = (error: any) => {
+        ws.onerror = (error: Error) => {
           console.error("Polygon WebSocket error:", error);
         };
 
@@ -96,7 +101,17 @@ export class PolygonWebSocket {
     }
   }
 
-  private handleMessage(msg: any) {
+  interface PolygonMessage {
+    ev: "status" | "T" | "A" | "error";
+    status?: string;
+    message?: string;
+    sym?: string;
+    t?: number;
+    p?: number;
+    s?: number;
+  }
+
+  private handleMessage(msg: PolygonMessage) {
     if (msg.ev === "status") {
       console.log("Polygon status:", msg.message);
 
@@ -129,9 +144,9 @@ export class PolygonWebSocket {
       return;
     }
 
-    if (msg.ev === "T") {
+    if (msg.ev === "T" && msg.sym && msg.t && msg.p && msg.s) {
       console.log(`📊 Tick: ${msg.sym} $${msg.p} (${msg.s} shares)`);
-      const tick: any = {
+      const tick = {
         ts: msg.t,
         price: msg.p,
         size: msg.s,

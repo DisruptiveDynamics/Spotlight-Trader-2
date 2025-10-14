@@ -24,7 +24,7 @@ export class BackpressureController {
     res.on("drain", this.drainHandler);
   }
 
-  write(event: string, data: any, id?: string): void {
+  write<T = unknown>(event: string, data: T, id?: string): void {
     const bufferedEvent: BufferedEvent = {
       event,
       data: JSON.stringify(data),

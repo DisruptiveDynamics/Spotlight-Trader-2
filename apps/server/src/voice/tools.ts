@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validateEnv } from "@shared/env";
 import { getChartSnapshot } from "../copilot/tools/handlers";
 import { db } from "../db";
 import { rules, journalEvents, signals } from "../db/schema";
@@ -6,6 +7,8 @@ import { desc, eq } from "drizzle-orm";
 import { retrieveTopK } from "../memory/store";
 import { bars1m } from "../chart/bars1m";
 import { getSessionVWAPForSymbol } from "../indicators/vwap";
+
+const env = validateEnv(process.env);
 
 const symbolSchema = z.string().min(1).max(10);
 const timeframeSchema = z.enum(["1m", "2m", "5m", "10m", "15m", "30m", "1h"]);
@@ -75,7 +78,7 @@ export const voiceTools = {
         });
       });
 
-    return withTimeout(exec(), 2000, () => ({
+    return withTimeout(exec(), env.TOOL_TIMEOUT_MS, () => ({
       symbol: params.symbol,
       timeframe: params.timeframe,
       bars: [],
@@ -84,6 +87,7 @@ export const voiceTools = {
       volatility: "medium",
       regime: "chop",
       stale: true,
+      reason: "timeout_or_cold_buffer",
     }));
   },
 
@@ -93,16 +97,19 @@ export const voiceTools = {
     const exec = async () =>
       cache5s(`price:${symbol}`, async () => {
         const b = bars1m.peekLast(symbol);
-        if (!b) throw new Error(`No data for ${symbol}`);
+        if (!b) {
+          return { symbol, value: null, ts: null, stale: true, reason: "empty_buffer" };
+        }
         const price = b.c;
         return { symbol, value: price, ts: b.bar_end };
       });
 
-    return withTimeout(exec(), 1200, () => ({
+    return withTimeout(exec(), env.TOOL_TIMEOUT_MS, () => ({
       symbol,
       value: null,
       ts: null,
       stale: true,
+      reason: "timeout",
     }));
   },
 
@@ -112,16 +119,19 @@ export const voiceTools = {
     const exec = async () =>
       cache5s(`vwap:${symbol}`, async () => {
         const vwap = getSessionVWAPForSymbol(symbol);
-        if (vwap == null) throw new Error("VWAP not available");
+        if (vwap == null) {
+          return { symbol, value: null, ts: null, stale: true, reason: "vwap_not_available" };
+        }
         const b = bars1m.peekLast(symbol);
         return { symbol, value: vwap, ts: b?.bar_end ?? Date.now() };
       });
 
-    return withTimeout(exec(), 1200, () => ({
+    return withTimeout(exec(), env.TOOL_TIMEOUT_MS, () => ({
       symbol,
       value: null,
       ts: null,
       stale: true,
+      reason: "timeout",
     }));
   },
 

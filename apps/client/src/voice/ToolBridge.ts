@@ -144,7 +144,7 @@ export class ToolBridge {
       backoffBaseMs?: number;
     } = {},
   ): Promise<{ ok: boolean; output?: T; error?: string; latency_ms?: number; cached?: boolean; corrId?: string }> {
-    const { timeoutMs = 700, retries = 2, backoffBaseMs = 200 } = options;
+    const { timeoutMs = 1500, retries = 2, backoffBaseMs = 200 } = options;
     
     // [OBS] Generate correlation ID for end-to-end tracing
     const corrId = Math.random().toString(36).slice(2, 11) + Date.now().toString(36);

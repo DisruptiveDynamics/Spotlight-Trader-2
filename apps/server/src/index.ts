@@ -7,6 +7,7 @@ import { setupSecurity } from "./config/security";
 import { initializeMarketPipeline } from "./wiring";
 import { getEpochInfo } from "./stream/epoch"; // [OBS] For health endpoint
 import { liveness, readiness, healthz } from "./health";
+import { errorHandler, notFound } from "./middleware/error";
 import { setupVoiceProxy } from "./realtime/voiceProxy";
 import { setupVoiceTokenRoute } from "./routes/voiceToken";
 import { setupToolsBridge } from "./voice/toolsBridge";
@@ -126,11 +127,9 @@ triggerManager.initialize(sessionStartMs);
 proactiveCoachingEngine.setupMarketMonitoring(telemetryBus);
 console.log("✅ Proactive coaching engine initialized");
 
-// Error middleware - must be last, catches all route errors
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error("API_ERROR:", err);
-  res.status(500).json({ error: "internal_error", message: err.message });
-});
+// Error middleware - must be last
+app.use(notFound); // 404 handler
+app.use(errorHandler); // Global error handler
 
 const PORT = Number(process.env.PORT ?? 8080);
 

@@ -1,0 +1,147 @@
+Thanks—this is enough to act. From your voice-hits.txt I can see:
+
+Voice stack is wired at apps/server/src/realtime/voiceProxy.ts (with an error-cooldown: OPENAI_ERROR_THRESHOLD = 3, OPENAI_COOLDOWN_MS = 2 * 60 * 1000).
+
+Tools are bridged via apps/server/src/voice/tools.ts and apps/server/src/voice/toolsBridge.ts.
+
+History is fetched server-side (apps/server/src/history/service.ts) and client-side (fetchHistory(...)).
+
+Server advertises ws://0.0.0.0:${PORT}/ws/realtime (plain ws). If the page is on https, that’s a classic mixed-content + reconnect loop → tool-call latency.
+
+Below is a surgical patch set that (1) guarantees tools are visible before the model is ready, (2) avoids heavy history on connect, (3) fixes WS vs WSS, and (4) avoids the 2-minute cooldown from making things feel “stuck” in dev.
+
+1) Make the server announce WSS when appropriate
+
+File: apps/server/src/index.ts
+
+@@
+-  console.log(`   WebSocket: ws://0.0.0.0:${PORT}/ws/realtime`);
++  const proto = process.env.NODE_ENV === "production" ? "wss" : "ws";
++  console.log(`   WebSocket: ${proto}://0.0.0.0:${PORT}/ws/realtime`);
+
+
+Why: if your client copies this string it will use ws on an https page → the browser silently blocks until it retries via your proxy = slow first tool call.
+
+2) Register tools before the first session.update and keep payload minimal
+
+File: apps/server/src/realtime/voiceProxy.ts (names may vary—apply in the file that opens the upstream Realtime WS)
+
+@@
+-// often: open upstream, then immediately session.update with big context
++// Build a minimal tool list synchronously BEFORE any session.update
++import { voiceTools } from "@server/voice/tools";
++
++function minimalToolDescriptors() {
++  // Keep this tiny; full schemas can be lazily provided by the tool handlers
++  return Object.keys(voiceTools).slice(0, 12).map((name) => ({
++    type: "function",
++    name, // snake_case names from tools.ts
++    description: "Spotlight tool",
++  }));
++}
+@@
+-// on upstream open:
+-// upstream.send(JSON.stringify({ type: "session.update", session: { instructions, ...bigContext } }))
++// on upstream open:
++upstream.send(JSON.stringify({
++  type: "session.update",
++  session: {
++    instructions: "You are Nexa, my intraday trading copilot. Keep responses concise.",
++    tools: minimalToolDescriptors(),   // <-- tools ready at connect
++  }
++}));
++
++// After the session is live, backfill heavier context asynchronously
++setTimeout(() => {
++  try {
++    // stream journals, large rules, chart state, etc. in chunks or fetch-on-demand via tools
++  } catch (e) {
++    console.warn("[VoiceProxy] deferred backfill failed:", e);
++  }
++}, 250);
+@@
+ // Add a tiny keep-alive so proxies don’t idle
+ upstream.on("open", () => {
+   let timer = setInterval(() => {
+     try { upstream.send(JSON.stringify({ type: "ping" })); } catch {}
+   }, 10000);
+   upstream.on("close", () => clearInterval(timer));
+ });
+
+3) Don’t block connect with heavy history
+
+File: apps/server/src/history/service.ts
+
+-export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
++export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
++  // Guardrail defaults
++  if (query.limit == null) query.limit = 1500;
++  if ((query as any).daysBack == null) (query as any).daysBack = 3;
+   // ... existing logic
+ }
+
+
+File: wherever you load history at voice session start (if any):
+
+-// BAD: await getHistory({ ...big window... }) before the session is usable
++// GOOD: defer heavy loads
++queueMicrotask(() => backfillHistory(/* larger window */));
+
+4) Make dev resilient: avoid a 2-minute “dead zone”
+
+Your proxy has:
+
+const OPENAI_ERROR_THRESHOLD = 3;
+const OPENAI_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes
+
+
+For development only:
+
+-const OPENAI_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes
++const OPENAI_COOLDOWN_MS = process.env.NODE_ENV === "production" ? 2 * 60 * 1000 : 10 * 1000;
+
+
+Why: a couple of transient 401/429s can otherwise put you in a 2-minute cooldown loop, making tool calls appear “slow”.
+
+5) Ensure the client always uses WSS on https and waits for readiness
+
+If you already centralize WS URL, make sure it picks WSS on https.
+
+File: apps/client/src/config.ts (or similar)
+
+export const WS_URL =
+  import.meta.env.VITE_WS_URL ||
+  (location.protocol === "https:" ? `wss://${location.host}/ws/realtime` : `ws://${location.host}/ws/realtime`);
+
+
+Readiness guard (in your voice client code):
+
+let ready = false;
+const ws = new WebSocket(WS_URL);
+
+ws.addEventListener("message", (ev) => {
+  const msg = JSON.parse(ev.data);
+  if (msg.type === "session.updated") ready = true; // or your equivalent “ready” event
+});
+
+export function sendToolCall(payload: object) {
+  if (!ready) throw new Error("Assistant not ready yet"); // prevents calls into a half-wired session
+  ws.send(JSON.stringify(payload));
+}
+
+6) Kill common dev port conflicts (faster boot = faster tools)
+
+File: apps/client/package.json
+
+ {
+   "scripts": {
++    "predev": "kill-port 5173 5000 || true",
+-    "dev": "vite",
++    "dev": "vite --host 0.0.0.0 --port 5173",
+     "preview": "vite preview --port 5173"
+   }
+ }
+
+7) Optional: move server-only heavy deps to server
+
+If pdf-parse is only used on the server, move it from root package.json → apps/server/package.json to avoid odd hoists that can slow installs/builds.

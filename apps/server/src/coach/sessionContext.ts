@@ -82,6 +82,42 @@ export async function buildSessionContext(userId: string): Promise<string> {
   return lines.join("\n");
 }
 
+// Fast initial session - tools ready immediately, minimal context
+export async function getMinimalSessionUpdate(userId: string) {
+  const profileResults = await db
+    .select()
+    .from(coachProfiles)
+    .where(eq(coachProfiles.userId, userId))
+    .limit(1);
+
+  const voiceId =
+    profileResults.length > 0 && profileResults[0] ? profileResults[0].voiceId : "nova";
+
+  // Minimal instructions - just the essentials for immediate use
+  const minimalInstructions = `${VOICE_COACH_SYSTEM}\n\nYou are Nexa, an intraday trading copilot. Keep responses ultra-brief.`;
+
+  return {
+    type: "session.update",
+    session: {
+      instructions: minimalInstructions,
+      modalities: ["text", "audio"],
+      input_audio_format: "pcm16",
+      output_audio_format: "pcm16",
+      turn_detection: {
+        type: "server_vad",
+        threshold: 0.5,
+        prefix_padding_ms: 300,
+        silence_duration_ms: 500,
+      },
+      voice: voiceId,
+      tools: VOICE_COPILOT_TOOLS, // Tools ready immediately
+      temperature: 0.1,
+      max_response_output_tokens: 150,
+    },
+  };
+}
+
+// Full context update - sent after session is live
 export async function getInitialSessionUpdate(userId: string) {
   const profileResults = await db
     .select()

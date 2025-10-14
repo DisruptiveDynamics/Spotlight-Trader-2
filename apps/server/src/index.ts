@@ -56,7 +56,11 @@ app.use(cookieParser());
 setupSecurity(app);
 
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: Date.now() });
+  res.json({
+    ok: true,
+    now: Date.now(),
+    uptimeSec: Math.round(process.uptime()),
+  });
 });
 
 // [OBS] Comprehensive health endpoint with epoch tracking
@@ -134,14 +138,18 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   res.status(500).json({ error: "internal_error", message: err.message });
 });
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 8080;
+const PORT = Number(process.env.PORT ?? 8080);
 
 // Initialize market source (Polygon auth check with simulator fallback)
 await initializeMarketSource();
 
 server.listen(PORT, "0.0.0.0", () => {
+  const proto = env.NODE_ENV === "production" ? "wss" : "ws";
   console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
   console.log(`   Environment: ${env.NODE_ENV}`);
   console.log(`   Log level: ${env.LOG_LEVEL}`);
-  console.log(`   WebSocket: ws://0.0.0.0:${PORT}/ws/realtime`);
+  console.log(`   Routes: /health (GET), /realtime/sse (SSE), /ws/realtime (WS), /ws/tools (WS)`);
+  console.log(`   WebSocket: ${proto}://0.0.0.0:${PORT}/ws/realtime`);
+  console.log(`   [SSE] mounted at /realtime/sse`);
+  console.log(`   [WS] voice at /ws/realtime, tools at /ws/tools`);
 });

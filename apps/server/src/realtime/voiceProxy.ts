@@ -2,7 +2,7 @@ import type { Server as HTTPServer } from "http";
 import type { Express } from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import { verifyVoiceToken } from "./auth";
-import { getInitialSessionUpdate } from "../coach/sessionContext";
+import { getMinimalSessionUpdate, getInitialSessionUpdate } from "../coach/sessionContext";
 import { validateEnv } from "@shared/env";
 import {
   recordWSConnection,
@@ -32,7 +32,8 @@ const HEARTBEAT_INTERVAL = 25000;
 let openaiErrorCount = 0;
 let openaiCooldownUntil = 0;
 const OPENAI_ERROR_THRESHOLD = 3;
-const OPENAI_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes
+// Dev: 10s cooldown for faster iteration, Prod: 2min to protect from outages
+const OPENAI_COOLDOWN_MS = process.env.NODE_ENV === "production" ? 2 * 60 * 1000 : 10 * 1000;
 
 export function setupVoiceProxy(app: Express, server: HTTPServer) {
   const wss = new WebSocketServer({ noServer: true });
@@ -49,12 +50,18 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
       const isLocalhost = origin.includes("localhost") || origin.includes("127.0.0.1");
       const isDev = process.env.NODE_ENV !== "production";
 
-      const isAllowed = allowedOrigins.includes(origin) || isReplitDev || (isDev && isLocalhost);
+      // Dev-mode diagnostic bypass (diagnostic only)
+      if (isDev && request.url?.includes("diag=1")) {
+        console.warn("[WS] DEV DIAG BYPASS ENABLED for", request.url);
+        // Skip auth checks - allow diagnostic connection
+      } else {
+        const isAllowed = allowedOrigins.includes(origin) || isReplitDev || (isDev && isLocalhost);
 
-      if (!isAllowed) {
-        socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
-        socket.destroy();
-        return;
+        if (!isAllowed) {
+          socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+          socket.destroy();
+          return;
+        }
       }
 
       wss.handleUpgrade(request, socket, head, (ws) => {
@@ -167,13 +174,13 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
           );
           sessionCreatedReceived = true;
 
-          // Get full session config with tools
-          const sessionUpdate = await getInitialSessionUpdate(userId);
-          console.log("[VoiceProxy] Sending session.update with copilot tools:", {
-            toolCount: (sessionUpdate.session as any).tools?.length || 0,
-            voice: sessionUpdate.session.voice,
+          // PERFORMANCE: Send minimal session FIRST for immediate tool availability
+          const minimalUpdate = await getMinimalSessionUpdate(userId);
+          console.log("[VoiceProxy] Sending MINIMAL session.update (tools ready immediately):", {
+            toolCount: (minimalUpdate.session as any).tools?.length || 0,
+            voice: minimalUpdate.session.voice,
           });
-          upstreamWs.send(JSON.stringify(sessionUpdate));
+          upstreamWs.send(JSON.stringify(minimalUpdate));
           upstreamReady = true;
 
           // Flush buffered client messages
@@ -202,6 +209,19 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
               upstreamWs.ping();
             }
           }, HEARTBEAT_INTERVAL);
+
+          // PERFORMANCE: Backfill full context asynchronously (don't block session)
+          setTimeout(async () => {
+            try {
+              const fullUpdate = await getInitialSessionUpdate(userId);
+              if (upstreamWs.readyState === WebSocket.OPEN) {
+                console.log("[VoiceProxy] Sending FULL context update (memories + knowledge)");
+                upstreamWs.send(JSON.stringify(fullUpdate));
+              }
+            } catch (e) {
+              console.warn("[VoiceProxy] Failed to send full context update:", e);
+            }
+          }, 250);
         }
 
         // Enhanced error logging with session ID and cooldown tracking

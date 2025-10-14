@@ -9,7 +9,7 @@
     "pnpm": ">=8.0.0"
   },
   "scripts": {
-    "dev": "concurrently -n client,server \"pnpm --filter @spotlight/client dev\" \"pnpm --filter @spotlight/server dev\"",
+    "dev": "concurrently -n web=5000,api=8080 \"pnpm --filter @spotlight/client dev\" \"pnpm --filter @spotlight/server dev\"",
     "build": "pnpm --filter @spotlight/shared build && pnpm --filter @spotlight/config build && pnpm --filter @spotlight/client build && pnpm --filter @spotlight/server build",
     "check": "pnpm -r check",
     "lint": "pnpm -r lint",

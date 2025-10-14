@@ -27,13 +27,24 @@ interface PolygonAggResponse {
 }
 
 /**
+ * Get initial history for app startup using env-configured limit
+ */
+export async function getInitialHistory(symbol: string): Promise<Bar[]> {
+  return getHistory({
+    symbol,
+    timeframe: env.HISTORY_INIT_TIMEFRAME,
+    limit: env.HISTORY_INIT_LIMIT,
+  });
+}
+
+/**
  * Fetch historical bar data with intelligent fallback strategy:
  * 1. Ring buffer (for recent real-time data)
  * 2. Polygon REST API (for historical data)
  * 3. High-quality mock generator (fallback)
  */
 export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
-  const { symbol, timeframe = "1m", limit = 1000, before, sinceSeq } = query;
+  const { symbol, timeframe = "1m", limit = env.HISTORY_INIT_LIMIT, before, sinceSeq } = query;
 
   // Priority 1: Check ring buffer for gap backfill
   if (sinceSeq !== undefined) {
@@ -142,7 +153,7 @@ function timeframeToMs(timeframe: Timeframe): number {
 
 /**
  * Fetch historical bars from Polygon REST API using direct fetch
- * Fetches 60-90 day window for proper intraday analysis
+ * Uses limit-based fetch (not time-based) for efficient cold starts
  */
 async function fetchPolygonHistory(
   symbol: string,
@@ -152,9 +163,10 @@ async function fetchPolygonHistory(
 ): Promise<Bar[]> {
   const toMs = before || Date.now();
 
-  // Default to 60 days of history for proper context (configurable)
-  const daysBack = 60;
-  const fromMs = toMs - daysBack * 24 * 60 * 60 * 1000;
+  // Calculate time range based on requested limit (not hardcoded days)
+  // This ensures we fetch only what's needed, not 60 days every time
+  const timeframeMs = timeframeToMs(timeframe);
+  const fromMs = toMs - limit * timeframeMs;
 
   // Format dates for Polygon API (YYYY-MM-DD)
   const fromDate = new Date(fromMs).toISOString().split("T")[0];
@@ -165,7 +177,7 @@ async function fetchPolygonHistory(
   const params = new URLSearchParams({
     adjusted: "true",
     sort: "asc",
-    limit: String(50000), // Max results, Polygon will paginate
+    limit: String(limit), // Use actual limit, not 50000
     apiKey: env.POLYGON_API_KEY,
   });
 

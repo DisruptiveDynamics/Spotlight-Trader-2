@@ -10,6 +10,16 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### October 14, 2025 - Unified Dev Server (Complete)
+
+- **Single-Port Architecture**: Implemented unified dev server serving both Express API and Vite frontend on port 5000 (UNIFIED_DEV=1 mode)
+- **Networking Fix**: Resolved ECONNREFUSED errors by eliminating inter-process communication - Express now serves Vite middleware directly
+- **Route Filtering**: Vite middleware properly filters API routes (/api, /ws, /stream, /health, /realtime) vs client routes with SPA fallback
+- **Security Configuration**: Updated CORS and CSP with UNIFIED_DEV guards - allows localhost origins and WebSocket protocols in dev mode only
+- **HMR Integration**: Configured Vite Hot Module Replacement with Replit environment detection (WSS protocol for HTTPS proxy)
+- **Known Limitation**: HMR WebSocket gracefully degrades to polling mode in Replit due to HTTPS proxy hostname rewriting - this is a platform limitation, not a regression
+- **Workflow Update**: Removed separate Client workflow, single Server workflow now serves both client and API
+
 ### October 14, 2025 - Phase 10: CI + Documentation (Complete)
 
 - **GitHub Actions CI**: Automated quality gates with install, lint, typecheck, test with coverage, build steps

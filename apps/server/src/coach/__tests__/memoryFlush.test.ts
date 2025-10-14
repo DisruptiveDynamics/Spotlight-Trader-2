@@ -49,7 +49,7 @@ describe("Memory Flush - Shutdown with Retries", () => {
         try {
           await this.flush();
           return;
-        } catch (err) {
+        } catch {
           if (attempt === this.maxRetries) {
             console.error("Failed to flush after max retries");
             return;
@@ -102,7 +102,7 @@ describe("Memory Flush - Shutdown with Retries", () => {
     it("should succeed after 2 retries", async () => {
       let attemptCount = 0;
       
-      const originalFlush = bridge.flush.bind(bridge);
+      const _originalFlush = bridge.flush.bind(bridge);
       bridge.flush = async function(this: any) {
         attemptCount++;
         if (attemptCount < 3) {
@@ -159,7 +159,7 @@ describe("Memory Flush - Shutdown with Retries", () => {
     it("should clear buffer only after successful flush", async () => {
       let flushCalled = false;
       
-      const originalFlush = bridge.flush.bind(bridge);
+      const _originalFlush = bridge.flush.bind(bridge);
       bridge.flush = async function() {
         if (!flushCalled) {
           flushCalled = true;
@@ -246,7 +246,7 @@ describe("Memory Flush - Shutdown with Retries", () => {
         }
       });
 
-      mockProcess.on("beforeExit", async (code: number) => {
+      mockProcess.on("beforeExit", async (_code: number) => {
         await bridge.shutdown();
       });
 

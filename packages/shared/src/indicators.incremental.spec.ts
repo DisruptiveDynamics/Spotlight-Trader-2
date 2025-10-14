@@ -19,7 +19,7 @@ import {
   RingBuffer,
 } from "./indicators.incremental";
 
-const FLOAT_TOLERANCE = 0.0001;
+const _FLOAT_TOLERANCE = 0.0001;
 
 /**
  * Generate deterministic test candles

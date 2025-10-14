@@ -2,14 +2,14 @@
  * Type-safe chart rendering and visualization structures
  */
 
-import type { OHLCV } from './market';
+import type { Ohlcv } from '../indicators';
 
 export interface ChartTooltipData {
   x: number;
   y: number;
   time: number;
   price: number;
-  ohlcv?: OHLCV;
+  ohlcv?: Ohlcv;
   indicators?: Record<string, number>;
 }
 
@@ -20,7 +20,7 @@ export interface IndicatorPoint {
 
 export interface BarWithIndicators {
   timestamp: number;
-  ohlcv: OHLCV;
+  ohlcv: Ohlcv;
   indicators?: {
     ema9?: number;
     ema20?: number;

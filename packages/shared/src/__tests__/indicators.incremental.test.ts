@@ -7,7 +7,7 @@ describe("Incremental Indicator Equivalence", () => {
       const k = 2 / (period + 1);
       const ema: number[] = [];
       
-      let sma = prices.slice(0, period).reduce((a, b) => a + b) / period;
+      const sma = prices.slice(0, period).reduce((a, b) => a + b) / period;
       ema.push(sma);
       
       for (let i = period; i < prices.length; i++) {
@@ -154,7 +154,7 @@ describe("Incremental Indicator Equivalence", () => {
     });
 
     it("should maintain VWAP precision with high volume", () => {
-      const bars: VWAPBar[] = Array.from({ length: 100 }, (_, i) => ({
+      const bars: VWAPBar[] = Array.from({ length: 100 }, (_,_i) => ({
         close: 100 + (Math.random() - 0.5) * 10,
         volume: Math.floor(Math.random() * 100000) + 10000,
       }));
@@ -221,7 +221,7 @@ describe("Incremental Indicator Equivalence", () => {
         if (prices.length < period) return [];
         const k = 2 / (period + 1);
         const ema: number[] = [];
-        let sma = prices.slice(0, period).reduce((a, b) => a + b) / period;
+        const sma = prices.slice(0, period).reduce((a, b) => a + b) / period;
         ema.push(sma);
         for (let i = period; i < prices.length; i++) {
           ema.push(prices[i] * k + ema[ema.length - 1] * (1 - k));

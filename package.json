@@ -23,7 +23,8 @@
     "fix": "pnpm -r fix || true",
     "fix:root": "eslint . --fix",
     "typecheck": "pnpm -r typecheck || true",
-    "test:ci": "vitest run"
+    "test:ci": "vitest run",
+    "cleanup": "tsx scripts/cleanup-ports.ts"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",

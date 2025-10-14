@@ -75,10 +75,11 @@ export async function switchTimeframe(params: {
     activeStates.set(key, newState);
 
     // Step 4: Emit bar:reset to signal client to redraw
-    // Convert RolledBar (nested ohlcv) to flat Bar format
+    // Convert RolledBar (nested ohlcv) to flat Bar format using toSharedBar adapter
     const flatBars: Bar[] = rolled.map((rb) => ({
       symbol: rb.symbol,
       timestamp: rb.bar_start,
+      timeframe: rb.timeframe,
       open: rb.ohlcv.o,
       high: rb.ohlcv.h,
       low: rb.ohlcv.l,

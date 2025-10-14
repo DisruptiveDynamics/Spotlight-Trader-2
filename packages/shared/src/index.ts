@@ -6,5 +6,7 @@ export * from "./types/insight.js";
 export * from "./types/streaming.js";
 export * from "./types/chart.js";
 export * from "./indicators.js";
+export * from "./indicators.incremental.js";
 export * from "./voicePolicy.js";
 export * from "./utils/time.js";
+export * from "./perf/metrics.js";

@@ -1,6 +1,10 @@
 /**
  * Performance Scheduler
- * Request Animation Frame-based scheduling with FPS limiting
+ * Request Animation Frame-based scheduling with FPS limiting and tab visibility detection
+ * 
+ * Adaptive FPS:
+ * - Visible tab: 60 FPS (smooth animations)
+ * - Hidden tab: 15 FPS (reduce CPU usage)
  */
 
 type ScheduledTask = () => void;
@@ -8,15 +12,42 @@ type ScheduledTask = () => void;
 let rafId: number | null = null;
 const pendingTasks: Set<ScheduledTask> = new Set();
 
+// Tab visibility state
+let isTabVisible = !document.hidden;
+let currentMaxFps = isTabVisible ? 60 : 15;
+let lastFrameTime = 0;
+
+// Listen for visibility changes
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    isTabVisible = !document.hidden;
+    currentMaxFps = isTabVisible ? 60 : 15;
+    console.log(`[Scheduler] Tab ${isTabVisible ? 'visible' : 'hidden'}, FPS limit: ${currentMaxFps}`);
+  });
+}
+
 /**
- * Schedule a task to run on the next animation frame
+ * Schedule a task to run on the next animation frame with FPS throttling
  * Coalesces multiple calls into a single rAF
+ * Respects adaptive FPS limits based on tab visibility
  */
 export function schedule(fn: ScheduledTask): void {
   pendingTasks.add(fn);
 
   if (rafId === null) {
-    rafId = requestAnimationFrame(() => {
+    rafId = requestAnimationFrame((timestamp) => {
+      const minFrameInterval = 1000 / currentMaxFps;
+      const elapsed = timestamp - lastFrameTime;
+
+      // Throttle based on current FPS limit
+      if (elapsed < minFrameInterval) {
+        // Too soon, reschedule
+        rafId = null;
+        schedule(fn);
+        return;
+      }
+
+      lastFrameTime = timestamp;
       const tasks = Array.from(pendingTasks);
       pendingTasks.clear();
       rafId = null;
@@ -99,4 +130,48 @@ export function cancelScheduled(): void {
     rafId = null;
   }
   pendingTasks.clear();
+}
+
+/**
+ * Get current tab visibility state
+ */
+export function isVisible(): boolean {
+  return isTabVisible;
+}
+
+/**
+ * Get current FPS limit
+ */
+export function getCurrentFpsLimit(): number {
+  return currentMaxFps;
+}
+
+/**
+ * Create a coalescing batch updater for high-frequency updates
+ * Useful for microbar batching - collects multiple updates and applies once per frame
+ * 
+ * @param batchHandler - Function that receives all batched items
+ * @returns Function to add items to the batch
+ */
+export function createBatchCoalescer<T>(
+  batchHandler: (items: T[]) => void,
+): (item: T) => void {
+  const batchQueue: T[] = [];
+  let scheduled = false;
+
+  return (item: T) => {
+    batchQueue.push(item);
+
+    if (!scheduled) {
+      scheduled = true;
+      schedule(() => {
+        if (batchQueue.length > 0) {
+          const batch = [...batchQueue];
+          batchQueue.length = 0;
+          batchHandler(batch);
+        }
+        scheduled = false;
+      });
+    }
+  };
 }

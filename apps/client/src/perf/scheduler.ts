@@ -12,12 +12,12 @@ type ScheduledTask = () => void;
 let rafId: number | null = null;
 const pendingTasks: Set<ScheduledTask> = new Set();
 
-// Tab visibility state
-let isTabVisible = !document.hidden;
+// Tab visibility state (default to visible in non-DOM contexts)
+let isTabVisible = typeof document !== 'undefined' ? !document.hidden : true;
 let currentMaxFps = isTabVisible ? 60 : 15;
 let lastFrameTime = 0;
 
-// Listen for visibility changes
+// Listen for visibility changes (browser only)
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     isTabVisible = !document.hidden;

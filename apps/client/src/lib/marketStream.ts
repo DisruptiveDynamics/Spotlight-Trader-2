@@ -127,11 +127,17 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         
         console.log(`✅ Recovered ${reconciled} bars (seq ${minSeq}→${maxSeq})`);
         
-        // Emit all reconciled bars
+        // Emit only reconciled bars (diffs)
         [...toUpdate, ...toAdd].forEach((bar) => {
           listeners.bar.forEach((fn) => fn(bar));
         });
       }
+
+      // [PHASE-5] Replace local buffer with authoritative server snapshot
+      localBars.length = 0; // Clear
+      serverBars.slice(-MAX_LOCAL_BARS).forEach((bar) => {
+        localBars.push(bar); // Keep last 10 bars
+      });
 
       // Update lastSeq to highest from snapshot
       if (serverBars.length > 0) {
@@ -196,6 +202,13 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
       filledBars.forEach((bar) => {
         lastSeq = bar.seq;
+        
+        // [PHASE-5] Track filled bars in local buffer
+        localBars.push(bar);
+        if (localBars.length > MAX_LOCAL_BARS) {
+          localBars.shift();
+        }
+        
         listeners.bar.forEach((fn) => fn(bar));
       });
     } catch (error) {
@@ -233,6 +246,13 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
             bars.forEach((bar: Bar) => {
               if (bar.seq > lastSeq) {
                 lastSeq = bar.seq;
+                
+                // [PHASE-5] Track gap-filled bars in local buffer
+                localBars.push(bar);
+                if (localBars.length > MAX_LOCAL_BARS) {
+                  localBars.shift();
+                }
+                
                 listeners.bar.forEach((fn) => fn(bar));
               }
             });
@@ -417,6 +437,13 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
           bars.forEach((bar: Bar) => {
             if (bar.seq > lastSeq) {
               lastSeq = bar.seq;
+              
+              // [PHASE-5] Track focus-filled bars in local buffer
+              localBars.push(bar);
+              if (localBars.length > MAX_LOCAL_BARS) {
+                localBars.shift();
+              }
+              
               listeners.bar.forEach((fn) => fn(bar));
             }
           });

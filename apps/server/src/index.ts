@@ -6,6 +6,7 @@ import { validateEnv } from "@shared/env";
 import { setupSecurity } from "./config/security";
 import { initializeMarketPipeline } from "./wiring";
 import { getEpochInfo } from "./stream/epoch"; // [OBS] For health endpoint
+import { liveness, readiness, healthz } from "./health";
 import { setupVoiceProxy } from "./realtime/voiceProxy";
 import { setupVoiceTokenRoute } from "./routes/voiceToken";
 import { setupToolsBridge } from "./voice/toolsBridge";
@@ -55,6 +56,7 @@ app.use(express.json());
 app.use(cookieParser());
 setupSecurity(app);
 
+// Health and readiness probes
 app.get("/health", (_req, res) => {
   res.json({
     ok: true,
@@ -63,19 +65,11 @@ app.get("/health", (_req, res) => {
   });
 });
 
-// [OBS] Comprehensive health endpoint with epoch tracking
-app.get("/api/healthz", (_req, res) => {
-  const epoch = getEpochInfo();
-  res.json({
-    ok: true,
-    epochId: epoch.epochId,
-    startedAt: new Date(epoch.epochStartMs).toISOString(),
-    uptimeMs: epoch.uptime,
-    version: "1.0.0", // TODO: Read from package.json
-    timestamp: Date.now(),
-  });
-});
+app.get("/api/livez", liveness);
+app.get("/api/readyz", readiness);
+app.get("/api/healthz", healthz);
 
+// Legacy health endpoints for compatibility
 app.get("/api/health", (_req, res) => {
   const epoch = getEpochInfo();
   res.json({

@@ -33,7 +33,15 @@ export async function sseMarketStream(req: Request, res: Response) {
 
   const bpc = new BackpressureController(res, 100);
 
-  // [RESILIENCE] Send epoch info as first event for client restart detection
+  // [PERFORMANCE] Send bootstrap event immediately (non-blocking)
+  bpc.write("bootstrap", {
+    now: Date.now(),
+    warm: true,
+    symbols,
+    timeframe,
+  });
+
+  // [RESILIENCE] Send epoch info for client restart detection
   bpc.write("epoch", {
     epochId: getEpochId(),
     epochStartMs: getEpochStartMs(),
@@ -41,24 +49,61 @@ export async function sseMarketStream(req: Request, res: Response) {
     timeframe,
   });
 
+  // [PERFORMANCE] Fetch seed data asynchronously (non-blocking)
+  // This allows SSE to connect immediately while history loads in background
   if (sinceSeq !== undefined) {
-    for (const symbol of symbols) {
-      const backfill = await getHistory({ symbol, timeframe: timeframe as any, sinceSeq });
-      for (const bar of backfill) {
-        bpc.write(
-          "bar",
-          {
-            symbol: bar.symbol,
-            timeframe: bar.timeframe,
-            seq: bar.seq,
-            bar_start: bar.bar_start,
-            bar_end: bar.bar_end,
-            ohlcv: bar.ohlcv,
-          },
-          String(bar.seq),
-        );
-      }
-    }
+    Promise.all(
+      symbols.map(async (symbol) => {
+        try {
+          const backfill = await getHistory({ symbol, timeframe: timeframe as any, sinceSeq });
+          for (const bar of backfill) {
+            bpc.write(
+              "bar",
+              {
+                symbol: bar.symbol,
+                timeframe: bar.timeframe,
+                seq: bar.seq,
+                bar_start: bar.bar_start,
+                bar_end: bar.bar_end,
+                ohlcv: bar.ohlcv,
+              },
+              String(bar.seq),
+            );
+          }
+        } catch (err) {
+          console.error(`Failed to fetch backfill for ${symbol}:`, err);
+        }
+      })
+    ).catch((err) => {
+      console.error("Backfill error:", err);
+    });
+  } else {
+    // Send initial seed data for cold start (async, non-blocking)
+    Promise.all(
+      symbols.map(async (symbol) => {
+        try {
+          const seed = await getHistory({ symbol, timeframe: timeframe as any });
+          for (const bar of seed) {
+            bpc.write(
+              "bar",
+              {
+                symbol: bar.symbol,
+                timeframe: bar.timeframe,
+                seq: bar.seq,
+                bar_start: bar.bar_start,
+                bar_end: bar.bar_end,
+                ohlcv: bar.ohlcv,
+              },
+              String(bar.seq),
+            );
+          }
+        } catch (err) {
+          console.error(`Failed to fetch seed for ${symbol}:`, err);
+        }
+      })
+    ).catch((err) => {
+      console.error("Seed fetch error:", err);
+    });
   }
 
   const listeners: Array<{ event: string; handler: (data: any) => void }> = [];

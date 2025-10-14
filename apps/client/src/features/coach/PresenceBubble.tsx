@@ -214,19 +214,18 @@ interface PresenceBubbleProps {
 export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [coachState, setCoachState] = useState<CoachState>("idle");
-  const [amplitude, setAmplitude] = useState(0);
-  const [latency, setLatency] = useState(0);
+  const [amplitude, _setAmplitude] = useState(0);
+  const [latency, _setLatency] = useState(0);
   const [showTooltip, setShowTooltip] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
-  const [_permissionState, setPermissionState] = useState<PermissionState>("pending");
+  const [_permissionState, _setPermissionState] = useState<PermissionState>("pending");
   const [statusMessage, setStatusMessage] = useState<string>("");
 
   const voiceClientRef = useRef<RealtimeVoiceClient | null>(null);
   const clickTimeoutRef = useRef<number | null>(null);
   const clickCountRef = useRef(0);
-  const tokenRef = useRef<string | null>(null);
   const tooltipTimerRef = useRef<number>();
   const statusTimerRef = useRef<number>();
 
@@ -296,7 +295,8 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
     }, duration);
   };
 
-  const fetchEphemeralToken = async (): Promise<string> => {
+  // TODO: Remove if token management is handled by RealtimeVoiceClient
+  const _fetchEphemeralToken = async (): Promise<string> => {
     const response = await fetch("/api/voice/ephemeral-token", {
       method: "POST",
       credentials: "include",

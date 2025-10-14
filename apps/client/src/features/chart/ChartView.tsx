@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import type { IChartApi, ISeriesApi, CandlestickData, UTCTimestamp } from "lightweight-charts";
-import { connectMarketSSE, fetchHistory, type Bar, type Micro } from "../../lib/marketStream";
+import type { IChartApi, ISeriesApi, UTCTimestamp } from "lightweight-charts";
+import { connectMarketSSE, type Bar, type Micro } from "../../lib/marketStream";
 import { useLastSeq } from "./useLastSeq";
 
 export function ChartView() {

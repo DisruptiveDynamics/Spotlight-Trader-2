@@ -2,7 +2,6 @@
 // Ensures single source of truth and TradingView/TOS-level consistency
 
 import { TIMEFRAME_TO_BUCKET_MIN, type Timeframe } from "@shared/types/market";
-import type { Bar } from "@shared/types";
 
 interface Bar1m {
   symbol: string;

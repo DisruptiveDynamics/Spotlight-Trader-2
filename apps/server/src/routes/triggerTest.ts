@@ -7,7 +7,8 @@ const router: ExpressRouter = Router();
 
 router.post("/test/vwap-reclaim", async (req, res) => {
   const now = Date.now();
-  const sessionStart = new Date().setHours(9, 30, 0, 0);
+  // TODO: Use sessionStart for time-based trigger testing
+  const _sessionStart = new Date().setHours(9, 30, 0, 0);
 
   const baseBars: Bar[] = [
     {
@@ -59,7 +60,8 @@ router.post("/test/vwap-reclaim", async (req, res) => {
 });
 
 router.post("/test/orb", async (req, res) => {
-  const now = Date.now();
+  // TODO: Use now for current time-based testing
+  const _now = Date.now();
   const sessionStart = new Date().setHours(9, 30, 0, 0);
 
   const orbBars: Bar[] = [

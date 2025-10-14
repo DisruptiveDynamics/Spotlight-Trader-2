@@ -57,7 +57,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => T): Promise<
 }
 
 export const voiceTools = {
-  async get_chart_snapshot(input: unknown, userId: string) {
+  async get_chart_snapshot(input: unknown, _userId: string) {
     const params = z
       .object({
         symbol: symbolSchema,
@@ -91,7 +91,7 @@ export const voiceTools = {
     }));
   },
 
-  async get_last_price(input: unknown, userId: string) {
+  async get_last_price(input: unknown, _userId: string) {
     const { symbol } = z.object({ symbol: symbolSchema }).parse(input);
 
     const exec = async () =>
@@ -113,7 +113,7 @@ export const voiceTools = {
     }));
   },
 
-  async get_last_vwap(input: unknown, userId: string) {
+  async get_last_vwap(input: unknown, _userId: string) {
     const { symbol } = z.object({ symbol: symbolSchema }).parse(input);
 
     const exec = async () =>
@@ -135,7 +135,7 @@ export const voiceTools = {
     }));
   },
 
-  async get_last_ema(input: unknown, userId: string) {
+  async get_last_ema(input: unknown, _userId: string) {
     const { symbol, period } = z
       .object({
         symbol: symbolSchema,
@@ -169,7 +169,7 @@ export const voiceTools = {
     }));
   },
 
-  async get_market_regime(input: unknown, userId: string) {
+  async get_market_regime(input: unknown, _userId: string) {
     const params = z
       .object({
         symbol: symbolSchema,

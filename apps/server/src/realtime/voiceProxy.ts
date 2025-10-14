@@ -13,7 +13,8 @@ import { toolHandlers } from "../copilot/tools/handlers";
 import { voiceCalloutBridge } from "./voiceCalloutBridge";
 import { voiceMemoryBridge } from "../coach/voiceMemoryBridge";
 import { traderPatternDetector } from "../coach/traderPatternDetector";
-import { ensureMarketContext } from "../coach/ensureMarketContext.js";
+// TODO: Integrate market context checks into voice responses
+// import { ensureMarketContext } from "../coach/ensureMarketContext.js";
 import { ToolCallTracker } from "../coach/responseGuard.js";
 
 const env = validateEnv(process.env);
@@ -307,7 +308,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
 
             // Call the appropriate copilot tool handler with userId context
             switch (functionName) {
-              case "get_chart_snapshot":
+              case "get_chart_snapshot": {
                 console.log(
                   `[VOICE TOOL] Parsed Params: symbol=${args.symbol}, timeframe=${args.timeframe}, barCount=${args.barCount || args.lookback || 50}`,
                 );
@@ -323,6 +324,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
                 );
                 console.log(`[VOICE TOOL] VWAP: ${result.indicators.vwap?.value || "N/A"}`);
                 break;
+              }
               case "propose_entry_exit":
                 result = await toolHandlers.propose_entry_exit(args);
                 break;

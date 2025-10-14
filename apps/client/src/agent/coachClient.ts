@@ -3,7 +3,9 @@ export function connectCoachStream(onMessage: (m: any) => void) {
   es.addEventListener("coach", (ev) => {
     try {
       onMessage(JSON.parse((ev as MessageEvent).data));
-    } catch {}
+    } catch {
+      // Ignore malformed SSE messages
+    }
   });
   return () => es.close();
 }

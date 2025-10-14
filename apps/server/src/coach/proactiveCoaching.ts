@@ -1,5 +1,6 @@
 import { EventEmitter } from "events";
-import { voiceCalloutBridge } from "../realtime/voiceCalloutBridge";
+// TODO: Integrate voice callout bridge for proactive coaching
+// import { voiceCalloutBridge } from "../realtime/voiceCalloutBridge";
 
 interface MarketCondition {
   symbol: string;
@@ -164,7 +165,7 @@ class ProactiveCoachingEngine extends EventEmitter {
   }
 
   // Send coaching alert to voice sessions
-  broadcastToVoice(condition: MarketCondition, userId: string): void {
+  broadcastToVoice(condition: MarketCondition, _userId: string): void {
     // This would integrate with voiceCalloutBridge
     // For now, we emit for other systems to consume
     console.log("[ProactiveCoaching] Alert:", condition);

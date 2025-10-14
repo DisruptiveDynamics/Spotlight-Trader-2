@@ -1,6 +1,6 @@
 import { db } from "../db/index";
 import { journalEvents } from "../db/schema";
-import { eq, and, gte, desc, sql } from "drizzle-orm";
+import { eq, and, gte, desc } from "drizzle-orm";
 import { voiceMemoryBridge } from "./voiceMemoryBridge";
 
 interface TraderPattern {

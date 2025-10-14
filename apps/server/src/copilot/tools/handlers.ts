@@ -362,7 +362,8 @@ export async function getRecommendedRiskBox(params: GetRecommendedRiskBoxParams)
 }
 
 export async function generateTradePlan(params: GenerateTradePlanParams): Promise<TradePlan> {
-  const stats = await patternMemory.getPatternStats(params.symbol, params.timeframe);
+  // TODO: Use stats to generate personalized trade plan
+  const _stats = await patternMemory.getPatternStats(params.symbol, params.timeframe);
 
   return {
     symbol: params.symbol,

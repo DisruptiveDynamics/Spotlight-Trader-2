@@ -10,7 +10,9 @@
 ## Analysis Details
 
 ### Monorepo Structure
+
 The project uses pnpm workspaces with clear package boundaries:
+
 - `apps/client` - Frontend (React, Vite)
 - `apps/server` - Backend (Express, Node.js)
 - `packages/shared` - Shared types and utilities
@@ -32,6 +34,7 @@ Both `apps/client` and `apps/server` depend on `packages/shared`, but `packages/
 ### ESLint Protection
 
 The project's ESLint configuration includes:
+
 - `eslint-plugin-import` - Detects import/export problems
 - `eslint-plugin-unused-imports` - Removes dead imports
 - `--max-warnings 0` - Fails CI on any warnings
@@ -52,6 +55,7 @@ This publish-subscribe pattern ensures one-way data flow without circular import
 ### Shared Types
 
 The `packages/shared` package provides type definitions used by both client and server:
+
 - `Bar`, `Microbar`, `Tick` types
 - `Signal`, `Rule` types
 - Timeframe enums
@@ -63,6 +67,7 @@ By centralizing types in a shared package, both apps import from a common source
 ### Low Risk: EventBus Module Coupling
 
 While not circular, several modules tightly couple to `eventBus`:
+
 - `barBuilder.ts` (emits bars)
 - `rulesEngine.ts` (listens to bars, emits signals)
 - `signalsService.ts` (listens to signals)
@@ -73,6 +78,7 @@ While not circular, several modules tightly couple to `eventBus`:
 ### Low Risk: Client State Dependencies
 
 Client-side state management uses Zustand stores that import from multiple feature folders:
+
 - `chartState.ts` imports chart utilities
 - `useChartContext.ts` imports indicator calculations
 

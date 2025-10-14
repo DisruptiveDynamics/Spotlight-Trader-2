@@ -62,7 +62,7 @@ export class RulesSentinel {
       },
       {
         name: "daily_loss_limit",
-        evaluate: (ctx) => {
+        evaluate: (_ctx) => {
           return {
             pass: Math.abs(this.dailyPnLR) < this.MAX_DAILY_LOSS,
             reason:

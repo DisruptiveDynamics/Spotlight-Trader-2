@@ -1,8 +1,6 @@
 // Authoritative 1m bar buffer - single source of truth for all timeframes
 // All higher timeframes (2m, 5m, 10m, 15m, 30m, 1h) roll up from this buffer
 
-import type { Bar } from "@shared/types";
-
 interface Bar1m {
   symbol: string;
   seq: number;

@@ -35,14 +35,14 @@ Object.defineProperty(window, "localStorage", {
 
 /** requestAnimationFrame */
 if (!("requestAnimationFrame" in window)) {
-  // @ts-expect-error add raf for tests
+  // @ts-expect-error - requestAnimationFrame not available in test environment, using setTimeout polyfill
   window.requestAnimationFrame = (cb: FrameRequestCallback) =>
     setTimeout(() => cb(performance.now()), 0);
 }
 
 /** matchMedia */
 if (!("matchMedia" in window)) {
-  // @ts-expect-error add matchMedia for tests
+  // @ts-expect-error - matchMedia not available in jsdom, using vi.fn mock implementation
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
     matches: false,
     media: query,
@@ -57,7 +57,7 @@ if (!("matchMedia" in window)) {
 
 /** Defensive no-op EventSource & WebSocket so tests don't bind real ports */
 if (!("EventSource" in window)) {
-  // @ts-expect-error
+  // @ts-expect-error - EventSource not available in jsdom, using mock implementation for tests
   window.EventSource = class {
     url: string;
     onopen: ((this: EventSource, ev: Event) => any) | null = null;
@@ -79,7 +79,7 @@ if (!("EventSource" in window)) {
 }
 
 if (!("WebSocket" in window)) {
-  // @ts-expect-error
+  // @ts-expect-error - WebSocket not available in jsdom, using mock implementation for tests
   window.WebSocket = class {
     url: string;
     readyState = 1;

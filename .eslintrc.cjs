@@ -1,4 +1,5 @@
 /** Root ESLint config for Spotlight Trader monorepo */
+/* eslint-env node */
 module.exports = {
   root: true,
   env: { browser: true, node: true, es2022: true },

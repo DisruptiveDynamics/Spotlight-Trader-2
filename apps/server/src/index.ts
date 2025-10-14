@@ -31,7 +31,8 @@ import { copilotToolsRouter } from "./routes/copilotTools";
 import copilotActionsRouter from "./routes/copilotActions";
 import voicePreviewRouter from "./routes/voicePreview";
 import triggerTestRouter from "./routes/triggerTest";
-import { requireUser } from "./middleware/requireUser";
+// TODO: Apply requireUser middleware to protected routes
+// import { requireUser } from "./middleware/requireUser";
 import { rateLimit } from "./middleware/rateLimit";
 import { startEodScheduler } from "./journals/eod";
 import { initializeLearningLoop } from "./learning/loop";

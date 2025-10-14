@@ -13,8 +13,8 @@ export function handleBargeIn(
     if (realtimeWs?.readyState === WebSocket.OPEN) {
       realtimeWs.send(JSON.stringify({ type: "response.cancel" }));
     }
-  } catch (err) {
-    console.warn("Failed to send response.cancel:", err);
+  } catch (_err) {
+    console.warn("Failed to send response.cancel:", _err);
   }
 
   // 2. Duck audio gain to 0 instantly (no fade)
@@ -25,7 +25,7 @@ export function handleBargeIn(
   // 3. Stop playback node
   try {
     playbackNode?.stop();
-  } catch (err) {
+  } catch {
     // Already stopped, ignore
   }
 }

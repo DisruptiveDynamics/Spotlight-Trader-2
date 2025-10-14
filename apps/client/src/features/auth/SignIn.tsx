@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuthStore } from "../../stores/authStore";
+import { fetchWithRetry } from "../../lib/retry";
 
 interface SignInProps {
   sessionExpired?: boolean;
@@ -11,6 +12,7 @@ export function SignIn({ sessionExpired = false }: SignInProps) {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
+  const [retryStatus, setRetryStatus] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,23 +43,26 @@ export function SignIn({ sessionExpired = false }: SignInProps) {
     console.log("Demo mode button clicked");
     setLoading(true);
     setError("");
+    setRetryStatus("Starting demo session...");
 
     try {
-      console.log("Fetching /api/auth/demo...");
-      const res = await fetch("/api/auth/demo", {
-        method: "POST",
-        credentials: "include",
-      });
+      const data = await fetchWithRetry(
+        "/api/auth/demo",
+        {
+          method: "POST",
+          credentials: "include",
+        },
+        {
+          maxAttempts: 8,
+          baseDelayMs: 500,
+          onRetry: (attempt) => {
+            setRetryStatus(
+              `Server waking up... retrying (${attempt}/8)`
+            );
+          },
+        }
+      );
 
-      console.log("Demo response status:", res.status);
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error("Demo login failed:", errorText);
-        throw new Error("Demo login failed");
-      }
-
-      const data = await res.json();
       console.log("Demo response data:", data);
 
       if (data.user) {
@@ -71,9 +76,10 @@ export function SignIn({ sessionExpired = false }: SignInProps) {
       }
     } catch (err) {
       console.error("Demo login error:", err);
-      setError("Demo login failed. Please try again.");
+      setError("Demo login failed after multiple retries. The server may be down.");
     } finally {
       setLoading(false);
+      setRetryStatus("");
     }
   };
 
@@ -134,6 +140,12 @@ export function SignIn({ sessionExpired = false }: SignInProps) {
           {error && (
             <div className="text-red-400 text-sm bg-red-950 border border-red-800 rounded p-3">
               {error}
+            </div>
+          )}
+
+          {retryStatus && (
+            <div className="text-amber-400 text-sm bg-amber-950 border border-amber-800 rounded p-3">
+              {retryStatus}
             </div>
           )}
 

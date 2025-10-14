@@ -1,0 +1,84 @@
+You are a senior engineer. Make diagnostic-only changes (no product logic changes):
+
+Server must honor process.env.PORT with default 4000 (not 8080).
+
+In apps/server/src/index.ts (or server entry), set:
+
+const PORT = Number(process.env.PORT ?? 4000);
+app.listen(PORT, () => {
+  console.log(`[Server] listening on :${PORT}`);
+  console.log(`[Server] routes: /health (GET)${hasSSE ? ', /realtime/sse (SSE)' : ''}${hasVoice ? ', /ws/realtime (WS)' : ''}${hasTools ? ', /ws/tools (WS)' : ''}`);
+});
+
+
+If code hard-codes 8080, replace with the PORT above.
+
+Add a simple /health endpoint (if missing):
+
+File: apps/server/src/index.ts (or router):
+
+app.get('/health', (_req, res) => {
+  res.json({
+    ok: true,
+    now: Date.now(),
+    marketStatus: getMarketStatus?.() ?? 'unknown',
+    uptimeSec: Math.round(process.uptime()),
+  });
+});
+
+
+Log the actual SSE and WS paths on boot.
+
+Wherever SSE is registered, export a const and log it:
+
+export const SSE_PATH = '/realtime/sse';
+app.get(SSE_PATH, sseHandler);
+console.log(`[SSE] mounted at ${SSE_PATH}`);
+
+
+For voice/tools WebSockets:
+
+export const VOICE_WS_PATH = '/ws/realtime';   // adjust to your real path
+export const TOOLS_WS_PATH = '/ws/tools';
+console.log(`[WS] voice at ${VOICE_WS_PATH}, tools at ${TOOLS_WS_PATH}`);
+
+
+If your actual paths differ, keep the real ones; just print them clearly.
+
+Dev-mode WS auth bypass (diagnostic only).
+
+If WS currently returns 403 without token, allow diagnostic connections when NODE_ENV !== 'production' && req.query.diag==='1'.
+
+Don’t change production behavior. Log when diag bypass is used:
+
+if (process.env.NODE_ENV !== 'production' && req.url?.includes('diag=1')) {
+  console.warn('[WS] DEV DIAG BYPASS ENABLED for', req.url);
+  // skip auth checks here
+}
+
+
+SSE bootstrap (non-blocking).
+
+Ensure SSE sends a fast event: bootstrap immediately, and later a seed event when initial history is ready. Don’t await heavy fetch before accepting the connection. Log both sends.
+
+Dev ports cleanup (avoid conflicts).
+
+In apps/client/package.json, change Vite to 5173:
+
+"dev": "vite --host 0.0.0.0 --port 5173"
+
+
+In root package.json, ensure pnpm dev starts web=5173 and api=4000 (not 8080). If you use concurrently, log names clearly.
+
+Do NOT change schemas or business logic. This is purely surfacing the right info and making ports configurable.
+
+Deliverables:
+
+Files changed list.
+
+Console snippet on boot showing:
+
+[Server] listening on :4000
+[Server] routes: /health, /realtime/sse, /ws/realtime, /ws/tools
+[SSE] mounted at /realtime/sse
+[WS] voice at /ws/realtime, tools at /ws/tools

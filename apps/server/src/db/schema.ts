@@ -40,11 +40,17 @@ export const sessions = pgTable("sessions", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
 
-export const rules = pgTable("rules", {
-  id: text("id").primaryKey(),
-  latestVersion: text("latest_version"),
-  ownerUserId: text("owner_user_id"),
-});
+export const rules = pgTable(
+  "rules",
+  {
+    id: text("id").primaryKey(),
+    latestVersion: text("latest_version"),
+    ownerUserId: text("owner_user_id"),
+  },
+  (table) => ({
+    ownerUserIdx: index("rules_owner_user_id_idx").on(table.ownerUserId),
+  }),
+);
 
 export const ruleVersions = pgTable(
   "rule_versions",
@@ -78,17 +84,23 @@ export const userRuleVersions = pgTable("user_rule_versions", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const signals = pgTable("signals", {
-  id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
-  symbol: text("symbol").notNull(),
-  timeframe: text("timeframe").notNull(),
-  ruleId: text("rule_id").notNull(),
-  ruleVersion: text("rule_version").notNull(),
-  confidence: real("confidence").notNull(),
-  ctx: jsonb("ctx").notNull(),
-  ts: timestamp("ts", { withTimezone: true }).notNull(),
-});
+export const signals = pgTable(
+  "signals",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    symbol: text("symbol").notNull(),
+    timeframe: text("timeframe").notNull(),
+    ruleId: text("rule_id").notNull(),
+    ruleVersion: text("rule_version").notNull(),
+    confidence: real("confidence").notNull(),
+    ctx: jsonb("ctx").notNull(),
+    ts: timestamp("ts", { withTimezone: true }).notNull(),
+  },
+  (table) => ({
+    userTimestampIdx: index("signals_user_ts_idx").on(table.userId, table.ts),
+  }),
+);
 
 export const signalExplanations = pgTable("signal_explanations", {
   id: text("id").primaryKey(),
@@ -273,20 +285,26 @@ export const callouts = pgTable(
   }),
 );
 
-export const journalEvents = pgTable("journal_events", {
-  id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
-  type: text("type").notNull(),
-  symbol: text("symbol").notNull(),
-  timeframe: text("timeframe").notNull(),
-  indicators: jsonb("indicators"),
-  proposal: jsonb("proposal"),
-  decision: text("decision"),
-  mae: real("mae"),
-  mfe: real("mfe"),
-  realizedR: real("realized_r"),
-  rulesRef: text("rules_ref"),
-  qualityGrade: text("quality_grade"),
-  reasoning: text("reasoning").notNull(),
-  timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow().notNull(),
-});
+export const journalEvents = pgTable(
+  "journal_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    type: text("type").notNull(),
+    symbol: text("symbol").notNull(),
+    timeframe: text("timeframe").notNull(),
+    indicators: jsonb("indicators"),
+    proposal: jsonb("proposal"),
+    decision: text("decision"),
+    mae: real("mae"),
+    mfe: real("mfe"),
+    realizedR: real("realized_r"),
+    rulesRef: text("rules_ref"),
+    qualityGrade: text("quality_grade"),
+    reasoning: text("reasoning").notNull(),
+    timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userTimestampIdx: index("journal_events_user_timestamp_idx").on(table.userId, table.timestamp),
+  }),
+);

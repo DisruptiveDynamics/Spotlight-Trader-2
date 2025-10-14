@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Router as RouterType } from "express";
 import { nanoid } from "nanoid";
 import { db } from "../db/index.js";
 import { users, magicLinks, sessions } from "../db/schema.js";
@@ -9,7 +9,7 @@ import { validateEnv } from "@shared/env";
 import { eq, and, gte } from "drizzle-orm";
 
 const env = validateEnv(process.env);
-const router = Router();
+const router: RouterType = Router();
 
 router.post("/start", async (req, res) => {
   try {

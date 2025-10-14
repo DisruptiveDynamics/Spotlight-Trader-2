@@ -251,7 +251,7 @@ export function Pane({ className = "" }: PaneProps) {
         if (volumeSeriesRef.current) {
           const volumeData = history.map((bar) => ({
             time: bar.time as UTCTimestamp,
-            value: bar.volume,
+            value: bar.volume ?? 0,
             color: bar.close >= bar.open ? "#10b98166" : "#ef444466",
           }));
           volumeSeriesRef.current.setData(volumeData);

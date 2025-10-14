@@ -27,7 +27,7 @@ export function ChartView() {
       if (!chartContainerRef.current) return;
 
       try {
-        const history = await fetchHistory("SPY", "1m", 300);
+        // Initial history is loaded by Pane; avoid double-fetch here.
         if (!mounted) return;
 
         const { createChart, CrosshairMode } = await import("lightweight-charts");
@@ -61,26 +61,9 @@ export function ChartView() {
           wickDownColor: "#ef4444",
         });
 
-        const candleData: CandlestickData[] = history.map((bar) => ({
-          time: Math.floor(bar.bar_end / 1000) as UTCTimestamp,
-          open: bar.ohlcv.o,
-          high: bar.ohlcv.h,
-          low: bar.ohlcv.l,
-          close: bar.ohlcv.c,
-        }));
-
-        series.setData(candleData);
-
+        // Chart will be populated by Pane component's history load
         chartRef.current = chart;
         seriesRef.current = series;
-
-        if (history.length > 0) {
-          const lastBar = history[history.length - 1];
-          if (lastBar) {
-            currentMinuteRef.current = Math.floor(lastBar.bar_end / 60000) * 60000;
-            currentBarTimeRef.current = Math.floor(lastBar.bar_end / 1000);
-          }
-        }
 
         const handleResize = () => {
           if (chartContainerRef.current && chartRef.current) {

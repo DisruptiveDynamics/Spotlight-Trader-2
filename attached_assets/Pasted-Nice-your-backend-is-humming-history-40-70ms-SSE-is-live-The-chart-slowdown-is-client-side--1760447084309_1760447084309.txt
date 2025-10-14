@@ -1,0 +1,160 @@
+Nice—your backend is humming (history ~40–70ms; SSE is live). The **chart slowdown is client-side** and your diag shows the culprits:
+
+* Two different `fetchHistory` implementations:
+
+  * `apps/client/src/lib/marketStream.ts:419`
+  * `apps/client/src/lib/history.ts:18`
+* Two initial loads calling history:
+
+  * `ChartView.tsx:30` (`SPY, 1m, 300`)
+  * `Pane.tsx:213` (active symbol/timeframe, **500** bars)
+
+That’s duplicate network + extra renders.
+
+## Surgical fixes (drop-in patches)
+
+### 1) Use a single history source
+
+**Delete** the copy in `marketStream.ts` and import the one from `lib/history.ts`.
+
+```diff
+--- a/apps/client/src/lib/marketStream.ts
++++ b/apps/client/src/lib/marketStream.ts
+@@
+-export async function fetchHistory(symbol = "SPY", timeframe = "1m", limit = 300) {
+-  const params = new URLSearchParams({ symbol, timeframe, limit: String(limit) });
+-  const res = await fetch(`/api/history?${params.toString()}`);
+-  if (!res.ok) throw new Error(`history ${res.status}`);
+-  return (await res.json()) as Bar[];
+-}
++// fetchHistory lives in lib/history to avoid duplicates
++export { fetchHistory } from "./history";
+```
+
+### 2) Pick ONE place to prefetch on load
+
+Easiest: **remove ChartView’s** prefetch and let the chart pane do it (it already requests 500 bars).
+
+```diff
+--- a/apps/client/src/features/chart/ChartView.tsx
++++ b/apps/client/src/features/chart/ChartView.tsx
+@@
+-  useEffect(() => {
+-    (async () => {
+-      const history = await fetchHistory("SPY", "1m", 300);
+-      setInitial(history);
+-    })();
+-  }, []);
++  // Initial history is loaded by Pane; avoid double-fetch here.
+```
+
+Optionally, also reduce Pane’s default **500 → 300** to cut payload size:
+
+```diff
+--- a/apps/client/src/features/chart/Pane.tsx
++++ b/apps/client/src/features/chart/Pane.tsx
+@@
+-        const history = await fetchHistory(active.symbol, active.timeframe, 500);
++        const history = await fetchHistory(active.symbol, active.timeframe, 300);
+```
+
+### 3) Make base URLs explicit (avoid relative fetches)
+
+Add a tiny config and use it everywhere:
+
+```ts
+// apps/client/src/config.ts
+export const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  (location.hostname === "localhost" ? "http://localhost:8080" : "");
+export const HISTORY_URL = `${API_BASE}/api/history`;
+export const STREAM_URL  = `${API_BASE}/stream/market`;
+```
+
+```diff
+--- a/apps/client/src/lib/history.ts
++++ b/apps/client/src/lib/history.ts
++import { HISTORY_URL } from "../config";
+@@
+-  return fetch(`/api/history?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}`).then(r => r.json());
++  return fetch(`${HISTORY_URL}?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}`).then(r => r.json());
+```
+
+```diff
+--- a/apps/client/src/lib/marketStream.ts
++++ b/apps/client/src/lib/marketStream.ts
++import { STREAM_URL, HISTORY_URL } from "../config";
+@@
+-  es = new EventSource(`/stream/market?${params.toString()}`);
++  es = new EventSource(`${STREAM_URL}?${params.toString()}`);
+@@
+-            `/api/history?symbol=${encodeURIComponent(symbol)}&timeframe=1m&sinceSeq=${lastSeq}`,
++            `${HISTORY_URL}?symbol=${encodeURIComponent(symbol)}&timeframe=1m&sinceSeq=${lastSeq}`,
+```
+
+And set `.env` for dev:
+
+```
+# apps/client/.env
+VITE_API_BASE=http://localhost:8080
+```
+
+### 4) Batch SSE-driven state updates (smooth rendering)
+
+If your SSE handler currently sets state on every `bar`, coalesce to 1 update per animation frame:
+
+```ts
+// apps/client/src/lib/sseBatch.ts
+let queue: any[] = [];
+let scheduled = false;
+
+export function batchBars<T>(bar: T, apply: (batch: T[]) => void) {
+  queue.push(bar);
+  if (scheduled) return;
+  scheduled = true;
+  requestAnimationFrame(() => {
+    const batch = queue;
+    queue = [];
+    scheduled = false;
+    apply(batch);
+  });
+}
+```
+
+Use it in your `marketStream.ts` SSE code:
+
+```diff
++import { batchBars } from "./sseBatch";
+@@
+- if (event.type === "bar") {
+-   setChartState((s) => applyBar(s, event.data)); // N updates
+- }
++ if (event.type === "bar") {
++   batchBars(event.data, (batch) => {
++     setChartState((s) => applyBars(s, batch));   // 1 update/frame
++   });
++ }
+```
+
+(If you don’t have `applyBars`, just loop inside that one state setter—still a **single** set.)
+
+---
+
+## Re-check (quick)
+
+Run these again; you should see **only one** history callsite and batched updates:
+
+```bash
+# should show only lib/history.ts now
+rg -n -F 'fetchHistory(' apps/client/src | sed -n '1,40p'
+
+# confirm URLs use config base
+rg -n -S 'HISTORY_URL|STREAM_URL' apps/client/src | sed -n '1,40p'
+```
+
+And your earlier latency + SSE checks are already good:
+
+* `/api/history`: ~0.04–0.07s ✔️
+* `/stream/market`: streaming `bar` events ✔️
+
+If you want, paste the `marketStream.ts` SSE handler (20–40 lines) and I’ll return an exact patch for the batching line-by-line.

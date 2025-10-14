@@ -210,7 +210,7 @@ export function Pane({ className = "" }: PaneProps) {
     const loadHistory = async () => {
       try {
         setIsLoading(true);
-        const history = await fetchHistory(active.symbol, active.timeframe, 500);
+        const history = await fetchHistory(active.symbol, active.timeframe, 300);
 
         if (!mounted) return;
 

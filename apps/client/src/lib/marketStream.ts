@@ -416,15 +416,5 @@ export async function loadHistoryPreset(
   bars.forEach(onBar);
 }
 
-export async function fetchHistory(symbol = "SPY", timeframe = "1m", limit = 300) {
-  const params = new URLSearchParams({
-    symbol,
-    timeframe,
-    limit: String(limit),
-  });
-
-  const res = await fetch(`/api/history?${params.toString()}`);
-  if (!res.ok) throw new Error("history fetch failed");
-
-  return (await res.json()) as Bar[];
-}
+// fetchHistory lives in lib/history to avoid duplicates
+export { fetchHistory } from "./history";

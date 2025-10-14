@@ -626,11 +626,74 @@ Runtime toggles stored in database:
 - `auditTap` - Market data consistency logging
 - `proactiveCoach` - Proactive coaching engine
 - `toolsPoweredVoice` - Force tool usage in voice responses
+- `enableRiskGovernorV2` - Enhanced risk governance with circuit breaker
+- `enableExplainV2` - Improved AI signal explanations
+- `enableTapePeek` - Time & sales overlay
+- `enableLearningLoop` - Automated strategy improvement
+- `enableBacktest` - Historical strategy validation
+- `governorTight` - Stricter risk limits
+- `chartMaxFps` - Chart rendering FPS limit
+
+See `/docs/feature_flags.md` for complete manifest.
 
 ## Observability
 
-- **Telemetry Bus** - Centralized event publication for metrics
-- **Tool Execution Metrics** - Latency, success rate per tool
-- **SSE Connection Tracking** - Per-user connection counts
-- **Latency HUD** - Client-side SSE ping/pong monitoring
-- **Circuit Breaker Logging** - OpenAI error cooldown events
+### Metrics & Telemetry
+
+- **Voice Metrics** - STT/TTS latency, tool execution, hallucination detection
+- **Tool Execution Metrics** - Per-tool latency histograms, throttling stats
+- **SSE Metrics** - Connection tracking, event delivery, gap fills
+- **Market Data Metrics** - Tick ingestion, bar builder, rollup latency
+- **Risk Metrics** - Circuit breaker state, P&L tracking, consecutive losses
+- **Copilot Metrics** - Pattern detection, callout gating, memory flush
+
+See `/docs/metrics.md` for complete metrics documentation.
+
+### Performance Targets
+
+- Tick → Bar Emission: <50ms (P95: 45ms)
+- Bar → Chart Update: <100ms (P95: 80ms)
+- Voice STT First Partial: <500ms (P95: 400ms)
+- Voice TTS First Audio: <800ms (P95: 650ms)
+- Tool Execution (micro): <1000ms (P95: 800ms)
+
+### Quality Gates
+
+- **Unit Test Coverage**: 80% lines, 75% functions
+- **Core Module Coverage**: 85% (streaming, indicators, voice)
+- **CI Pipeline**: Lint, typecheck, test, build (GitHub Actions)
+- **Coverage Artifacts**: 30-day retention for analysis
+
+See `/docs/contributing.md` for development workflow.
+
+## Recent Enhancements
+
+### Phase 10: CI + Documentation
+
+- **GitHub Actions CI** - Automated lint, typecheck, test with coverage, build
+- **Coverage Artifacts** - Upload coverage reports and summaries
+- **Documentation** - Comprehensive metrics, contributing, feature flags docs
+- **CHANGELOG** - Keep a Changelog format with Unreleased section
+
+### Phase 9: Test Expansion + Coverage
+
+- **Test Infrastructure** - 75 new unit tests across 6 critical modules
+- **Coverage Thresholds** - 80% overall, 85% for core modules
+- **Test Suites** - Voice state machine, audit middleware, incremental indicators, SSE reconciliation, memory flush, snapshot hash
+- **Coverage Tooling** - `pnpm test:coverage` with v8 provider
+
+### Phase 8: Memory Flush + Risk Gating
+
+- **Shutdown Flush** - 3-attempt retry logic with 500ms delays for graceful voice memory persistence
+- **Risk Status System** - GREEN/YELLOW/RED states based on circuit breaker, daily P&L, consecutive losses
+- **Proactive Callout Gating** - Suppress alerts during RED risk status
+- **Pattern Statistics** - Callouts include win rate, avg holding duration, EV-R from pattern memory
+- **Snapshot Hash System** - Deterministic hashing (seqLast-firstBarTime-timeframe-barCount) for efficient change detection
+
+### Phase 6: Voice Tool Integrity
+
+- **Micro Tools** - Sub-1s latency tools (`get_last_price`, `get_last_vwap`, `get_last_ema`)
+- **Tool Throttling** - TokenBucket rate limiting per tool with structured error responses
+- **Runtime Auditing** - Detect price hallucinations via regex pattern matching
+- **TTS Jitter Buffer** - Client-side smoothing with 150ms target, 350ms max latency
+- **Voice Metrics** - Comprehensive telemetry for audio pipeline and tool execution

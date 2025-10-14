@@ -6,6 +6,28 @@ import { mockTickGenerator } from "./mockTickGenerator";
 
 const env = validateEnv(process.env);
 
+// Polygon WebSocket message types (module-level)
+interface PolygonStatusMessage {
+  ev: "status" | "error";
+  status?: string;
+  message?: string;
+}
+
+interface PolygonTradeMessage {
+  ev: "T";
+  sym: string;
+  t: number;
+  p: number;
+  s: number;
+}
+
+type PolygonMessage = PolygonStatusMessage | PolygonTradeMessage;
+
+interface WebSocketEvent {
+  data?: string;
+  response?: string;
+}
+
 export class PolygonWebSocket {
   private ws: ReturnType<typeof websocketClient> | null = null;
   private subscribedSymbols = new Set<string>();
@@ -66,25 +88,20 @@ export class PolygonWebSocket {
           this.resubscribe();
         };
 
-        interface WebSocketMessage {
-          data?: string;
-          response?: string;
-        }
-
-        ws.onmessage = (event: WebSocketMessage) => {
+        ws.onmessage = (event: WebSocketEvent) => {
           this.lastMessageTime = Date.now();
 
           try {
             const response = event.data || event.response;
             if (!response) return;
-            const messages: PolygonMessage[] = JSON.parse(response);
-            messages.forEach((msg) => this.handleMessage(msg));
+            const messages = JSON.parse(response) as unknown[];
+            messages.forEach((msg) => this.handleMessage(msg as PolygonMessage));
           } catch (err) {
             console.error("Failed to parse Polygon message:", err);
           }
         };
 
-        ws.onerror = (error: Error) => {
+        ws.onerror = (error: any) => {
           console.error("Polygon WebSocket error:", error);
         };
 
@@ -99,16 +116,6 @@ export class PolygonWebSocket {
       console.error("Failed to connect to Polygon:", err);
       this.reconnect();
     }
-  }
-
-  interface PolygonMessage {
-    ev: "status" | "T" | "A" | "error";
-    status?: string;
-    message?: string;
-    sym?: string;
-    t?: number;
-    p?: number;
-    s?: number;
   }
 
   private handleMessage(msg: PolygonMessage) {
@@ -144,7 +151,7 @@ export class PolygonWebSocket {
       return;
     }
 
-    if (msg.ev === "T" && msg.sym && msg.t && msg.p && msg.s) {
+    if (msg.ev === "T") {
       console.log(`📊 Tick: ${msg.sym} $${msg.p} (${msg.s} shares)`);
       const tick = {
         ts: msg.t,

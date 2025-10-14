@@ -49,11 +49,8 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Test
-        run: pnpm test
-
       - name: Test with Coverage
-        run: pnpm test:coverage
+        run: pnpm test:coverage:summary
 
       - name: Upload Coverage Report
         uses: actions/upload-artifact@v4
@@ -70,6 +67,7 @@ jobs:
           name: coverage-summary
           path: audits/coverage_summary.txt
           retention-days: 30
+          if-no-files-found: warn
 
       - name: Build
         run: pnpm build

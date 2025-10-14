@@ -10,7 +10,16 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-### October 14, 2025 - Phase 9: Test Expansion + Coverage (In Progress)
+### October 14, 2025 - Phase 10: CI + Documentation (Complete)
+
+- **GitHub Actions CI**: Automated quality gates with install, lint, typecheck, test with coverage, build steps
+- **Coverage Artifacts**: Upload coverage reports and summaries with 30-day retention
+- **Comprehensive Documentation**: Created metrics.md (telemetry), contributing.md (dev workflow), feature_flags.md (manifest)
+- **Architecture Updates**: Moved system_overview.md to /docs/architecture/ with Phase 6-10 enhancements
+- **CHANGELOG**: Keep a Changelog format with Unreleased section tracking all features from Phase 1-10
+- **CI Workflow**: Runs on push/PR to main and develop branches, uses `pnpm test:coverage:summary` to avoid watch mode hang
+
+### October 14, 2025 - Phase 9: Test Expansion + Coverage (Complete)
 
 - **Test Infrastructure**: Added 75 new unit tests across 6 critical modules with mock-based validation
 - **Coverage Configuration**: Set coverage thresholds (80% overall, 85% core modules) with v8 provider and multi-format reporting

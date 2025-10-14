@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CI Workflow**: Fixed hanging test step by using `pnpm test:coverage:summary` instead of watch mode
 - **Coverage Tooling**: Fixed syntax error in coverage summary generation script
 - **Test Stability**: Removed non-deterministic Math.random() from indicator tests
 

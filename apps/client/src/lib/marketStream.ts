@@ -332,7 +332,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       const symbol = symbols[0] || "SPY";
       try {
         const res = await fetch(
-          `/api/history?symbol=${encodeURIComponent(symbol)}&timeframe=1m&sinceSeq=${lastSeq}`,
+          `${HISTORY_URL}?symbol=${encodeURIComponent(symbol)}&timeframe=1m&sinceSeq=${lastSeq}`,
         );
         if (res.ok) {
           const bars = await res.json();

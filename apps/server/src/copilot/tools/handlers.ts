@@ -387,6 +387,78 @@ export async function generateTradePlan(params: GenerateTradePlanParams): Promis
   };
 }
 
+// [PHASE-6] Micro tools: Ultra-low latency data queries
+async function getLastPrice(params: import("./types").GetLastPriceParams): Promise<import("./types").MicroToolResult> {
+  const symbol = params.symbol;
+  
+  // Get the most recent bar for this symbol
+  const bars = bars1m.getRecent(symbol, 1);
+  
+  if (bars.length === 0) {
+    return {
+      symbol,
+      value: 0,
+      ts: Date.now(),
+    };
+  }
+  
+  const latestBar = bars[0]!;
+  
+  return {
+    symbol,
+    value: latestBar.c, // Close price
+    ts: latestBar.bar_end,
+  };
+}
+
+async function getLastVWAP(params: import("./types").GetLastVWAPParams): Promise<import("./types").MicroToolResult> {
+  const symbol = params.symbol;
+  
+  // Get session VWAP from the same tick stream as Tape
+  const vwapValue = getSessionVWAPForSymbol(symbol);
+  
+  if (!vwapValue) {
+    return {
+      symbol,
+      value: 0,
+      ts: Date.now(),
+    };
+  }
+  
+  return {
+    symbol,
+    value: vwapValue,
+    ts: Date.now(),
+  };
+}
+
+async function getLastEMA(params: import("./types").GetLastEMAParams): Promise<import("./types").MicroToolResult> {
+  const symbol = params.symbol;
+  const period = params.period;
+  
+  // Get enough bars to calculate EMA
+  const barsData = bars1m.getRecent(symbol, period * 2);
+  
+  if (barsData.length < period) {
+    return {
+      symbol,
+      value: 0,
+      ts: Date.now(),
+    };
+  }
+  
+  // Calculate EMA using the same helper as getChartSnapshot
+  const closes = barsData.map((b) => b.c);
+  const emaValues = calculateEMA(closes, period);
+  const latestEMA = emaValues[emaValues.length - 1] || 0;
+  
+  return {
+    symbol,
+    value: latestEMA,
+    ts: barsData[barsData.length - 1]?.bar_end || Date.now(),
+  };
+}
+
 export const toolHandlers = {
   get_chart_snapshot: getChartSnapshot,
   subscribe_market_stream: subscribeMarketStream,
@@ -398,4 +470,7 @@ export const toolHandlers = {
   get_pattern_summary: getPatternSummary,
   get_recommended_risk_box: getRecommendedRiskBox,
   generate_trade_plan: generateTradePlan,
+  get_last_price: getLastPrice,
+  get_last_vwap: getLastVWAP,
+  get_last_ema: getLastEMA,
 };

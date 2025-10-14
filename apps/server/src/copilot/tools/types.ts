@@ -223,6 +223,26 @@ export interface VoiceControlResult {
   error?: string;
 }
 
+// [PHASE-6] Micro tools for low-latency data queries
+export interface GetLastPriceParams {
+  symbol: string;
+}
+
+export interface MicroToolResult {
+  symbol: string;
+  value: number;
+  ts: number;
+}
+
+export interface GetLastVWAPParams {
+  symbol: string;
+}
+
+export interface GetLastEMAParams {
+  symbol: string;
+  period: number;
+}
+
 export type ToolHandler<TParams = unknown, TResult = unknown> = (
   params: TParams,
 ) => Promise<TResult>;
@@ -242,4 +262,7 @@ export interface ToolRegistry {
   speak: ToolHandler<SpeakParams, VoiceControlResult>;
   mute: ToolHandler<void, VoiceControlResult>;
   unmute: ToolHandler<void, VoiceControlResult>;
+  get_last_price: ToolHandler<GetLastPriceParams, MicroToolResult>;
+  get_last_vwap: ToolHandler<GetLastVWAPParams, MicroToolResult>;
+  get_last_ema: ToolHandler<GetLastEMAParams, MicroToolResult>;
 }

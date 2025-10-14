@@ -2,8 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
-// Use env var or fallback to 0.0.0.0:8080 (Replit-compatible)
-const API_TARGET = process.env.VITE_SERVER_URL || "http://0.0.0.0:8080";
+// Use env var or fallback to 127.0.0.1:8080 (Replit-compatible - use IP instead of hostname)
+const API_TARGET = process.env.VITE_SERVER_URL || "http://127.0.0.1:8080";
 
 export default defineConfig({
   plugins: [react()],

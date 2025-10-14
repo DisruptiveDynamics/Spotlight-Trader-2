@@ -1,0 +1,547 @@
+Below is a single, copy-and-paste “mega prompt” for the Replit AI Builder agent. It applies concrete fixes to stabilize lint/tests/build, align Vitest coverage to prevent crashes, add a canonical OHLCV type, and add fast micro tools for last price and VWAP so the voice agent answers quickly with accurate data. After the agent finishes, run the shell commands at the end in your Replit terminal.
+
+Agent: apply these changes exactly, then commit with message:
+fix: align vitest coverage, stabilize ESLint, add OHLCV type, add fast micro tools (last price/VWAP)
+
+1) Create .eslintignore at repo root, and update ESLint to avoid no-undef on dot-rc files.
+2) Align Vitest and coverage plugin (pin @vitest/coverage-v8 to the same major as vitest) and add coverage config to root vitest.config.ts.
+3) Add a canonical OHLCV export in shared types.
+4) Add micro tools getLastPrice/getLastVWAP backed by in-memory data for sub-50ms voice answers.
+5) Add a dev:stable script to the server to avoid tsx restarts during voice testing.
+
+Files to create/update follow.
+
+```text name=.eslintignore
+.eslintrc.cjs
+.lintstagedrc.js
+node_modules
+dist
+build
+coverage
+**/*.d.ts
+```
+
+```javascript name=.eslintrc.cjs url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/.eslintrc.cjs
+/** Root ESLint config for Spotlight Trader monorepo */
+module.exports = {
+  root: true,
+  env: { browser: true, node: true, es2022: true },
+  parser: "@typescript-eslint/parser",
+  parserOptions: { ecmaVersion: "latest", sourceType: "module" },
+  plugins: ["@typescript-eslint", "import", "unused-imports"],
+  extends: [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended",
+    "plugin:import/recommended",
+    "plugin:import/typescript",
+    "plugin:markdown/recommended",
+  ],
+  settings: { "import/resolver": { typescript: true } },
+  rules: {
+    // Keep noise low; allow underscore-prefixed intentional ignores
+    "@typescript-eslint/no-unused-vars": [
+      "error",
+      {
+        argsIgnorePattern: "^_",
+        varsIgnorePattern: "^_",
+        caughtErrorsIgnorePattern: "^_",
+      },
+    ],
+    "no-unused-vars": "off",
+    "unused-imports/no-unused-imports": "error",
+    "import/order": [
+      "warn",
+      {
+        "newlines-between": "always",
+        alphabetize: { order: "asc", caseInsensitive: true },
+        groups: [["builtin", "external"], ["internal"], ["parent", "sibling", "index"]],
+      },
+    ],
+  },
+  overrides: [
+    // JSON / JSONC
+    {
+      files: ["**/*.json", "**/*.jsonc"],
+      parser: "eslint-jsonc",
+      extends: ["plugin:jsonc/recommended-with-json"],
+    },
+    // Markdown fenced code blocks
+    { files: ["**/*.md"], processor: "markdown/markdown" },
+    // Node scripts and config files
+    { files: ["**/*.config.{js,cjs,mjs}", "scripts/**.{js,ts}"], env: { node: true } },
+    // AudioWorklet globals (fixes no-undef in worklets)
+    {
+      files: ["**/public/worklets/**/*.js"],
+      globals: { AudioWorkletProcessor: "readonly", registerProcessor: "readonly" },
+    },
+    // Dot RC files (avoid 'module' no-undef)
+    {
+      files: [".*rc.js", ".*rc.cjs", ".*rc.mjs"],
+      env: { node: true },
+      rules: { "no-undef": "off" },
+    },
+    // Tests can intentionally ignore with leading underscore
+    {
+      files: ["**/__tests__/**/*.{ts,tsx}", "**/*.{spec,test}.{ts,tsx}"],
+      env: { node: true, browser: false },
+      rules: {
+        "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      },
+    },
+  ],
+  ignorePatterns: ["dist", "build", "coverage", "node_modules", "**/*.d.ts"],
+};
+```
+
+```typescript name=vitest.config.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/vitest.config.ts
+import { defineConfig } from "vitest/config";
+import { fileURLToPath } from "url";
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      // keep aliases if you use them in tests
+      "@shared": fileURLToPath(new URL("./packages/shared/src", import.meta.url)),
+      "@server": fileURLToPath(new URL("./apps/server/src", import.meta.url)),
+      "@client": fileURLToPath(new URL("./apps/client/src", import.meta.url)),
+    },
+  },
+  test: {
+    globals: true,
+    css: false,
+
+    // Default to node; we'll switch to jsdom for client paths below
+    environment: "node",
+
+    // Route env by file path (reliable & simple)
+    environmentMatchGlobs: [["**/apps/client/**", "jsdom"]],
+
+    // Always run our safety setup (works in both envs)
+    setupFiles: ["test/setup.global.ts"],
+
+    // Make sure Vitest finds your tests in BOTH apps
+    include: [
+      "apps/**/src/**/*.{test,spec}.{ts,tsx,js,jsx}",
+      "apps/**/src/**/__tests__/**/*.{ts,tsx,js,jsx}",
+      "src/**/*.{test,spec}.{ts,tsx,js,jsx}",
+      "src/**/__tests__/**/*.{ts,tsx,js,jsx}",
+    ],
+
+    // Add coverage provider aligned with installed plugin
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "lcov"],
+      reportsDirectory: "coverage",
+    },
+  },
+});
+```
+
+```json name=package.json url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/package.json
+{
+  "name": "spotlight-trader",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Real-time trading coach with voice AI, market data streaming, and rule-based alerts",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently -n web=5000,api=8080 \"pnpm --filter @spotlight/client dev\" \"pnpm --filter @spotlight/server dev\"",
+    "build": "pnpm --filter @spotlight/shared build && pnpm --filter @spotlight/config build && pnpm --filter @spotlight/client build && pnpm --filter @spotlight/server build",
+    "check": "pnpm -r check",
+    "lint": "pnpm -r lint",
+    "lint:fix": "pnpm -r lint:fix",
+    "fmt": "prettier --write .",
+    "fmt:check": "prettier --check .",
+    "test": "vitest",
+    "build:client": "vite build --config client/vite.config.ts",
+    "build:server": "tsc -p server",
+    "lint:root": "eslint . --max-warnings 0",
+    "fix": "pnpm -r fix || true",
+    "fix:root": "eslint . --fix",
+    "typecheck": "pnpm -r typecheck || true",
+    "test:ci": "vitest run",
+    "cleanup": "tsx scripts/cleanup-ports.ts"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^8.46.0",
+    "@typescript-eslint/parser": "^8.46.0",
+    "@vitest/coverage-v8": "^1.6.1",
+    "concurrently": "^8.2.2",
+    "esbuild": "^0.25.10",
+    "eslint": "^9.37.0",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-jsonc": "^2.21.0",
+    "eslint-plugin-markdown": "^5.1.0",
+    "eslint-plugin-unused-imports": "^4.2.0",
+    "husky": "^9.0.10",
+    "jsdom": "^27.0.0",
+    "kill-port": "^2.0.1",
+    "lint-staged": "^15.2.0",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^1.6.1",
+    "ws": "^8.18.3"
+  },
+  "dependencies": {
+    "@openai/agents": "^0.1.9",
+    "@types/compression": "^1.8.1",
+    "compression": "^1.8.1",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
+    "get-tsconfig": "^4.12.0",
+    "jsonwebtoken": "^9.0.2",
+    "pdf-parse": "^2.2.16"
+  }
+}
+```
+
+```json name=apps/server/package.json url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/server/package.json
+{
+  "name": "@spotlight/server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false --ignore '../client/**' src/index.ts",
+    "dev:stable": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "check": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "fix": "eslint . --fix || true",
+    "typecheck": "tsc -p . --noEmit || true"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.9.0",
+    "@polygon.io/client-js": "^8.2.0",
+    "@spotlight/shared": "workspace:*",
+    "@types/cookie-parser": "^1.4.9",
+    "@types/multer": "^2.0.0",
+    "@types/pdf-parse": "^1.1.5",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
+    "drizzle-orm": "^0.36.0",
+    "express": "^4.18.2",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mathjs": "^14.8.2",
+    "multer": "^2.0.2",
+    "nanoid": "^5.1.6",
+    "node-cron": "^4.2.1",
+    "openai": "^4.104.0",
+    "pdf-parse": "^2.2.16",
+    "pino": "^10.0.0",
+    "pino-pretty": "^13.1.2",
+    "resend": "^6.1.2",
+    "undici": "^7.16.0",
+    "ws": "^8.16.0",
+    "youtube-transcript": "^1.2.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@spotlight/config": "workspace:*",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/node": "^20.11.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/ws": "^8.5.10",
+    "drizzle-kit": "^0.28.0",
+    "eslint": "^9.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
+```
+
+```typescript name=packages/shared/src/types/market.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/packages/shared/src/types/market.ts
+// Market data types for Spotlight Trader
+// Shared between client and server for consistent timeframe handling
+
+export type Timeframe = "1m" | "2m" | "5m" | "10m" | "15m" | "30m" | "1h";
+
+// Map timeframe strings to bucket size in minutes
+// Used for deterministic bar aggregation from 1m base
+export const TIMEFRAME_TO_BUCKET_MIN = {
+  "1m": 1,
+  "2m": 2,
+  "5m": 5,
+  "10m": 10,
+  "15m": 15,
+  "30m": 30,
+  "1h": 60,
+} as const;
+
+// Chart data point (OHLCV with timestamp)
+export interface ChartPoint {
+  t: number; // timestamp (ms)
+  o: number; // open
+  h: number; // high
+  l: number; // low
+  c: number; // close
+  v: number; // volume
+}
+
+// Canonical alias used across the codebase for clarity
+export type OHLCV = ChartPoint;
+
+// Chart snapshot for voice AI and client consumption
+export interface ChartSnapshot {
+  symbol: string;
+  timeframe: Timeframe;
+  points: ChartPoint[];
+  lastSeq?: number;
+  vwap?: number; // Session VWAP (consistent with tape)
+}
+
+// Timeframe switch request/response
+export interface TimeframeSwitchRequest {
+  symbol: string;
+  timeframe: Timeframe;
+}
+
+export interface TimeframeSwitchResponse {
+  ok: boolean;
+  symbol: string;
+  timeframe: Timeframe;
+  barsCount?: number;
+  error?: string;
+}
+```
+
+```typescript name=apps/server/src/agent/tools.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/server/src/agent/tools.ts
+/**
+ * Spotlight Trader — Agent Tools (safe, opt-in)
+ * - No side effects
+ * - No server mounts, no ports
+ * - If you don't import this, nothing in your app changes.
+ */
+
+import { ringBuffer } from "../cache/ring.js";
+import { getMarketSource, getMarketReason } from "../market/bootstrap.js";
+import { toZonedTime, fromZonedTime } from "date-fns-tz";
+
+export type GetChartParams = {
+  symbol: string;
+  timeframe: "1m" | "5m" | "1h" | "1d";
+  limit?: number;
+};
+
+export type GetRulesParams = {
+  version?: string; // optional selector, defaults to "active"
+};
+
+export type GetMarketStatusParams = Record<string, never>;
+
+export const ToolSchemas = [
+  {
+    name: "getChart",
+    description: "Return OHLCV for a symbol/timeframe (latest first or last—your handler decides).",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "e.g., ES, NQ, AAPL" },
+        timeframe: { type: "string", enum: ["1m", "5m", "1h", "1d"] },
+        limit: { type: "integer", minimum: 10, maximum: 2000, default: 300 },
+      },
+      required: ["symbol", "timeframe"],
+    },
+  },
+  {
+    name: "getRules",
+    description: "Return the active rulebook or a specific version (read-only).",
+    parameters: {
+      type: "object",
+      properties: {
+        version: { type: "string", description: "Explicit rulebook version; defaults to active." },
+      },
+    },
+  },
+  {
+    name: "getMarketStatus",
+    description: "Return exchange open/closed and latency metrics for HUD.",
+    parameters: { type: "object", properties: {} },
+  },
+  // FAST MICRO TOOLS (low-latency, in-memory)
+  {
+    name: "getLastPrice",
+    description: "Get the most recent price for a symbol from in-memory data (sub-50ms).",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "e.g., SPY, QQQ" },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
+    name: "getLastVWAP",
+    description:
+      "Get the current session VWAP for a symbol (computed from recent bars; returns NaN if insufficient data).",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "e.g., SPY, QQQ" },
+      },
+      required: ["symbol"],
+    },
+  },
+] as const;
+
+/**
+ * Helpers
+ */
+function sessionStartMsET(ms: number, tz = "America/New_York"): number {
+  // Compute 9:30 AM ET for the date of ms
+  const date = toZonedTime(ms, tz);
+  date.setHours(9, 30, 0, 0);
+  return fromZonedTime(date, tz).getTime();
+}
+
+/**
+ * Handlers (safe defaults)
+ * - You can wire these to your real data sources later.
+ * - Return shapes are intentionally small and documented.
+ */
+export const ToolHandlers = {
+  /** Expected return:
+   * { symbol, timeframe, bars: [{t:number, o:number, h:number, l:number, c:number, v:number}], source?:string }
+   */
+  async getChart(args: GetChartParams) {
+    const { symbol, timeframe, limit = 300 } = args;
+
+    // [FIX] Wire to real market data from ring buffer
+    const recentBars = ringBuffer.getRecent(symbol.toUpperCase(), limit);
+
+    // Transform to expected format (CachedBar uses flat properties, not nested ohlcv)
+    const bars = recentBars.map((bar) => ({
+      t: bar.bar_start,
+      o: bar.open,
+      h: bar.high,
+      l: bar.low,
+      c: bar.close,
+      v: bar.volume,
+    }));
+
+    return {
+      symbol: symbol.toUpperCase(),
+      timeframe,
+      bars,
+      source: getMarketSource?.(),
+    };
+  },
+
+  /** Expected return:
+   * { version:string, rules: Array<{id:string, name:string, expr:string, enabled:boolean}>, meta?:any }
+   */
+  async getRules(args: GetRulesParams) {
+    const version = args.version ?? "active";
+    // TODO: Load from your existing rules store when ready
+    return {
+      version,
+      rules: [], // <-- populate when wired
+      meta: { note: "placeholder; wire me to your rules store" },
+    };
+  },
+
+  /** Expected return:
+   * { source:string, reason?:string }
+   */
+  async getMarketStatus(_args: GetMarketStatusParams) {
+    return {
+      source: getMarketSource?.() ?? "unknown",
+      reason: getMarketReason?.(),
+    };
+  },
+
+  /** Micro tool: last price from in-memory ring buffer
+   * Return shape: { symbol, price, ts }
+   */
+  async getLastPrice(args: { symbol: string }) {
+    const symbol = args.symbol.toUpperCase();
+    const last = ringBuffer.getRecent(symbol, 1)[0];
+    if (!last) {
+      return { symbol, price: NaN, ts: 0 };
+    }
+    return { symbol, price: last.close, ts: last.bar_end };
+  },
+
+  /** Micro tool: session VWAP computed from recent bars
+   * Return shape: { symbol, vwap, ts }
+   * - Computes from bars with bar_end >= today's 9:30 ET
+   */
+  async getLastVWAP(args: { symbol: string }) {
+    const symbol = args.symbol.toUpperCase();
+    const bars = ringBuffer.getRecent(symbol, 600); // ~full session headroom
+    if (!bars.length) return { symbol, vwap: NaN, ts: 0 };
+
+    const ts = bars[bars.length - 1].bar_end;
+    const start = sessionStartMsET(ts);
+
+    let pv = 0;
+    let vol = 0;
+
+    for (const b of bars) {
+      if (b.bar_end < start) continue;
+      const typical = (b.high + b.low + b.close) / 3;
+      pv += typical * b.volume;
+      vol += b.volume;
+    }
+
+    const vwap = vol > 0 ? pv / vol : NaN;
+    return { symbol, vwap, ts };
+  },
+};
+```
+
+Instructions to the Replit agent
+- Apply all file changes exactly as provided above.
+- Run: pnpm install (workspace) to refresh lockfile for @vitest/coverage-v8.
+- Do NOT refactor anything else. Just these files/changes.
+- Then run a quick sanity in the agent terminal:
+  - npx eslint . --ext .ts,.tsx
+  - pnpm test:ci -- --coverage
+  - pnpm --filter @spotlight/shared build && pnpm --filter @spotlight/config build && pnpm --filter @spotlight/client build && pnpm --filter @spotlight/server build
+- Commit with message:
+  fix: align vitest coverage, stabilize ESLint, add OHLCV type, add fast micro tools (last price/VWAP)
+
+After the agent commits, run these in Replit shell
+```bash
+# Install updated dev deps and link workspace after the changes
+pnpm install
+
+# Lint should pass cleanly
+npx eslint . --ext .ts,.tsx
+
+# Tests with coverage should no longer crash
+pnpm test:ci -- --coverage
+
+# Build all packages
+pnpm --filter @spotlight/shared build && pnpm --filter @spotlight/config build && pnpm --filter @spotlight/client build && pnpm --filter @spotlight/server build
+
+# For voice testing, run the server without file-watch restarts
+pnpm --filter @spotlight/server run dev:stable
+```
+
+Why this helps immediately
+- Stops Vitest coverage crashes by aligning plugin to vitest’s major and adds coverage config.
+- Prevents ESLint false positives on config files and dot-rc scripts.
+- Eliminates missing OHLCV export errors across shared code.
+- Adds ultra-fast, in-memory micro tools (last price/VWAP) so the voice agent can answer prices and VWAP in under 50ms without invoking heavier snapshot logic.
+- Avoids disruptive tsx auto-restarts during voice sessions via dev:stable.

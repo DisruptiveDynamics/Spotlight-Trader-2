@@ -23,9 +23,6 @@ importers:
       date-fns-tz:
         specifier: ^3.2.0
         version: 3.2.0(date-fns@4.1.0)
-      get-tsconfig:
-        specifier: ^4.12.0
-        version: 4.12.0
       jsonwebtoken:
         specifier: ^9.0.2
         version: 9.0.2

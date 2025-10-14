@@ -40,10 +40,9 @@ backtestRouter.post("/run", async (req: AuthRequest, res) => {
     const parsed = BacktestSchema.parse(req.body);
     const userId = req.user!.userId;
 
-    // Fetch rules
-    const rules = await Promise.all(parsed.ruleIds.map((id) => ruleRegistry.getRule(userId, id)));
-
-    const validRules = rules.filter((r) => r !== null);
+    // Fetch all active rules and filter by IDs
+    const allRules = await ruleRegistry.getActiveRules(userId);
+    const validRules = allRules.filter((r) => parsed.ruleIds.includes(r.id));
 
     if (validRules.length === 0) {
       return res.status(400).json({ error: "No valid rules found for the provided IDs" });

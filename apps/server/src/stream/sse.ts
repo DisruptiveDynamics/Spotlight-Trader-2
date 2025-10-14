@@ -62,11 +62,17 @@ export async function sseMarketStream(req: Request, res: Response) {
               "bar",
               {
                 symbol: bar.symbol,
-                timeframe: bar.timeframe,
+                timeframe,
                 seq: bar.seq,
                 bar_start: bar.bar_start,
                 bar_end: bar.bar_end,
-                ohlcv: bar.ohlcv,
+                ohlcv: {
+                  o: bar.open,
+                  h: bar.high,
+                  l: bar.low,
+                  c: bar.close,
+                  v: bar.volume,
+                },
               },
               String(bar.seq),
             );
@@ -89,11 +95,17 @@ export async function sseMarketStream(req: Request, res: Response) {
               "bar",
               {
                 symbol: bar.symbol,
-                timeframe: bar.timeframe,
+                timeframe,
                 seq: bar.seq,
                 bar_start: bar.bar_start,
                 bar_end: bar.bar_end,
-                ohlcv: bar.ohlcv,
+                ohlcv: {
+                  o: bar.open,
+                  h: bar.high,
+                  l: bar.low,
+                  c: bar.close,
+                  v: bar.volume,
+                },
               },
               String(bar.seq),
             );

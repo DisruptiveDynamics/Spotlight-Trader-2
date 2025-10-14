@@ -1,4 +1,4 @@
-import { eventBus, type Tick, type Microbar, type Bar } from "./eventBus";
+import { eventBus, type Tick, type Microbar, type MarketBarEvent } from "./eventBus";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 
 const ET = "America/New_York";
@@ -159,9 +159,9 @@ export class BarBuilder {
     const seq = currentSeq + 1;
     this.lastSeq.set(stateKey, seq);
 
-    const finalizedBar: Bar = {
+    const finalizedBar: MarketBarEvent = {
       symbol,
-      timeframe: timeframe as any, // Cast to satisfy Bar type
+      timeframe: timeframe as any,
       seq,
       bar_start: state.bar_start,
       bar_end: state.bar_end,

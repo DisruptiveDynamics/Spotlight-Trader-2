@@ -165,7 +165,7 @@ describe("Memory Flush - Shutdown with Retries", () => {
           flushCalled = true;
           throw new Error("First flush fails");
         }
-        return originalFlush();
+        return _originalFlush();
       };
 
       bridge.addInsight("user1", "Test");
@@ -183,7 +183,7 @@ describe("Memory Flush - Shutdown with Retries", () => {
         exit: vi.fn(),
       };
 
-      let sigtermHandler: (() => Promise<void>) | null = null;
+      let sigtermHandler: any = null;
 
       mockProcess.on.mockImplementation((signal: string, handler: any) => {
         if (signal === "SIGTERM") {
@@ -210,7 +210,7 @@ describe("Memory Flush - Shutdown with Retries", () => {
         exit: vi.fn(),
       };
 
-      let sigintHandler: (() => Promise<void>) | null = null;
+      let sigintHandler: any = null;
 
       mockProcess.on.mockImplementation((signal: string, handler: any) => {
         if (signal === "SIGINT") {
@@ -238,7 +238,7 @@ describe("Memory Flush - Shutdown with Retries", () => {
         on: vi.fn(),
       };
 
-      let beforeExitHandler: ((code: number) => Promise<void>) | null = null;
+      let beforeExitHandler: any = null;
 
       mockProcess.on.mockImplementation((event: string, handler: any) => {
         if (event === "beforeExit") {

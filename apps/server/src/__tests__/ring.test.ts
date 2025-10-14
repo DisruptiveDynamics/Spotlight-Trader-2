@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { RingBuffer } from "../cache/ring";
-import type { Bar } from "../market/eventBus";
+import type { Bar } from "@shared/types";
 
 describe("RingBuffer", () => {
   let ring: RingBuffer;
@@ -13,8 +13,8 @@ describe("RingBuffer", () => {
     const symbol = "TEST";
     const bars: Bar[] = [
       {
+    timestamp: 1000,
         symbol,
-        timeframe: "1m",
         seq: 1,
         bar_start: 1000,
         bar_end: 2000,
@@ -25,8 +25,8 @@ describe("RingBuffer", () => {
         volume: 1000,
       },
       {
+    timestamp: 1000,
         symbol,
-        timeframe: "1m",
         seq: 2,
         bar_start: 2000,
         bar_end: 3000,
@@ -37,8 +37,8 @@ describe("RingBuffer", () => {
         volume: 1500,
       },
       {
+    timestamp: 1000,
         symbol,
-        timeframe: "1m",
         seq: 3,
         bar_start: 3000,
         bar_end: 4000,
@@ -65,7 +65,7 @@ describe("RingBuffer", () => {
     for (let i = 0; i < 6000; i++) {
       bars.push({
         symbol,
-        timeframe: "1m",
+        timestamp: 0,
         seq: i,
         bar_start: i * 60000,
         bar_end: (i + 1) * 60000,

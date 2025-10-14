@@ -5,7 +5,7 @@
 
 import { ruleEvaluator } from "../rules/evaluator";
 import type { Rule, RuleContext } from "@shared/types/rules";
-import type { Bar } from "../market/eventBus";
+import type { Bar } from "@shared/types";
 import { getHistory } from "../history/service";
 
 /**

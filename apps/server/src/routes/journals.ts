@@ -74,6 +74,7 @@ router.get("/:id", async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.userId;
     const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "ID required" });
 
     const journal = await getJournal(userId, id);
 
@@ -93,6 +94,7 @@ router.put("/:id", async (req: AuthRequest, res) => {
     const parsed = CreateJournalSchema.parse(req.body);
     const userId = req.user!.userId;
     const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "ID required" });
 
     const content = parsed.text ?? parsed.tradeJson;
     if (!content) {
@@ -115,6 +117,7 @@ router.delete("/:id", async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.userId;
     const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "ID required" });
 
     await deleteJournal(userId, id);
 

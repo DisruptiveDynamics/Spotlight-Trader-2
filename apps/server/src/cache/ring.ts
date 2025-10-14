@@ -1,4 +1,4 @@
-import type { Bar } from "@server/market/eventBus";
+import type { Bar } from "@shared/types";
 
 interface CachedBar {
   seq: number;
@@ -23,24 +23,15 @@ export class RingBuffer {
     const buffer = this.buffers.get(symbol)!;
 
     const cachedBars: CachedBar[] = bars.map((bar) => {
-      // Support both nested ohlcv format and flat format
-      const ohlcv = bar.ohlcv ?? {
-        o: (bar as any).open,
-        h: (bar as any).high,
-        l: (bar as any).low,
-        c: (bar as any).close,
-        v: (bar as any).volume,
-      };
-
       return {
         seq: bar.seq,
         bar_start: bar.bar_start,
         bar_end: bar.bar_end,
-        open: ohlcv.o,
-        high: ohlcv.h,
-        low: ohlcv.l,
-        close: ohlcv.c,
-        volume: ohlcv.v,
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close,
+        volume: bar.volume,
       };
     });
 

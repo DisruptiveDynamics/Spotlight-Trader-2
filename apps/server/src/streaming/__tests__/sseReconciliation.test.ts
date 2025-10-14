@@ -54,7 +54,7 @@ describe("SSE Reconciliation", () => {
 
       const result = buffer.getSince("");
       expect(result).toHaveLength(3);
-      expect(result[0].id).toBe("1");
+      expect(result[0]!.id).toBe("1");
     });
 
     it("should return events after lastEventId", () => {
@@ -69,8 +69,8 @@ describe("SSE Reconciliation", () => {
 
       const result = buffer.getSince("2");
       expect(result).toHaveLength(2);
-      expect(result[0].id).toBe("3");
-      expect(result[1].id).toBe("4");
+      expect(result[0]!.id).toBe("3");
+      expect(result[1]!.id).toBe("4");
     });
 
     it("should return empty array if lastEventId is the latest", () => {
@@ -150,8 +150,8 @@ describe("SSE Reconciliation", () => {
 
       const all = buffer.getAll();
       expect(all.length).toBeLessThanOrEqual(1000);
-      expect(all[0].id).toBe("501");
-      expect(all[all.length - 1].id).toBe("1500");
+      expect(all[0]!.id).toBe("501");
+      expect(all[all.length - 1]!.id).toBe("1500");
     });
 
     it("should track gaps in event sequence", () => {
@@ -167,9 +167,9 @@ describe("SSE Reconciliation", () => {
       const missed = buffer.getSince(lastSeenId);
       
       expect(missed).toHaveLength(1);
-      expect(missed[0].id).toBe("5");
+      expect(missed[0]!.id).toBe("5");
       
-      const hasGap = parseInt(missed[0].id) - parseInt(lastSeenId) > 1;
+      const hasGap = parseInt(missed[0]!.id) - parseInt(lastSeenId) > 1;
       expect(hasGap).toBe(true);
     });
   });
@@ -191,7 +191,7 @@ describe("SSE Reconciliation", () => {
 
       const result = buffer.getSince("1");
       expect(result.length).toBeGreaterThan(0);
-      expect(result[result.length - 1].id).toBe("2");
+      expect(result[result.length - 1]!.id).toBe("2");
     });
 
     it("should handle rapid reconnections", () => {
@@ -220,9 +220,9 @@ describe("SSE Reconciliation", () => {
       events.forEach(e => buffer.add(e));
 
       const all = buffer.getAll();
-      expect(all[0].timestamp).toBe(3000);
-      expect(all[1].timestamp).toBe(1000);
-      expect(all[2].timestamp).toBe(2000);
+      expect(all[0]!.timestamp).toBe(3000);
+      expect(all[1]!.timestamp).toBe(1000);
+      expect(all[2]!.timestamp).toBe(2000);
     });
 
     it("should detect out-of-order events", () => {
@@ -236,7 +236,7 @@ describe("SSE Reconciliation", () => {
 
       const all = buffer.getAll();
       const isOutOfOrder = all.some((e, i) => 
-        i > 0 && e.timestamp < all[i - 1].timestamp
+        i > 0 && e.timestamp < all[i - 1]!.timestamp
       );
       
       expect(isOutOfOrder).toBe(true);

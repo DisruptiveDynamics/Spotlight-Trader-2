@@ -1,9 +1,26 @@
 import { validateEnv } from "@shared/env";
 import { ringBuffer } from "@server/cache/ring";
-import type { Bar, Timeframe } from "@server/market/eventBus";
+import type { Bar } from "@shared/types";
+import type { Timeframe } from "@server/market/eventBus";
 import { polygonWs } from "@server/market/polygonWs";
 
 const env = validateEnv(process.env);
+
+// Helper to convert cached bar to flat Bar structure
+function toFlatBar(cached: { seq: number; bar_start: number; bar_end: number; open: number; high: number; low: number; close: number; volume: number }, symbol: string): Bar {
+  return {
+    symbol,
+    timestamp: cached.bar_start,
+    open: cached.open,
+    high: cached.high,
+    low: cached.low,
+    close: cached.close,
+    volume: cached.volume,
+    seq: cached.seq,
+    bar_start: cached.bar_start,
+    bar_end: cached.bar_end,
+  };
+}
 
 interface HistoryQuery {
   symbol: string;
@@ -50,20 +67,7 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
   if (sinceSeq !== undefined) {
     const cached = ringBuffer.getSinceSeq(symbol, sinceSeq);
     if (cached.length > 0) {
-      return cached.map((bar) => ({
-        symbol,
-        timeframe,
-        seq: bar.seq,
-        bar_start: bar.bar_start,
-        bar_end: bar.bar_end,
-        ohlcv: {
-          o: bar.open,
-          h: bar.high,
-          l: bar.low,
-          c: bar.close,
-          v: bar.volume,
-        },
-      }));
+      return cached.map((bar) => toFlatBar(bar, symbol));
     }
   }
 
@@ -71,20 +75,7 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
   const recentFromBuffer = ringBuffer.getRecent(symbol, limit);
   if (recentFromBuffer.length >= Math.min(limit, 10)) {
     console.log(`📊 Using ${recentFromBuffer.length} bars from ring buffer for ${symbol}`);
-    return recentFromBuffer.map((bar) => ({
-      symbol,
-      timeframe,
-      seq: bar.seq,
-      bar_start: bar.bar_start,
-      bar_end: bar.bar_end,
-      ohlcv: {
-        o: bar.open,
-        h: bar.high,
-        l: bar.low,
-        c: bar.close,
-        v: bar.volume,
-      },
-    }));
+    return recentFromBuffer.map((bar) => toFlatBar(bar, symbol));
   }
 
   // Priority 3: Fetch from Polygon REST API (skip if using mock data)
@@ -105,20 +96,7 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
   // Priority 4: Use ring buffer even if sparse
   if (recentFromBuffer.length > 0) {
     console.log(`📊 Using ${recentFromBuffer.length} sparse bars from ring buffer (fallback)`);
-    return recentFromBuffer.map((bar) => ({
-      symbol,
-      timeframe,
-      seq: bar.seq,
-      bar_start: bar.bar_start,
-      bar_end: bar.bar_end,
-      ohlcv: {
-        o: bar.open,
-        h: bar.high,
-        l: bar.low,
-        c: bar.close,
-        v: bar.volume,
-      },
-    }));
+    return recentFromBuffer.map((bar) => toFlatBar(bar, symbol));
   }
 
   // Priority 5: Generate high-quality mock data
@@ -209,17 +187,15 @@ async function fetchPolygonHistory(
 
       return {
         symbol,
-        timeframe,
+        timestamp: bar_start,
+        open: agg.o,
+        high: agg.h,
+        low: agg.l,
+        close: agg.c,
+        volume: agg.v,
         seq: Math.floor(bar_start / timeframeMs),
         bar_start,
         bar_end,
-        ohlcv: {
-          o: agg.o,
-          h: agg.h,
-          l: agg.l,
-          c: agg.c,
-          v: agg.v,
-        },
       };
     });
 
@@ -292,17 +268,15 @@ function generateRealisticBars(symbol: string, fromMs: number, toMs: number, lim
 
     bars.push({
       symbol,
-      timeframe: "1m",
+      timestamp: bar_start,
+      open: Math.round(open * 100) / 100,
+      high: Math.round(high * 100) / 100,
+      low: Math.round(low * 100) / 100,
+      close: Math.round(close * 100) / 100,
+      volume,
       seq: Math.floor(bar_start / 60000),
       bar_start,
       bar_end,
-      ohlcv: {
-        o: Math.round(open * 100) / 100,
-        h: Math.round(high * 100) / 100,
-        l: Math.round(low * 100) / 100,
-        c: Math.round(close * 100) / 100,
-        v: volume,
-      },
     });
 
     currentPrice = close;

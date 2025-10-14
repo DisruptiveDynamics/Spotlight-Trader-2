@@ -75,7 +75,6 @@ export async function switchTimeframe(params: {
 
     // Step 4: Emit bar:reset to signal client to redraw
     eventBus.emit("bar:reset" as any, {
-      userId,
       symbol,
       timeframe,
       bars: rolled,

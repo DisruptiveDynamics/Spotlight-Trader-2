@@ -20,8 +20,8 @@ describe("Snapshot Hash - Deterministic Hashing & Change Detection", () => {
   ): string => {
     if (bars.length === 0) return `0-0-${timeframe}-0`;
     
-    const seqLast = bars[bars.length - 1].seq;
-    const firstBarTime = bars[0].bar_start;
+    const seqLast = bars[bars.length - 1]!.seq;
+    const firstBarTime = bars[0]!.bar_start;
     const barCount = bars.length;
     
     return `${seqLast}-${firstBarTime}-${timeframe}-${barCount}`;
@@ -236,7 +236,7 @@ describe("Snapshot Hash - Deterministic Hashing & Change Detection", () => {
 
       const bars2: Bar[] = [
         {
-          ...bars1[0],
+          ...bars1[0]!,
           seq: 101,
         },
       ];
@@ -378,7 +378,7 @@ describe("Snapshot Hash - Deterministic Hashing & Change Detection", () => {
 
       const hashes = updates.map(bars => calculateSnapshotHash(bars, "1m"));
       
-      expect(hasSnapshotChanged(hashes[1], hashes[0])).toBe(true);
+      expect(hasSnapshotChanged(hashes[1]!, hashes[0])).toBe(true);
     });
 
     it("should efficiently detect no change", () => {

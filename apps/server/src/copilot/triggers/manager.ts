@@ -5,7 +5,7 @@ import { VwapReclaimTrigger, VwapRejectTrigger } from "./vwapReclaim";
 import { OrbTrigger } from "./orb";
 import { EmaPullbackTrigger } from "./emaPullback";
 import { ringBuffer } from "@server/cache/ring";
-import type { Bar } from "@server/market/eventBus";
+import type { Bar } from "@shared/types";
 import type { Candle } from "@shared/indicators";
 import { proposeCallout } from "../tools/handlers";
 import type { TelemetryEvent } from "../../telemetry/types";

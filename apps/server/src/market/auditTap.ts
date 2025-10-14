@@ -5,8 +5,6 @@
 import { eventBus } from "./eventBus";
 import { getSessionVWAPForSymbol } from "@server/indicators/vwap";
 import { flags } from "@shared/flags";
-import type { Tick } from "@shared/types";
-import type { Bar } from "@shared/types";
 
 class MarketAuditTap {
   private lastTickPrices = new Map<string, number>();
@@ -25,13 +23,13 @@ class MarketAuditTap {
     const symbols = ["SPY", "QQQ"]; // Add more as needed
 
     for (const symbol of symbols) {
-      eventBus.on(`tick:${symbol}` as const, (tick: Tick) => {
-        this.lastTickPrices.set(symbol, tick.price);
+      eventBus.on(`tick:${symbol}` as const, (data) => {
+        this.lastTickPrices.set(symbol, data.price);
       });
 
       // Monitor 1m bar closes
-      eventBus.on(`bar:new:${symbol}:1m` as any, (bar: Bar) => {
-        this.auditBar(symbol, bar);
+      eventBus.on(`bar:new:${symbol}:1m` as any, (data) => {
+        this.auditBar(symbol, data);
       });
     }
   }

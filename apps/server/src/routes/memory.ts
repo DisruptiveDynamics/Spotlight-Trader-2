@@ -89,6 +89,7 @@ router.delete("/:id", async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.userId;
     const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "ID required" });
 
     await deleteMemory(userId, id);
 

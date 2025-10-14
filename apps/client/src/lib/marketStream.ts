@@ -1,3 +1,5 @@
+import { STREAM_URL, HISTORY_URL } from "../config";
+
 export type Ohlcv = { o: number; h: number; l: number; c: number; v: number };
 
 export type Bar = {
@@ -84,7 +86,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         limit: "50", // Fetch 50-bar snapshot for resync
       });
       
-      const res = await fetch(`/api/history?${params.toString()}`);
+      const res = await fetch(`${HISTORY_URL}?${params.toString()}`);
       if (!res.ok) {
         throw new Error(`Resync failed: ${res.status} ${res.statusText}`);
       }
@@ -136,7 +138,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         limit: String(limit),
       });
 
-      const res = await fetch(`/api/history?${params.toString()}`);
+      const res = await fetch(`${HISTORY_URL}?${params.toString()}`);
       if (!res.ok) {
         throw new Error(`Gap backfill failed: ${res.status} ${res.statusText}`);
       }
@@ -179,7 +181,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
     emitStatus(reconnectAttempts === 0 ? "connecting" : "degraded_ws");
 
-    es = new EventSource(`/stream/market?${params.toString()}`);
+    es = new EventSource(`${STREAM_URL}?${params.toString()}`);
 
     es.addEventListener("open", async () => {
       reconnectAttempts = 0;
@@ -191,7 +193,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         const symbol = symbols[0] || "SPY";
         try {
           const res = await fetch(
-            `/api/history?symbol=${encodeURIComponent(symbol)}&timeframe=1m&sinceSeq=${lastSeq}`,
+            `${HISTORY_URL}?symbol=${encodeURIComponent(symbol)}&timeframe=1m&sinceSeq=${lastSeq}`,
           );
           if (res.ok) {
             const bars = await res.json();
@@ -407,7 +409,7 @@ export async function loadHistoryPreset(
 ): Promise<void> {
   const limit = TF_PRESETS[preset];
   const res = await fetch(
-    `/api/history?symbol=${encodeURIComponent(symbol)}&timeframe=1m&limit=${limit}`,
+    `${HISTORY_URL}?symbol=${encodeURIComponent(symbol)}&timeframe=1m&limit=${limit}`,
   );
   if (!res.ok) {
     throw new Error(`Failed to load ${preset} history: ${res.statusText}`);

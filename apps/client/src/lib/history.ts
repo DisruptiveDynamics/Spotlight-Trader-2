@@ -1,6 +1,7 @@
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { setHours, setMinutes, setSeconds, setMilliseconds } from "date-fns";
 import type { Timeframe } from "../state/chartState";
+import { HISTORY_URL } from "../config";
 
 export interface HistoryCandle {
   time: number; // Unix timestamp in seconds (for lightweight-charts)
@@ -21,7 +22,7 @@ export async function fetchHistory(
   limit: number = 500,
 ): Promise<HistoryCandle[]> {
   const response = await fetch(
-    `/api/history?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}`,
+    `${HISTORY_URL}?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}`,
     {
       credentials: "include", // Include cookies for authentication
     },

@@ -1,0 +1,238 @@
+Got it — here’s a clean, copy-paste “fix it” prompt you can give your Replit Report Agent. It tells the agent exactly what to inspect, what to change, and the acceptance criteria so Demo Mode + real-time ticks work even if the server blips.
+
+⸻
+
+COPY-PASTE FOR YOUR REPORT AGENT
+
+You are a senior full-stack engineer. Fix Demo Mode login failures and networking instability that lead to 500s when clicking Try Demo Mode and no charts/ticks show up. Server sometimes shows “No output available” and the Vite proxy can’t reach port 8080.
+
+Objectives
+	1.	Keep the server up during dev and provide clear logs when it crashes.
+	2.	Make Demo Mode auth resilient (works without external services).
+	3.	Harden networking (proxy, ports, retries, SSE/WS reconnect).
+	4.	Improve error handling so the UI never shows a silent 500; show helpful messages and auto-retry.
+
+Deliverables
+	•	Health endpoints (/api/healthz, /api/readyz, /api/livez) and global error handler.
+	•	Stable Demo Mode endpoint that never depends on external I/O to succeed.
+	•	Vite proxy configured via env, strict port use, and clear “port in use” prevention.
+	•	Client-side fetch/SSE retry with exponential backoff and user-friendly toasts.
+	•	One-shot cleanup/start script for Replit to kill orphan processes/ports and start fresh.
+	•	CI-style check scripts: lint, typecheck, build.
+
+Make these changes
+
+1) Server health + global error handler
+
+Create apps/server/src/middleware/error.ts:
+
+import type { Request, Response, NextFunction } from "express";
+
+export function errorHandler(err: any, _req: Request, res: Response, _next: NextFunction) {
+  const status = err?.status || 500;
+  const code = err?.code || "INTERNAL_ERROR";
+  const msg = err?.message || "Unexpected server error";
+  console.error("[Error]", { status, code, msg, stack: err?.stack });
+  res.status(status).json({ ok: false, error: { code, message: msg } });
+}
+
+export function notFound(_req: Request, res: Response) {
+  res.status(404).json({ ok: false, error: { code: "NOT_FOUND", message: "Route not found" } });
+}
+
+Create apps/server/src/health.ts:
+
+import type { Request, Response } from "express";
+let ready = true; // set false during boot if you need to gate readiness
+
+export function liveness(_req: Request, res: Response) {
+  res.status(200).json({ ok: true, status: "live" });
+}
+
+export function readiness(_req: Request, res: Response) {
+  // For Demo Mode, do NOT require external deps; return ready=true if server loop is alive
+  res.status(ready ? 200 : 503).json({ ok: ready, status: ready ? "ready" : "starting" });
+}
+
+export function healthz(_req: Request, res: Response) {
+  res.status(200).json({ ok: true, uptime: process.uptime() });
+}
+
+Wire these in apps/server/src/index.ts (near your Express app setup):
+
+import express from "express";
+import { errorHandler, notFound } from "./middleware/error";
+import { liveness, readiness, healthz } from "./health";
+
+const app = express();
+
+// health probes
+app.get("/api/livez", liveness);
+app.get("/api/readyz", readiness);
+app.get("/api/healthz", healthz);
+
+// ... your routes here
+
+// 404 + error
+app.use(notFound);
+app.use(errorHandler);
+
+// global process guards
+process.on("uncaughtException", (e) => { console.error("[uncaughtException]", e); });
+process.on("unhandledRejection", (e) => { console.error("[unhandledRejection]", e); });
+
+2) Demo Mode endpoint must never hard-fail
+
+Harden apps/server/src/auth/demo.ts (or wherever /api/auth/demo lives):
+	•	Wrap in try/catch.
+	•	Do not call external services; create an in-memory user { id: "demo", email: "demo-user@local", role: "demo" }.
+	•	Set a signed cookie JWT w/ short TTL (e.g., 24h) and return { ok: true, user }.
+	•	On failure, res.status(200).json({ ok: true, user: fallbackDemoUser }) (i.e., degrade gracefully, never 500).
+
+Example core:
+
+app.post("/api/auth/demo", async (req, res) => {
+  try {
+    const user = { id: "demo", email: "demo-user@local", role: "demo" };
+    // sign minimal JWT; skip DB in demo
+    const token = "demo."+Buffer.from(JSON.stringify(user)).toString("base64");
+    res.cookie("auth", token, { httpOnly: true, sameSite: "lax" });
+    return res.json({ ok: true, user });
+  } catch (err:any) {
+    console.warn("[demo auth] falling back:", err?.message);
+    const user = { id: "demo", email: "demo-user@local", role: "demo" };
+    return res.json({ ok: true, user });
+  }
+});
+
+3) Vite proxy + strict porting
+
+Update apps/client/vite.config.ts to read API target from env and enforce strict ports:
+
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+const API_TARGET = process.env.VITE_SERVER_URL || "http://localhost:8080";
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: Number(process.env.VITE_PORT || 5173),
+    strictPort: true,
+    proxy: {
+      "/api": { target: API_TARGET, changeOrigin: true, ws: true },
+      "/stream": { target: API_TARGET, changeOrigin: true, ws: true },
+    },
+  },
+});
+
+4) Client fetch + SSE/WS retries (exponential backoff)
+
+Create apps/client/src/lib/retry.ts:
+
+export async function retry<T>(fn: () => Promise<T>, tries = 5, base = 300) {
+  let last: any;
+  for (let i = 0; i < tries; i++) {
+    try { return await fn(); } catch (e) {
+      last = e;
+      await new Promise(r => setTimeout(r, Math.min(5000, base * 2 ** i)));
+    }
+  }
+  throw last;
+}
+
+Wrap your auth + history fetchers:
+
+import { retry } from "./retry";
+
+export const fetchJSON = (url: string, init?: RequestInit) =>
+  retry(async () => {
+    const r = await fetch(url, init);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  });
+
+export async function demoLogin() {
+  return fetchJSON("/api/auth/demo", { method: "POST" });
+}
+
+For SSE/WS stream, ensure auto-reconnect with jitter and don’t spin if readyz is false:
+
+async function connectStream() {
+  while (true) {
+    const ready = await fetchJSON("/api/readyz").catch(() => ({ ok: false }));
+    if (!ready.ok) { await new Promise(r=>setTimeout(r, 750)); continue; }
+    try {
+      // connect EventSource or WebSocket here
+      return; // exit once connected
+    } catch { await new Promise(r=>setTimeout(r, 1000 + Math.random()*500)); }
+  }
+}
+
+5) Scripts to prevent port collisions & start clean
+
+In root package.json, add:
+
+{
+  "scripts": {
+    "kill:dev": "bash -lc \"pkill -f 'vite|tsx|node' || true\"",
+    "dev:clean": "pnpm kill:dev && rimraf .turbo node_modules **/node_modules || true && pnpm i",
+    "check": "pnpm -r lint && pnpm -r typecheck",
+    "lint": "pnpm -r eslint .",
+    "lint:fix": "pnpm -r eslint . --fix",
+    "typecheck": "pnpm -r tsc -b --pretty false",
+    "dev": "concurrently -n server,client -c blue,magenta \"pnpm --filter @spotlight/server dev\" \"pnpm --filter @spotlight/client dev\""
+  }
+}
+
+(Install rimraf and concurrently if missing.)
+
+In apps/server/package.json:
+
+{
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false --ignore '../client/**' src/index.ts"
+  }
+}
+
+In apps/client/package.json:
+
+{
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173"
+  }
+}
+
+6) Minimal UI feedback
+	•	On Demo login button click: show “Starting demo session… retrying if server is waking up.”
+	•	If /api/auth/demo returns non-ok, automatically retry up to ~10s before surfacing a toast with “Server waking up, still trying…”.
+	•	If stream drops, show a passive banner “Reconnecting to live ticks…”
+
+7) Logging you can read when “No output available”
+	•	Log every server start: console.log('[Server] boot', { pid: process.pid, ts: new Date().toISOString() });
+	•	On SIGTERM/SIGINT: log and server.close() gracefully.
+	•	On each /api/auth/demo call: log success/fallback.
+
+Acceptance Criteria
+	•	Clicking Try Demo Mode logs in within 2–5 seconds even if the server just booted. No 500s.
+	•	/api/healthz returns { ok: true }, /api/readyz returns 200 once the server loop is ready.
+	•	If the server restarts during use, client auto-recovers: demo session persists, charts reload, ticks resume.
+	•	No “Port 5000 is already in use” errors: Vite runs on 5173 with strictPort: true.
+	•	pnpm check passes (lint + typecheck).
+
+Run these commands now (in the Replit shell)
+
+pnpm kill:dev || true
+pnpm i
+pnpm check || true
+VITE_SERVER_URL=http://localhost:8080 VITE_PORT=5173 pnpm dev
+
+If the UI still shows 500 on Demo, curl the probes:
+
+curl -s localhost:8080/api/healthz
+curl -s -o /dev/null -w "%{http_code}\n" localhost:8080/api/readyz
+
+
+⸻
+
+If you want, I can also tailor this to your exact file tree (paths/names) and drop in the code patches inline, but this will get your agent moving and gives you solid acceptance tests to verify the fix.

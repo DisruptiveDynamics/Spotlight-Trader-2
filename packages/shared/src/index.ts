@@ -3,5 +3,8 @@ export * from "./types.js";
 export * from "./schemas.js";
 export * from "./types/rules.js";
 export * from "./types/insight.js";
+export * from "./types/streaming.js";
+export * from "./types/chart.js";
 export * from "./indicators.js";
 export * from "./voicePolicy.js";
+export * from "./utils/time.js";

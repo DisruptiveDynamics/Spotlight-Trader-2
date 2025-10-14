@@ -27,6 +27,8 @@ export default defineConfig({
     include: [
       "apps/**/src/**/*.{test,spec}.{ts,tsx,js,jsx}",
       "apps/**/src/**/__tests__/**/*.{ts,tsx,js,jsx}",
+      "packages/**/src/**/*.{test,spec}.{ts,tsx,js,jsx}",
+      "packages/**/src/**/__tests__/**/*.{ts,tsx,js,jsx}",
       // in case your client moved tests under apps/client/src/...
       "src/**/*.{test,spec}.{ts,tsx,js,jsx}",
       "src/**/__tests__/**/*.{ts,tsx,js,jsx}",

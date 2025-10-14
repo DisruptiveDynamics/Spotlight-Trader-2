@@ -2,6 +2,9 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
+// Use env var or fallback to 0.0.0.0:8080 (Replit-compatible)
+const API_TARGET = process.env.VITE_SERVER_URL || "http://0.0.0.0:8080";
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -24,17 +27,17 @@ export default defineConfig({
     },
     proxy: {
       "/api": {
-        target: "http://localhost:8080",
+        target: API_TARGET,
         changeOrigin: true,
         secure: false,
       },
       "/stream": {
-        target: "http://localhost:8080",
+        target: API_TARGET,
         changeOrigin: true,
         secure: false,
       },
       "/ws": {
-        target: "http://localhost:8080",
+        target: API_TARGET,
         ws: true,
         changeOrigin: true,
         secure: false,

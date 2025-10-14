@@ -2,9 +2,6 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
-// Use env var or fallback to 127.0.0.1:8080 (Replit-compatible - use IP instead of hostname)
-const API_TARGET = process.env.VITE_SERVER_URL || "http://127.0.0.1:8080";
-
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -25,24 +22,8 @@ export default defineConfig({
       path: "/__vite_hmr",
       clientPort: 5000,
     },
-    proxy: {
-      "/api": {
-        target: API_TARGET,
-        changeOrigin: true,
-        secure: false,
-      },
-      "/stream": {
-        target: API_TARGET,
-        changeOrigin: true,
-        secure: false,
-      },
-      "/ws": {
-        target: API_TARGET,
-        ws: true,
-        changeOrigin: true,
-        secure: false,
-      },
-    },
+    // NOTE: No proxy config needed - using unified dev server mode
+    // (Express serves both API and Vite middleware on port 8080)
   },
   build: {
     sourcemap: true,

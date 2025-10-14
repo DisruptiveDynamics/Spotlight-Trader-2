@@ -8,6 +8,15 @@ Spotlight Trader is a production-grade, real-time trading coach application for 
 
 Preferred communication style: Simple, everyday language.
 
+## Recent Changes
+
+### October 14, 2025 - Resilience & Observability Improvements
+- **Networking Fix**: Updated Vite proxy to use `0.0.0.0:8080` instead of `localhost:8080` for Replit cloud compatibility
+- **Demo Login Hardening**: Added exponential backoff retry logic (3 attempts, 1s → 2s → 4s delays) with user feedback during retries
+- **Health Endpoints**: Added `/api/livez`, `/api/readyz`, `/api/healthz` for debugging and monitoring
+- **Error Handling**: Implemented global process error handlers (`uncaughtException`, `unhandledRejection`) that log and exit to prevent undefined states; improved Express error middleware for consistent API error responses
+- **Port Cleanup Utility**: Created `pnpm cleanup` script to kill orphaned processes on ports 5000 and 8080
+
 ## System Architecture
 
 ### Monorepo Structure

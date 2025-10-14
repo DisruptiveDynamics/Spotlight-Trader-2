@@ -57,6 +57,9 @@ class LatencyHistogram {
 class PerformanceMetrics {
   private barLatencyHistogram = new LatencyHistogram();
   private indicatorUpdateHistogram = new LatencyHistogram();
+  private sseBatchSizeHistogram = new LatencyHistogram();
+  private reconnectEventsTotal = 0;
+  private barReconciledTotal = 0;
   private enabled = isDev;
 
   /**
@@ -80,6 +83,32 @@ class PerformanceMetrics {
   }
 
   /**
+   * Record SSE batch size
+   * @param batchSize - Number of microbars in batch
+   */
+  recordSSEBatchSize(batchSize: number): void {
+    if (!this.enabled) return;
+    this.sseBatchSizeHistogram.record(batchSize);
+  }
+
+  /**
+   * Increment reconnect events counter
+   */
+  recordReconnectEvent(): void {
+    if (!this.enabled) return;
+    this.reconnectEventsTotal++;
+  }
+
+  /**
+   * Increment bar reconciled counter
+   * @param count - Number of bars reconciled
+   */
+  recordBarReconciled(count: number): void {
+    if (!this.enabled) return;
+    this.barReconciledTotal += count;
+  }
+
+  /**
    * Get bar latency statistics
    */
   getBarLatencyStats() {
@@ -94,6 +123,27 @@ class PerformanceMetrics {
   }
 
   /**
+   * Get SSE batch size statistics
+   */
+  getSSEBatchSizeStats() {
+    return this.sseBatchSizeHistogram.getStats();
+  }
+
+  /**
+   * Get reconnect events total
+   */
+  getReconnectEventsTotal() {
+    return this.reconnectEventsTotal;
+  }
+
+  /**
+   * Get bar reconciled total
+   */
+  getBarReconciledTotal() {
+    return this.barReconciledTotal;
+  }
+
+  /**
    * Print summary to console (dev only)
    */
   printSummary(): void {
@@ -101,6 +151,7 @@ class PerformanceMetrics {
 
     const barStats = this.getBarLatencyStats();
     const indicatorStats = this.getIndicatorUpdateStats();
+    const sseBatchStats = this.getSSEBatchSizeStats();
 
     console.group('📊 Performance Metrics');
     
@@ -134,6 +185,27 @@ class PerformanceMetrics {
       console.log('Indicator Update: No measurements');
     }
 
+    if (sseBatchStats) {
+      console.log('SSE Batch Size (microbars per batch):');
+      console.table({
+        Count: sseBatchStats.count,
+        'Min': sseBatchStats.min.toFixed(0),
+        'Mean': sseBatchStats.mean.toFixed(2),
+        'P50': sseBatchStats.p50.toFixed(0),
+        'P95': sseBatchStats.p95.toFixed(0),
+        'P99': sseBatchStats.p99.toFixed(0),
+        'Max': sseBatchStats.max.toFixed(0),
+      });
+    } else {
+      console.log('SSE Batch Size: No measurements');
+    }
+
+    console.log('Streaming Resilience:');
+    console.table({
+      'Reconnect Events': this.reconnectEventsTotal,
+      'Bars Reconciled': this.barReconciledTotal,
+    });
+
     console.groupEnd();
   }
 
@@ -143,6 +215,9 @@ class PerformanceMetrics {
   clear(): void {
     this.barLatencyHistogram.clear();
     this.indicatorUpdateHistogram.clear();
+    this.sseBatchSizeHistogram.clear();
+    this.reconnectEventsTotal = 0;
+    this.barReconciledTotal = 0;
   }
 
   /**

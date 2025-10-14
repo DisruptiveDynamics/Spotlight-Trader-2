@@ -10,6 +10,7 @@ import {
 } from "@server/metrics/registry";
 import { getMarketSource, getMarketReason } from "@server/market/bootstrap";
 import { getEpochId, getEpochStartMs } from "./epoch"; // [RESILIENCE] Server restart detection
+import { MicrobarBatcher } from "./microbatcher"; // [PHASE-5] SSE micro-batching
 
 export async function sseMarketStream(req: Request, res: Response) {
   const symbolsParam = (req.query.symbols as string) || "SPY";
@@ -163,20 +164,41 @@ export async function sseMarketStream(req: Request, res: Response) {
   eventBus.on("signal:new", alertHandler as any);
   listeners.push({ event: "signal:new", handler: alertHandler as EventHandler });
 
+  // [PHASE-5] Create batcher per symbol (aggregate up to 5 microbars or 20ms)
+  const batchers = new Map<string, MicrobarBatcher>();
+
   for (const symbol of symbols) {
+    // [PHASE-5] Create batcher with flush callback
+    const batcher = new MicrobarBatcher(
+      (batch) => {
+        recordSSEEvent("microbar_batch");
+        bpc.write("microbar_batch", batch);
+      },
+      5, // maxBatchSize
+      20, // maxDelayMs
+    );
+    batchers.set(symbol, batcher);
+
     const microbarHandler = (data: MicrobarData) => {
-      recordSSEEvent("microbar");
-      bpc.write("microbar", {
-        symbol: data.symbol,
-        ts: data.ts,
-        ohlcv: {
-          open: data.open,
-          high: data.high,
-          low: data.low,
-          close: data.close,
-          volume: data.volume,
-        },
-      });
+      // [PHASE-5] Push to batcher instead of immediate write
+      const symbolBatcher = batchers.get(symbol);
+      if (symbolBatcher) {
+        symbolBatcher.push(data);
+      } else {
+        // Fallback: send immediately if batcher not found (shouldn't happen)
+        recordSSEEvent("microbar");
+        bpc.write("microbar", {
+          symbol: data.symbol,
+          ts: data.ts,
+          ohlcv: {
+            open: data.open,
+            high: data.high,
+            low: data.low,
+            close: data.close,
+            volume: data.volume,
+          },
+        });
+      }
     };
 
     const barHandler = (data: BarData) => {
@@ -234,6 +256,9 @@ export async function sseMarketStream(req: Request, res: Response) {
     listeners.forEach(({ event, handler }) => {
       eventBus.off(event as any, handler);
     });
+    // [PHASE-5] Destroy all batchers on disconnect
+    batchers.forEach((batcher) => batcher.destroy());
+    batchers.clear();
     bpc.destroy();
     recordSSEDisconnection(userId);
   });

@@ -291,9 +291,41 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       });
     });
 
+    // [PHASE-5] Handle individual microbar (legacy)
     es.addEventListener("microbar", (e) => {
       const m = JSON.parse((e as MessageEvent).data) as Micro;
       listeners.microbar.forEach((fn) => fn(m));
+    });
+
+    // [PHASE-5] Handle microbar batch (unpack and emit individually)
+    es.addEventListener("microbar_batch", (e) => {
+      const batch = JSON.parse((e as MessageEvent).data) as {
+        microbars: Array<{
+          symbol: string;
+          ts: number;
+          open: number;
+          high: number;
+          low: number;
+          close: number;
+          volume: number;
+        }>;
+      };
+
+      // Unpack batch and emit as individual microbars
+      batch.microbars.forEach((mb) => {
+        const m: Micro = {
+          symbol: mb.symbol,
+          ts: mb.ts,
+          ohlcv: {
+            o: mb.open,
+            h: mb.high,
+            l: mb.low,
+            c: mb.close,
+            v: mb.volume,
+          },
+        };
+        listeners.microbar.forEach((fn) => fn(m));
+      });
     });
 
     es.addEventListener("tick", (e) => {

@@ -5,7 +5,7 @@
 
 const isDev = typeof process !== 'undefined' 
   ? process.env.NODE_ENV === 'development' 
-  : import.meta?.env?.DEV ?? false;
+  : false;
 
 /**
  * Histogram for tracking latency distributions

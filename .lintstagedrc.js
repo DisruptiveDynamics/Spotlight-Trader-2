@@ -1,5 +1,5 @@
 /** Lint-staged configuration for pre-commit hooks */
-export default {
+module.exports = {
   // TypeScript & JavaScript files
   "**/*.{ts,tsx,js,jsx,mjs,cjs}": ["eslint --fix --cache --max-warnings 0", "prettier --write"],
 

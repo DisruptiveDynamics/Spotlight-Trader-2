@@ -60,6 +60,15 @@ class PerformanceMetrics {
   private sseBatchSizeHistogram = new LatencyHistogram();
   private reconnectEventsTotal = 0;
   private barReconciledTotal = 0;
+  
+  // [PHASE-6] Voice metrics
+  private voiceSTTFirstPartialHistogram = new LatencyHistogram();
+  private voiceTTSFirstAudioHistogram = new LatencyHistogram();
+  private toolExecLatencyHistograms = new Map<string, LatencyHistogram>();
+  private voiceSessionReconnectsTotal = 0;
+  private ttsJitterDropTotal = 0;
+  private voiceToolViolationTotal = 0;
+  
   private enabled = isDev;
 
   /**
@@ -109,6 +118,63 @@ class PerformanceMetrics {
   }
 
   /**
+   * [PHASE-6] Record STT first partial latency
+   * @param latencyMs - Time from audio start to first partial transcript
+   */
+  recordVoiceSTTFirstPartial(latencyMs: number): void {
+    if (!this.enabled) return;
+    this.voiceSTTFirstPartialHistogram.record(latencyMs);
+  }
+
+  /**
+   * [PHASE-6] Record TTS first audio latency
+   * @param latencyMs - Time from response start to first audio chunk
+   */
+  recordVoiceTTSFirstAudio(latencyMs: number): void {
+    if (!this.enabled) return;
+    this.voiceTTSFirstAudioHistogram.record(latencyMs);
+  }
+
+  /**
+   * [PHASE-6] Record tool execution latency per tool
+   * @param toolName - Name of the tool
+   * @param latencyMs - Execution time in milliseconds
+   */
+  recordToolExecLatency(toolName: string, latencyMs: number): void {
+    if (!this.enabled) return;
+    
+    if (!this.toolExecLatencyHistograms.has(toolName)) {
+      this.toolExecLatencyHistograms.set(toolName, new LatencyHistogram());
+    }
+    
+    this.toolExecLatencyHistograms.get(toolName)!.record(latencyMs);
+  }
+
+  /**
+   * [PHASE-6] Increment voice session reconnects counter
+   */
+  recordVoiceSessionReconnect(): void {
+    if (!this.enabled) return;
+    this.voiceSessionReconnectsTotal++;
+  }
+
+  /**
+   * [PHASE-6] Increment TTS jitter buffer drop counter
+   */
+  recordTTSJitterDrop(): void {
+    if (!this.enabled) return;
+    this.ttsJitterDropTotal++;
+  }
+
+  /**
+   * [PHASE-6] Increment voice tool violation counter
+   */
+  recordVoiceToolViolation(): void {
+    if (!this.enabled) return;
+    this.voiceToolViolationTotal++;
+  }
+
+  /**
    * Get bar latency statistics
    */
   getBarLatencyStats() {
@@ -141,6 +207,64 @@ class PerformanceMetrics {
    */
   getBarReconciledTotal() {
     return this.barReconciledTotal;
+  }
+
+  /**
+   * [PHASE-6] Get voice STT first partial statistics
+   */
+  getVoiceSTTFirstPartialStats() {
+    return this.voiceSTTFirstPartialHistogram.getStats();
+  }
+
+  /**
+   * [PHASE-6] Get voice TTS first audio statistics
+   */
+  getVoiceTTSFirstAudioStats() {
+    return this.voiceTTSFirstAudioHistogram.getStats();
+  }
+
+  /**
+   * [PHASE-6] Get tool execution latency statistics for a specific tool
+   */
+  getToolExecLatencyStats(toolName: string) {
+    return this.toolExecLatencyHistograms.get(toolName)?.getStats() || null;
+  }
+
+  /**
+   * [PHASE-6] Get all tool execution latency statistics
+   */
+  getAllToolExecLatencyStats() {
+    const stats: Record<string, ReturnType<LatencyHistogram['getStats']>> = {};
+    
+    this.toolExecLatencyHistograms.forEach((histogram, toolName) => {
+      const toolStats = histogram.getStats();
+      if (toolStats) {
+        stats[toolName] = toolStats;
+      }
+    });
+    
+    return stats;
+  }
+
+  /**
+   * [PHASE-6] Get voice session reconnects total
+   */
+  getVoiceSessionReconnectsTotal() {
+    return this.voiceSessionReconnectsTotal;
+  }
+
+  /**
+   * [PHASE-6] Get TTS jitter drop total
+   */
+  getTTSJitterDropTotal() {
+    return this.ttsJitterDropTotal;
+  }
+
+  /**
+   * [PHASE-6] Get voice tool violation total
+   */
+  getVoiceToolViolationTotal() {
+    return this.voiceToolViolationTotal;
   }
 
   /**
@@ -206,6 +330,57 @@ class PerformanceMetrics {
       'Bars Reconciled': this.barReconciledTotal,
     });
 
+    // [PHASE-6] Voice metrics
+    const sttStats = this.getVoiceSTTFirstPartialStats();
+    const ttsStats = this.getVoiceTTSFirstAudioStats();
+    const toolStats = this.getAllToolExecLatencyStats();
+
+    if (sttStats || ttsStats || Object.keys(toolStats).length > 0) {
+      console.log('\n[PHASE-6] Voice Assistant Metrics:');
+      
+      if (sttStats) {
+        console.log('STT First Partial (speech → text):');
+        console.table({
+          Count: sttStats.count,
+          'P50 (ms)': sttStats.p50.toFixed(0),
+          'P95 (ms)': sttStats.p95.toFixed(0),
+          'P99 (ms)': sttStats.p99.toFixed(0),
+        });
+      }
+
+      if (ttsStats) {
+        console.log('TTS First Audio (response → audio):');
+        console.table({
+          Count: ttsStats.count,
+          'P50 (ms)': ttsStats.p50.toFixed(0),
+          'P95 (ms)': ttsStats.p95.toFixed(0),
+          'P99 (ms)': ttsStats.p99.toFixed(0),
+        });
+      }
+
+      if (Object.keys(toolStats).length > 0) {
+        console.log('Tool Execution Latency:');
+        Object.entries(toolStats).forEach(([toolName, stats]) => {
+          if (stats) {
+            console.log(`  ${toolName}:`);
+            console.table({
+              Count: stats.count,
+              'P50 (ms)': stats.p50.toFixed(0),
+              'P95 (ms)': stats.p95.toFixed(0),
+              'P99 (ms)': stats.p99.toFixed(0),
+            });
+          }
+        });
+      }
+
+      console.log('Voice Session Health:');
+      console.table({
+        'Session Reconnects': this.voiceSessionReconnectsTotal,
+        'TTS Jitter Drops': this.ttsJitterDropTotal,
+        'Tool Violations': this.voiceToolViolationTotal,
+      });
+    }
+
     console.groupEnd();
   }
 
@@ -218,6 +393,14 @@ class PerformanceMetrics {
     this.sseBatchSizeHistogram.clear();
     this.reconnectEventsTotal = 0;
     this.barReconciledTotal = 0;
+    
+    // [PHASE-6] Clear voice metrics
+    this.voiceSTTFirstPartialHistogram.clear();
+    this.voiceTTSFirstAudioHistogram.clear();
+    this.toolExecLatencyHistograms.clear();
+    this.voiceSessionReconnectsTotal = 0;
+    this.ttsJitterDropTotal = 0;
+    this.voiceToolViolationTotal = 0;
   }
 
   /**

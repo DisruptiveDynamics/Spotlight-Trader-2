@@ -1,0 +1,280 @@
+You are a senior full-stack engineer auditing the Spotlight Trader repo. Apply the following performance + reliability changes. Make minimal, targeted diffs, keep TypeScript strict, and provide a final summary of changed files.
+
+GOAL
+
+Fix “Waiting for data” and slow startup by:
+
+Reducing oversized history fetch on startup (60 days → ~300 bars)
+
+Streaming initial data (SSE connects instantly, no blocking)
+
+Making voice tools resilient when buffers are cold
+
+Consolidating duplicate buffers and capping memory
+
+Adding DB indexes for hot queries
+
+Enabling gzip compression
+
+Cleaning up ports to avoid conflicts
+
+ENV VARS
+
+Create/update .env.example and .env with:
+
+HISTORY_INIT_LIMIT=300
+HISTORY_INIT_TIMEFRAME=1m
+TOOL_TIMEOUT_MS=1500
+VITE_PORT=5173
+API_PORT=4000
+
+1) History cold-start: shrink initial fetch
+
+File: apps/server/src/history/service.ts (or nearest equivalent)
+
+Replace any “daysBack/since=60 days” logic with limit-only fetch controlled by env vars.
+
+Implement:
+
+const INIT_LIMIT = Number(process.env.HISTORY_INIT_LIMIT ?? 300);
+const INIT_TIMEFRAME = process.env.HISTORY_INIT_TIMEFRAME ?? '1m';
+
+export async function getInitialHistory(symbol: string) {
+  return fetchHistory({
+    symbol,
+    timeframe: INIT_TIMEFRAME,
+    limit: String(INIT_LIMIT), // do not pass a huge 'since'
+  });
+}
+
+
+Remove/disable any default limit: '50000' or daysBack = 60 paths executed on startup.
+
+2) Lazy load older history (page-back API)
+
+File: apps/server/src/history/router.ts (create if missing)
+
+Add paged endpoint that loads older bars only when requested by the UI:
+
+import { Router } from 'express';
+import { z } from 'zod';
+import { fetchHistoryPaged } from '../providers/history'; // adapt import
+export const historyRouter = Router();
+
+const Q = z.object({
+  symbol: z.string(),
+  timeframe: z.string().default('1m'),
+  before: z.coerce.number().optional(),     // unix ms of oldest bar currently on client
+  pageSize: z.coerce.number().min(100).max(1000).default(500),
+});
+
+historyRouter.get('/history', async (req, res) => {
+  const { symbol, timeframe, before, pageSize } = Q.parse(req.query);
+  const data = await fetchHistoryPaged({ symbol, timeframe, before, limit: String(pageSize) });
+  res.json(data);
+});
+
+
+Wire this router in the server index (see step 6).
+
+Client note (for later): On chart scroll-back, call /history?symbol=...&timeframe=1m&before=<oldestTs>&pageSize=500 and append.
+
+3) SSE should connect immediately (no waiting on history)
+
+File: apps/server/src/realtime/sse.ts (or wherever SSE stream lives)
+
+Ensure SSE writes a bootstrap event immediately on connect, then streams seed data asynchronously:
+
+res.setHeader('Content-Type', 'text/event-stream');
+res.setHeader('Cache-Control', 'no-cache');
+res.flushHeaders();
+
+res.write(`event: bootstrap\ndata: ${JSON.stringify({ now: Date.now(), warm: true })}\n\n`);
+
+const seedP = getInitialHistory(defaultSymbol).catch(() => null);
+seedP.then(seed => {
+  if (seed) res.write(`event: seed\ndata: ${JSON.stringify(seed)}\n\n`);
+});
+
+
+Do not await heavy history inside the connect handler.
+
+4) Single capped ring buffer per (symbol,timeframe)
+
+File: apps/server/src/market/buffer.ts (create if missing)
+
+Replace duplicate stores (e.g., ringBuffer + bars1m) with one source of truth:
+
+export type Bar = { t:number,o:number,h:number,l:number,c:number,v?:number, seq?:number };
+
+class Ring {
+  private buf: Bar[] = [];
+  constructor(private cap = 5000) {}
+  push(b: Bar) {
+    this.buf.push(b);
+    if (this.buf.length > this.cap) this.buf.splice(0, this.buf.length - this.cap);
+  }
+  latest(n=300) { return this.buf.slice(-n); }
+  oldestTs() { return this.buf[0]?.t ?? null; }
+}
+
+const keyFor = (symbol: string, tf: string) => `${symbol}:${tf}`;
+export const buffers = new Map<string, Ring>();
+
+export function getBuffer(symbol: string, tf: string, cap = 5000) {
+  const k = keyFor(symbol, tf);
+  if (!buffers.has(k)) buffers.set(k, new Ring(cap));
+  return buffers.get(k)!;
+}
+
+
+Update all consumers to use getBuffer(symbol, timeframe).latest(…) and remove older parallel arrays/buffers.
+
+5) Voice tools: handle cold buffers + longer timeout + real logs
+
+Files:
+
+apps/server/src/coach/tools/* (e.g., getSnapshot.ts)
+
+apps/server/src/coach/voiceProxy.ts (or equivalent)
+
+Changes:
+
+If buffer is empty, return a graceful stale payload, not an error:
+
+const buf = getBuffer(symbol, timeframe);
+const bars = buf.latest(300);
+if (!bars.length) {
+  return { stale: true, reason: 'empty_buffer', snapshot: null };
+}
+
+
+Bump tool timeout to env-driven default:
+
+const TOOL_TIMEOUT_MS = Number(process.env.TOOL_TIMEOUT_MS ?? 1500);
+
+
+Log real errors (no swallowed {}):
+
+catch (err) {
+  console.error('[ToolError]', {
+    tool: 'getSnapshot',
+    message: (err as any)?.message,
+    stack: (err as any)?.stack
+  });
+  throw err;
+}
+
+6) Overnight/mock mode: light warmup only
+
+File: apps/server/src/market/scheduler.ts (or wherever market status is checked)
+
+If market is closed, don’t trigger huge fetches. Prime a small window and mark status:
+
+if (!isMarketOpenOrExtendedHours(nowET())) {
+  const latest = await getInitialHistory(symbol); // small INIT_LIMIT window
+  const buf = getBuffer(symbol, '1m');
+  latest?.forEach(b => buf.push(b));
+  setMarketStatus('closed'); // client can render "Using last snapshot"
+  return;
+}
+
+7) DB indexes on hot paths (Prisma)
+
+File: packages/db/prisma/schema.prisma (adjust to your schema names)
+
+Add indexes to frequently filtered fields:
+
+model JournalEvent {
+  id      String   @id @default(cuid())
+  userId  String   @index
+  ts      DateTime @index
+  // ...
+}
+
+model Rule {
+  id          String   @id @default(cuid())
+  ownerUserId String   @index
+  // ...
+}
+
+model Signal {
+  id      String   @id @default(cuid())
+  userId  String   @index
+  ts      DateTime @index
+  // ...
+}
+
+
+Then run migrations.
+
+8) Gzip compression for HTTP/SSE
+
+File: apps/server/src/index.ts
+
+import compression from 'compression';
+app.use(compression());
+
+9) Dev ports + scripts (avoid 5000 conflict)
+
+Files: root package.json, apps/web and apps/server dev scripts
+
+Ensure Vite on 5173, API on 4000. Example root script:
+
+{
+  "scripts": {
+    "dev": "concurrently -n web,api \"pnpm --filter @app/web dev -- --port 5173\" \"pnpm --filter @app/api dev -- --port 4000\"",
+    "db:gen": "prisma generate -w",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "ts-node packages/db/seed.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc -b --pretty false"
+  }
+}
+
+10) Seed & startup
+
+Ensure seed creates:
+
+A symbol or two with a handful of bars
+
+Minimal users/roles so UI loads
+
+Don’t seed tens of thousands of bars.
+
+11) Acceptance tests (must pass)
+
+App loads to dashboard < 3s; SSE bootstrap event arrives immediately.
+
+Initial seed of ~300 1-minute bars streams within 1–2s; UI renders without blocking.
+
+Scrolling back triggers /history?...before=...&pageSize=500 and appends.
+
+With market closed, voice tools return { stale: true } instead of errors/timeouts.
+
+Memory stays stable with single 5k ring per (symbol, timeframe).
+
+No port 5000 collisions; web=5173, api=4000.
+
+Tool logs show real error messages and stacks when exceptions happen.
+
+Commands to run (agent can execute or list for me)
+pnpm install
+pnpm -w prisma generate
+pnpm -w prisma migrate dev -n "perf_hotpath_indexes"
+pnpm -w prisma db seed
+pnpm dev
+
+Deliverables
+
+List of changed files with brief diffs summary.
+
+Notes on any deprecated code removed (duplicate buffers, 60-day fetch).
+
+Confirmation that acceptance tests pass locally (timestamps + screenshots or log snippets OK).
+
+Do not introduce breaking refactors—apply the smallest set of changes to achieve the goals above. If a file path differs, adapt without changing behavior or public APIs.
+
+⬆️ END OF PROMPT
+
+If anything in the repo blocks these changes (e.g., different file names or frameworks), adapt paths but keep the intent and acceptance tests exactly the same.

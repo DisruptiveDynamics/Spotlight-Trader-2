@@ -8,15 +8,21 @@ const env = validateEnv(process.env);
 const allowedOrigins = new Set([env.APP_ORIGIN, env.ADMIN_ORIGIN].filter(Boolean));
 
 export function setupSecurity(app: Express) {
+  const isUnifiedDev = process.env.UNIFIED_DEV === "1";
+  
   app.use(
     helmet({
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          connectSrc: ["'self'", ...Array.from(allowedOrigins)],
+          connectSrc: [
+            "'self'", 
+            ...Array.from(allowedOrigins),
+            ...(isUnifiedDev ? ["ws:", "wss:", "http:", "https:"] : []),
+          ],
           frameSrc: ["'none'"],
           imgSrc: ["'self'", "data:", "https:"],
-          scriptSrc: ["'self'"],
+          scriptSrc: ["'self'", ...(isUnifiedDev ? ["'unsafe-inline'"] : [])],
           styleSrc: ["'self'", "'unsafe-inline'"],
         },
       },
@@ -35,6 +41,11 @@ export function setupSecurity(app: Express) {
         }
         const isReplitDev = process.env.REPL_ID && origin.endsWith(".replit.dev");
         if (isReplitDev) {
+          return callback(null, true);
+        }
+        const isUnifiedDev = process.env.UNIFIED_DEV === "1" && 
+          (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:"));
+        if (isUnifiedDev) {
           return callback(null, true);
         }
         return callback(new Error(`Origin ${origin} not allowed by CORS`));

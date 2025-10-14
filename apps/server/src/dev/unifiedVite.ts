@@ -17,25 +17,52 @@ export async function attachViteMiddleware(app: Application, server: Server) {
   console.log("🔧 Starting Vite in middleware mode...");
   console.log(`   Client root: ${clientRoot}`);
 
+  // In Replit, detect if we're running behind the HTTPS proxy
+  const isReplitEnv = Boolean(process.env.REPL_SLUG);
+  
   // Create Vite dev server in middleware mode
   const vite = await createViteServer({
     root: clientRoot,
     server: {
       middlewareMode: true,
-      hmr: { server },
+      hmr: isReplitEnv 
+        ? {
+            // Replit environment: let HMR connect via the proxy domain
+            protocol: "wss",
+            port: 443,
+          }
+        : {
+            // Local environment: use the HTTP server directly
+            server,
+          },
     },
     appType: "spa",
   });
 
-  // Use Vite's middleware for asset transformation
-  app.use(vite.middlewares);
+  // Use Vite's middleware for asset transformation ONLY
+  // (do not use vite.middlewares directly as it includes catch-all)
+  app.use((req, res, next) => {
+    // Only apply Vite transformations to client assets, not API routes
+    if (req.url.startsWith("/api") || 
+        req.url.startsWith("/ws") || 
+        req.url.startsWith("/stream") || 
+        req.url.startsWith("/health") ||
+        req.url.startsWith("/realtime")) {
+      return next();
+    }
+    return vite.middlewares(req, res, next);
+  });
 
-  // SPA fallback: serve index.html for non-API, non-WS routes
+  // SPA fallback: serve index.html for client routes ONLY (after all API routes)
   app.get("*", async (req, res, next) => {
     const url = req.originalUrl;
 
-    // Skip API and WebSocket routes
-    if (url.startsWith("/api") || url.startsWith("/ws") || url.startsWith("/stream") || url.startsWith("/health")) {
+    // Skip ALL API-related routes - let them 404 properly
+    if (url.startsWith("/api") || 
+        url.startsWith("/ws") || 
+        url.startsWith("/stream") || 
+        url.startsWith("/health") ||
+        url.startsWith("/realtime")) {
       return next();
     }
 

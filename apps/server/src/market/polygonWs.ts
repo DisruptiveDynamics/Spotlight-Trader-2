@@ -25,7 +25,9 @@ export class PolygonWebSocket {
       const extendedHoursActive = isExtendedHoursActive();
 
       if (!extendedHoursActive) {
-        console.log(`🌙 Outside extended hours (4 AM-8 PM ET) - WebSocket unavailable, using REST API + mock ticks`);
+        console.log(
+          `🌙 Outside extended hours (4 AM-8 PM ET) - WebSocket unavailable, using REST API + mock ticks`,
+        );
         this.useMockData = false; // Don't block REST API - just means we need mock ticks
         this.useWebSocket = false;
         this.isConnected = true;
@@ -53,7 +55,7 @@ export class PolygonWebSocket {
 
           // Stop mock generators when switching to real WebSocket data
           if (this.useWebSocket) {
-            this.subscribedSymbols.forEach(symbol => {
+            this.subscribedSymbols.forEach((symbol) => {
               mockTickGenerator.stop(symbol);
             });
           }
@@ -97,29 +99,30 @@ export class PolygonWebSocket {
   private handleMessage(msg: any) {
     if (msg.ev === "status") {
       console.log("Polygon status:", msg.message);
-      
+
       // Detect TRUE authentication failures only (not benign errors)
-      const authFailed = msg.status === "auth_failed" || 
-                        (msg.status === "error" && msg.message && (
-                          msg.message.toLowerCase().includes("authentication") ||
-                          msg.message.toLowerCase().includes("unauthorized") ||
-                          msg.message.toLowerCase().includes("invalid api key")
-                        ));
-      
+      const authFailed =
+        msg.status === "auth_failed" ||
+        (msg.status === "error" &&
+          msg.message &&
+          (msg.message.toLowerCase().includes("authentication") ||
+            msg.message.toLowerCase().includes("unauthorized") ||
+            msg.message.toLowerCase().includes("invalid api key")));
+
       if (authFailed) {
         console.error("❌ Polygon authentication failed - falling back to mock data");
         this.useMockData = true;
         this.useWebSocket = false;
         this.isConnected = false;
-        
+
         // Close WebSocket and start mock generators
         if (this.ws) {
           (this.ws as any).close();
           this.ws = null;
         }
-        
+
         // Start mock generators for all subscribed symbols
-        this.subscribedSymbols.forEach(symbol => {
+        this.subscribedSymbols.forEach((symbol) => {
           mockTickGenerator.start(symbol);
         });
       }

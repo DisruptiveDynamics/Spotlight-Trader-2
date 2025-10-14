@@ -131,16 +131,19 @@ export class RealtimeVoiceClient {
         let result: any;
         try {
           console.log(`[RealtimeVoiceClient] Executing tool via bridge: ${call.name}`, args);
-          
+
           // Smart timeout: 1200ms for micro-tools, 2000ms for snapshot/analysis
           const isMicroTool = call.name.startsWith("get_last_");
           const timeoutMs = isMicroTool ? 1200 : 2000;
-          
+
           const bridgeResult = await this.toolBridge.exec(call.name, args, timeoutMs);
 
           if (bridgeResult.ok) {
             result = bridgeResult.output;
-            console.log(`[RealtimeVoiceClient] Tool ${call.name} succeeded in ${bridgeResult.latency_ms}ms:`, result);
+            console.log(
+              `[RealtimeVoiceClient] Tool ${call.name} succeeded in ${bridgeResult.latency_ms}ms:`,
+              result,
+            );
           } else {
             result = { error: bridgeResult.error || "Tool execution failed" };
             console.error(`[RealtimeVoiceClient] Tool ${call.name} failed:`, bridgeResult.error);

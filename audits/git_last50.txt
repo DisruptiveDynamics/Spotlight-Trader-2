@@ -1,3 +1,4 @@
+8ba339c Improve application stability and data accuracy for trading
 8231a9d Update market status to reflect current trading hours accurately
 0ed8546 Improve market data accuracy and display by filtering invalid entries
 f7feeae Update user profile information and settings on the platform
@@ -47,4 +48,3 @@ affd60b Expand real-time data access and fix mock data issues
 c24d54e Extend market hours check to include pre-market and after-hours trading
 0850fee Fix mock data pricing and ensure accurate historical data
 c84c2ad Add a way to view and manage user chat history
-cf67de7 Remove unused price debugging endpoints and related imports

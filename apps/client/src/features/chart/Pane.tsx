@@ -232,11 +232,7 @@ export function Pane({ className = "" }: PaneProps) {
         if (seriesRef.current) {
           if (chartStyle === "line") {
             const lineData = history
-              .filter((bar) => 
-                bar.time != null && 
-                bar.close != null && 
-                !isNaN(bar.close)
-              )
+              .filter((bar) => bar.time != null && bar.close != null && !isNaN(bar.close))
               .map((bar) => ({
                 time: bar.time as UTCTimestamp,
                 value: bar.close,
@@ -244,16 +240,17 @@ export function Pane({ className = "" }: PaneProps) {
             seriesRef.current.setData(lineData);
           } else {
             const ohlcData = history
-              .filter((bar) => 
-                bar.time != null && 
-                bar.open != null && 
-                bar.high != null && 
-                bar.low != null && 
-                bar.close != null &&
-                !isNaN(bar.open) &&
-                !isNaN(bar.high) &&
-                !isNaN(bar.low) &&
-                !isNaN(bar.close)
+              .filter(
+                (bar) =>
+                  bar.time != null &&
+                  bar.open != null &&
+                  bar.high != null &&
+                  bar.low != null &&
+                  bar.close != null &&
+                  !isNaN(bar.open) &&
+                  !isNaN(bar.high) &&
+                  !isNaN(bar.low) &&
+                  !isNaN(bar.close),
               )
               .map((bar) => ({
                 time: bar.time as UTCTimestamp,
@@ -269,11 +266,9 @@ export function Pane({ className = "" }: PaneProps) {
         // Update volume
         if (volumeSeriesRef.current) {
           const volumeData = history
-            .filter((bar) => 
-              bar.time != null && 
-              bar.volume != null && 
-              bar.close != null &&
-              !isNaN(bar.volume)
+            .filter(
+              (bar) =>
+                bar.time != null && bar.volume != null && bar.close != null && !isNaN(bar.volume),
             )
             .map((bar) => ({
               time: bar.time as UTCTimestamp,
@@ -315,12 +310,12 @@ export function Pane({ className = "" }: PaneProps) {
       if (!seriesRef.current || !volumeSeriesRef.current) return;
 
       const time = Math.floor(bar.bar_end / 1000) as UTCTimestamp;
-      
+
       // Validate OHLC data before updating
       if (
-        bar.ohlcv.o != null && 
-        bar.ohlcv.h != null && 
-        bar.ohlcv.l != null && 
+        bar.ohlcv.o != null &&
+        bar.ohlcv.h != null &&
+        bar.ohlcv.l != null &&
         bar.ohlcv.c != null &&
         !isNaN(bar.ohlcv.o) &&
         !isNaN(bar.ohlcv.h) &&
@@ -382,9 +377,9 @@ export function Pane({ className = "" }: PaneProps) {
       // Only update if microbar belongs to current minute
       if (microMinute === currentMinuteRef.current && currentBarTimeRef.current > 0) {
         if (
-          micro.ohlcv.o != null && 
-          micro.ohlcv.h != null && 
-          micro.ohlcv.l != null && 
+          micro.ohlcv.o != null &&
+          micro.ohlcv.h != null &&
+          micro.ohlcv.l != null &&
           micro.ohlcv.c != null &&
           !isNaN(micro.ohlcv.o) &&
           !isNaN(micro.ohlcv.h) &&

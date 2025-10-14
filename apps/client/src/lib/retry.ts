@@ -5,16 +5,8 @@ export interface RetryOptions {
   onRetry?: (attempt: number, error: any) => void;
 }
 
-export async function retry<T>(
-  fn: () => Promise<T>,
-  options: RetryOptions = {}
-): Promise<T> {
-  const {
-    maxAttempts = 5,
-    baseDelayMs = 300,
-    maxDelayMs = 5000,
-    onRetry,
-  } = options;
+export async function retry<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
+  const { maxAttempts = 5, baseDelayMs = 300, maxDelayMs = 5000, onRetry } = options;
 
   let lastError: any;
 
@@ -45,7 +37,7 @@ export async function retry<T>(
 export async function fetchWithRetry<T = any>(
   url: string,
   init?: RequestInit,
-  retryOptions?: RetryOptions
+  retryOptions?: RetryOptions,
 ): Promise<T> {
   return retry(async () => {
     const response = await fetch(url, init);

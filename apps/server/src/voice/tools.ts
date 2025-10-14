@@ -139,9 +139,12 @@ export const voiceTools = {
     const { symbol, period } = z
       .object({
         symbol: symbolSchema,
-        period: z.number().int().refine((p) => [9, 21, 50, 200].includes(p), {
-          message: "EMA period must be 9, 21, 50, or 200",
-        }),
+        period: z
+          .number()
+          .int()
+          .refine((p) => [9, 21, 50, 200].includes(p), {
+            message: "EMA period must be 9, 21, 50, or 200",
+          }),
       })
       .parse(input);
 

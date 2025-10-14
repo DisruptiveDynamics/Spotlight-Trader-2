@@ -62,12 +62,12 @@ export const ToolHandlers = {
    */
   async getChart(args: GetChartParams) {
     const { symbol, timeframe, limit = 300 } = args;
-    
+
     // [FIX] Wire to real market data from ring buffer
     const recentBars = ringBuffer.getRecent(symbol.toUpperCase(), limit);
-    
+
     // Transform to expected format (CachedBar uses flat properties, not nested ohlcv)
-    const bars = recentBars.map(bar => ({
+    const bars = recentBars.map((bar) => ({
       t: bar.bar_start,
       o: bar.open,
       h: bar.high,
@@ -75,7 +75,7 @@ export const ToolHandlers = {
       c: bar.close,
       v: bar.volume,
     }));
-    
+
     return {
       symbol: symbol.toUpperCase(),
       timeframe,
@@ -104,7 +104,7 @@ export const ToolHandlers = {
     // [FIX] Connect to actual market service
     const source = getMarketSource();
     const reason = getMarketReason();
-    
+
     // Determine status based on market source (MarketSource = "polygon" | "sim")
     let status: "open" | "closed" | "unknown" = "unknown";
     if (source === "polygon") {
@@ -112,7 +112,7 @@ export const ToolHandlers = {
     } else if (source === "sim") {
       status = reason.includes("overnight") ? "closed" : "unknown";
     }
-    
+
     return {
       status,
       latency: { rtt: null, sseReconnects: null },

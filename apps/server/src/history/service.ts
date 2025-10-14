@@ -89,7 +89,7 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
 
   // Priority 3: Fetch from Polygon REST API (skip if using mock data)
   const isUsingMockData = polygonWs.isUsingMockData();
-  
+
   if (!isUsingMockData) {
     const polygonBars = await fetchPolygonHistory(symbol, timeframe, limit, before);
     if (polygonBars.length > 0) {
@@ -97,7 +97,9 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
       return polygonBars;
     }
   } else {
-    console.log(`🎭 Skipping Polygon API (mock mode active) - generating realistic bars for ${symbol}`);
+    console.log(
+      `🎭 Skipping Polygon API (mock mode active) - generating realistic bars for ${symbol}`,
+    );
   }
 
   // Priority 4: Use ring buffer even if sparse

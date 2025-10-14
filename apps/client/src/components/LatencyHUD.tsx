@@ -21,7 +21,7 @@ export function LatencyHUD() {
     sseReconnects: 0,
     marketStatus: "CLOSED",
   });
-  
+
   const [toolMetrics, setToolMetrics] = useState<Record<string, ToolMetrics>>({});
 
   useEffect(() => {

@@ -15,7 +15,7 @@ export const envSchema = z.object({
   SESSION_TTL: z.string().default("604800"), // 7 days in seconds
   MAGIC_TTL: z.string().default("900"), // 15 minutes in seconds
   RESEND_API_KEY: z.string().optional(),
-  
+
   // Performance tuning
   HISTORY_INIT_LIMIT: z.coerce.number().min(50).max(1000).default(300),
   HISTORY_INIT_TIMEFRAME: z.enum(["1m", "2m", "5m", "15m", "30m", "1h"]).default("1m"),

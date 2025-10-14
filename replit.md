@@ -11,6 +11,7 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### October 14, 2025 - Resilience & Observability Improvements
+
 - **Networking Fix**: Updated Vite proxy to use `0.0.0.0:8080` instead of `localhost:8080` for Replit cloud compatibility
 - **Demo Login Hardening**: Added exponential backoff retry logic (3 attempts, 1s → 2s → 4s delays) with user feedback during retries
 - **Health Endpoints**: Added `/api/livez`, `/api/readyz`, `/api/healthz` for debugging and monitoring
@@ -20,58 +21,74 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Monorepo Structure
+
 The application uses a TypeScript monorepo with pnpm workspaces, including `apps/client` (React 18, Vite, Tailwind CSS), `apps/server` (Node.js 20 Express), `packages/shared`, and `packages/config`.
 
 ### Real-Time Data Pipeline
+
 A deterministic, lossless data pipeline handles live market data, including DST-safe exchange timezone management. It integrates Polygon REST API for historical data, tick-by-tick streaming, and 50ms microbars. Server-Sent Events (SSE) are used for streaming market data and trading alerts with lossless resume capabilities. The system supports 24/7 real Polygon data with extended hours and overnight REST API fallback. It uses a server-authoritative timeframe system with multi-timeframe rollups, driven by a 1-minute authoritative buffer.
 
 ### Communication Protocols
+
 - **Server-Sent Events (SSE)**: For streaming market data (1-minute bars, microbars, trading alerts) with lossless resume.
 - **WebRTC (via OpenAI Agents SDK)**: Handles browser-to-OpenAI audio streaming for the voice coach, secured with ephemeral client tokens and authenticated user sessions.
 
 ### Data Storage Strategy
+
 - **Neon PostgreSQL with Drizzle ORM**: Stores versioned trading rules, user customizations, signals, and journal entries. Pgvector is planned for semantic memory.
 - **Redis (Upstash)**: Planned for session management, rate limiting, and distributed ring buffer persistence.
 - **In-Memory Structures**: Used for ring buffer and bar builder state for sub-millisecond latency.
 
 ### Security Model
+
 Includes Helmet.js, strict CORS allowlisting, short-lived JWTs, connection limits, Zod for environment validation, and cookie-based authentication with httpOnly session cookies.
 
 ### Frontend Architecture
+
 Built with React 18 and TypeScript, using Lightweight Charts, Zustand for state management, and Tailwind CSS. Features a professional charting system, a TOS-style toolbar, and a Pane component for multi-chart grids.
 
 ### Rules Engine Architecture
+
 Facilitates strategy automation and AI explanations through Expression Evaluation, Signal Generation with Risk Governance, and AI Explanation Generation using the OpenAI API.
 
 ### Journaling & Memory System
+
 Provides structured trade tracking and automated end-of-day summaries. The Coach Memory System uses Pgvector to store and retrieve `playbook`, `glossary`, `postmortem`, and `knowledge` memories with OpenAI embeddings. Nexa 2.0 introduces a knowledge upload pipeline for ingesting YouTube videos, PDFs, and text notes with semantic chunking and OpenAI embeddings, and integrates these memories into session context.
 
 ### Continuous Learning Loop & Backtesting
+
 An event-driven system with in-memory feature flags and a database schema for user feedback. A deterministic backtest harness runs historical data against the same evaluator as live trading.
 
 ### Voice Presence Control System
+
 A voice interface with modern animations, robust audio handling, and personalization. Includes core audio infrastructure, UI components, performance optimizations, a Voice Tools Registry (7 tools), Function Call Routing to Copilot tool handlers, Callout Streaming, and Tool-Powered Responses for real-time coaching. The coach has a persistent identity ("Nexa", she/her pronouns, warm personality).
 
 ### Trader UX Pack
+
 Focuses on professional ergonomics including: Hotkey System, Focus Modes (`Trade Mode`, `Review Mode`, `Normal Mode`), Signal Density Control, Anchored VWAP, Latency & Health HUD, Tape Peek, Accessibility features, and Performance Safeguards.
 
 ### Realtime Copilot System
+
 An intelligent trading assistant providing real-time pattern recognition, proactive alerts, and trade assistance. Built on a deterministic event-driven architecture with SSE streaming for sub-200ms latency. Core components include a Telemetry Bus, a 10-tool Tool Registry, Copilot Broadcaster, Rules Sentinel for risk governance, and Pattern Memory. It features an event-driven Trigger System and UI components for `CalloutsOverlay`.
 
 ### AI Intelligence & Proactive Coaching
+
 Enhanced AI coach with unrestricted tool usage, memory integration, trader behavior analysis, and proactive market monitoring. Coach Policy enhancements ensure real-time data access, mandatory tool calls, and ultra-brief responses. A Voice Memory Bridge captures insights, and a Trader Pattern Detector analyzes journal history. The Proactive Coaching Engine monitors for market alerts, feeding into tool-powered voice responses. The voice model was upgraded to `gpt-realtime`.
 
 ## External Dependencies
 
 ### Third-Party APIs
+
 - **Polygon.io**: WebSocket for real-time market data and REST API for historical data.
 - **OpenAI Realtime API**: WebRTC-based voice interface for the AI coach.
 
 ### Infrastructure Services
+
 - **Neon (PostgreSQL)**: Serverless PostgreSQL database.
 - **Upstash (Redis)**: Optional serverless Redis for caching and sessions.
 
 ### Key Libraries
+
 - **Data Processing**: `@polygon.io/client-js`, `drizzle-orm`, `zod`, `date-fns-tz`.
 - **Communication**: `@openai/agents`, `ws`, `express`.
 - **Frontend**: `react`, `react-dom`, `lightweight-charts`, `tailwindcss`.

@@ -3,13 +3,16 @@ export class ToolBridge {
   private inflightRequests = new Map<string, (result: any) => void>();
   private backoffMs = 250;
   private reconnectTimer: number | undefined;
-  
+
   // [RESILIENCE] Circuit breaker state per tool
-  private circuitState = new Map<string, {
-    failures: number;
-    openUntil: number | null;
-  }>();
-  
+  private circuitState = new Map<
+    string,
+    {
+      failures: number;
+      openUntil: number | null;
+    }
+  >();
+
   // [RESILIENCE] Cache for last successful result per tool
   private cache = new Map<string, { output: any; ts: number }>();
 
@@ -143,12 +146,19 @@ export class ToolBridge {
       retries?: number;
       backoffBaseMs?: number;
     } = {},
-  ): Promise<{ ok: boolean; output?: T; error?: string; latency_ms?: number; cached?: boolean; corrId?: string }> {
+  ): Promise<{
+    ok: boolean;
+    output?: T;
+    error?: string;
+    latency_ms?: number;
+    cached?: boolean;
+    corrId?: string;
+  }> {
     const { timeoutMs = 1500, retries = 2, backoffBaseMs = 200 } = options;
-    
+
     // [OBS] Generate correlation ID for end-to-end tracing
     const corrId = Math.random().toString(36).slice(2, 11) + Date.now().toString(36);
-    
+
     // Check circuit breaker
     const circuit = this.circuitState.get(name);
     if (circuit?.openUntil && Date.now() < circuit.openUntil) {
@@ -166,39 +176,39 @@ export class ToolBridge {
       }
       return { ok: false, error: "Circuit breaker open, no cached value available", corrId };
     }
-    
+
     // Attempt execution with retries
     for (let attempt = 0; attempt <= retries; attempt++) {
       const result = await this.exec<T>(name, args, timeoutMs, corrId); // [OBS] Pass corrId
-      
+
       if (result.ok) {
         // Success - reset circuit and cache result
         this.circuitState.set(name, { failures: 0, openUntil: null });
         this.cache.set(name, { output: result.output, ts: Date.now() });
         return result;
       }
-      
+
       // Failure - check if we should retry
       if (attempt < retries) {
         // Add jittered backoff before retry
         const jitter = Math.random() * backoffBaseMs;
         const delay = backoffBaseMs * Math.pow(2, attempt) + jitter;
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
       }
-      
+
       // Final failure - update circuit breaker
       const state = this.circuitState.get(name) || { failures: 0, openUntil: null };
       state.failures++;
-      
+
       if (state.failures >= 5) {
         // Open circuit for 20 seconds
         state.openUntil = Date.now() + 20000;
         console.warn(`[ToolBridge] Circuit opened for ${name} after ${state.failures} failures`);
       }
-      
+
       this.circuitState.set(name, state);
-      
+
       // Return cached value if available
       const cached = this.cache.get(name);
       if (cached) {
@@ -211,10 +221,10 @@ export class ToolBridge {
           corrId,
         };
       }
-      
+
       return { ...result, corrId }; // [OBS] Include corrId in final result
     }
-    
+
     // Should never reach here
     return { ok: false, error: "Unexpected retry loop exit" };
   }

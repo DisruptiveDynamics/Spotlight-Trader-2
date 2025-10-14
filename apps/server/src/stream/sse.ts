@@ -73,7 +73,7 @@ export async function sseMarketStream(req: Request, res: Response) {
         } catch (err) {
           console.error(`Failed to fetch backfill for ${symbol}:`, err);
         }
-      })
+      }),
     ).catch((err) => {
       console.error("Backfill error:", err);
     });
@@ -100,7 +100,7 @@ export async function sseMarketStream(req: Request, res: Response) {
         } catch (err) {
           console.error(`Failed to fetch seed for ${symbol}:`, err);
         }
-      })
+      }),
     ).catch((err) => {
       console.error("Seed fetch error:", err);
     });

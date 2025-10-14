@@ -56,11 +56,9 @@ export function SignIn({ sessionExpired = false }: SignInProps) {
           maxAttempts: 8,
           baseDelayMs: 500,
           onRetry: (attempt) => {
-            setRetryStatus(
-              `Server waking up... retrying (${attempt}/8)`
-            );
+            setRetryStatus(`Server waking up... retrying (${attempt}/8)`);
           },
-        }
+        },
       );
 
       console.log("Demo response data:", data);

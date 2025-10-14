@@ -16,8 +16,22 @@ type ToolExecRequest = {
 };
 
 type ToolExecResponse =
-  | { type: "tool.result"; id: string; ok: true; output: unknown; latency_ms: number; corrId: string }
-  | { type: "tool.result"; id: string; ok: false; error: string; latency_ms: number; corrId: string };
+  | {
+      type: "tool.result";
+      id: string;
+      ok: true;
+      output: unknown;
+      latency_ms: number;
+      corrId: string;
+    }
+  | {
+      type: "tool.result";
+      id: string;
+      ok: false;
+      error: string;
+      latency_ms: number;
+      corrId: string;
+    };
 
 export function setupToolsBridge(httpServer: Server) {
   const wss = new WebSocketServer({ noServer: true });
@@ -57,7 +71,7 @@ export function setupToolsBridge(httpServer: Server) {
 
       // [OBS] Generate or use provided correlation ID for tracing
       const corrId = msg.corrId || randomUUID();
-      
+
       const started = performance.now();
       console.log(`[ToolsBridge] [${corrId}] Executing tool: ${msg.name}`, msg.args);
 
@@ -65,11 +79,11 @@ export function setupToolsBridge(httpServer: Server) {
         // [RESILIENCE] Wrap tool execution with timeout
         const output = await Promise.race([
           dispatchTool(msg.name, msg.args, userId),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Tool execution timeout")), 5000)
-          )
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Tool execution timeout")), 5000),
+          ),
         ]);
-        
+
         const latency = Math.round(performance.now() - started);
 
         const response: ToolExecResponse = {
@@ -119,21 +133,23 @@ const MAX_PAYLOAD_BYTES = 80 * 1024; // 80KB
 
 function capPayload(output: any): any {
   const json = JSON.stringify(output);
-  const byteSize = Buffer.byteLength(json, 'utf8');
-  
+  const byteSize = Buffer.byteLength(json, "utf8");
+
   if (byteSize <= MAX_PAYLOAD_BYTES) {
     return output;
   }
-  
+
   // Truncate and add metadata
-  console.warn(`[ToolsBridge] Payload exceeds ${MAX_PAYLOAD_BYTES} bytes (${byteSize}), truncating`);
-  
+  console.warn(
+    `[ToolsBridge] Payload exceeds ${MAX_PAYLOAD_BYTES} bytes (${byteSize}), truncating`,
+  );
+
   // [FIX] Truncate by bytes, not characters, to ensure hard 80KB limit
-  const buffer = Buffer.from(json, 'utf8');
+  const buffer = Buffer.from(json, "utf8");
   const truncatedBuffer = buffer.slice(0, MAX_PAYLOAD_BYTES);
   // Ensure we don't split multi-byte UTF-8 characters
-  const truncated = truncatedBuffer.toString('utf8').replace(/\uFFFD+$/, ''); // Remove replacement chars at end
-  
+  const truncated = truncatedBuffer.toString("utf8").replace(/\uFFFD+$/, ""); // Remove replacement chars at end
+
   return {
     truncated: true,
     originalSize: byteSize,
@@ -150,7 +166,7 @@ function snakeToCamel(str: string): string {
 async function dispatchTool(name: string, args: Record<string, unknown>, userId: string) {
   // [FIX] Try voice tools first (snake_case), then copilot handlers (camelCase)
   let tool = (voiceTools as any)[name];
-  
+
   if (!tool) {
     // Try copilot handlers with camelCase conversion (propose_entry_exit → proposeEntryExit)
     const camelName = snakeToCamel(name);

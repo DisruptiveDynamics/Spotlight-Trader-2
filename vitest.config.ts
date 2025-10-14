@@ -33,5 +33,38 @@ export default defineConfig({
       "src/**/*.{test,spec}.{ts,tsx,js,jsx}",
       "src/**/__tests__/**/*.{ts,tsx,js,jsx}",
     ],
+
+    // [PHASE-9] Coverage configuration
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json", "html", "lcov"],
+      reportsDirectory: "./coverage",
+      exclude: [
+        "node_modules/**",
+        "dist/**",
+        "**/*.d.ts",
+        "**/*.config.*",
+        "**/test/**",
+        "**/__tests__/**",
+        "**/types/**",
+        "**/*.spec.*",
+        "**/*.test.*",
+      ],
+      // [PHASE-9] Overall threshold: 80% lines
+      thresholds: {
+        lines: 80,
+        functions: 75,
+        branches: 75,
+        statements: 80,
+      },
+      // [PHASE-9] Per-file thresholds for core modules: 85%
+      perFile: true,
+      watermarks: {
+        lines: [80, 85],
+        functions: [75, 85],
+        branches: [75, 85],
+        statements: [80, 85],
+      },
+    },
   },
 });

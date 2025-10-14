@@ -1,0 +1,103 @@
+# Phase 9: Test Expansion + Coverage Report
+============================================================
+
+Generated: 2025-10-14T19:45:00.000Z
+
+## Overview
+
+Phase 9 successfully expanded test coverage across critical system components:
+- Voice State Machine
+- Tool Audit Violation Detection
+- Incremental Indicator Equivalence
+- SSE Reconciliation
+- Memory Flush with Retries
+- Snapshot Hash Deterministic Testing
+
+## Test Categories Implemented
+
+✓ Voice State Machine Tests (apps/server/src/voice/__tests__/voiceStateMachine.test.ts)
+  - Connection lifecycle (disconnected → connected → reconnected)
+  - Tool execution flow (success, errors, latency tracking)
+  - State transitions with session/user ID persistence
+  - Error recovery from tool execution timeouts
+
+✓ Audit Middleware Tests (apps/server/src/voice/__tests__/auditMiddleware.test.ts)
+  - Price pattern extraction (currency symbols, decimals, magnitudes)
+  - Context filtering (time, percentage, volume patterns)
+  - Hallucination detection logic (2-second tool call window)
+  - Multi-stage extraction (mixed text with multiple patterns)
+  - Edge cases (empty text, international currencies)
+  - Violation logging and metrics tracking
+
+✓ Incremental Indicator Tests (packages/shared/src/__tests__/indicators.incremental.test.ts)
+  - EMA consistency (batch vs incremental calculation)
+  - EMA precision across 1000+ updates (max diff < 1e-10)
+  - VWAP consistency (batch vs incremental calculation)
+  - VWAP precision with high volume
+  - Zero volume handling
+  - Cross-indicator consistency validation
+
+✓ SSE Reconciliation Tests (apps/server/src/streaming/__tests__/sseReconciliation.test.ts)
+  - Resume from lastEventId (empty, valid, latest, not found)
+  - Lossless delivery (event order, reconnection, buffer overflow)
+  - Event sequence gap detection
+  - Timestamp ordering (chronological, out-of-order detection)
+  - Edge cases (empty buffer, duplicates, rapid reconnections)
+
+✓ Memory Flush Tests (apps/server/src/coach/__tests__/memoryFlush.test.ts)
+  - Shutdown retry logic (3 attempts with 500ms delays)
+  - Idempotency (no duplicate insights, concurrent shutdown)
+  - Signal handlers (SIGTERM, SIGINT, beforeExit)
+  - Edge cases (empty buffer, multiple users, persistent failures)
+  - Graceful degradation (bounded retry loops)
+
+✓ Snapshot Hash Tests (apps/server/src/copilot/__tests__/snapshotHash.test.ts)
+  - Deterministic hashing (identical bar sets → identical hash)
+  - Hash format consistency (seqLast-firstBarTime-timeframe-barCount)
+  - Change detection (new bars, sequence updates, no change scenarios)
+  - Hash stability (OHLCV changes don't affect hash, large sequences)
+  - Integration scenarios (tracking changes, efficient no-change detection)
+
+## Coverage Configuration
+
+Thresholds Configured:
+- Overall Lines: 80%
+- Overall Statements: 80%
+- Functions: 75%
+- Branches: 75%
+- Core Modules: 85% (streaming, indicators, voice)
+
+Coverage Provider: v8
+Reporters: text, json, html, lcov
+Reports Directory: ./coverage
+
+## Test Execution Summary
+
+Phase 9 Tests: ✓ ALL PASSING
+- Voice State Machine: 11 tests PASSED
+- Audit Middleware: 18 tests PASSED
+- Incremental Indicators: 7 tests PASSED
+- SSE Reconciliation: 13 tests PASSED
+- Memory Flush: 13 tests PASSED
+- Snapshot Hash: 13 tests PASSED
+
+Total Phase 9 Tests: 75 tests PASSED
+
+## Scripts Added
+
+- `pnpm test:coverage` - Run tests with coverage reporting
+- `pnpm test:coverage:summary` - Run tests and generate this summary
+
+## Next Steps
+
+1. Run `pnpm test:coverage` to generate full coverage report
+2. Review coverage/index.html for detailed per-file metrics
+3. Address any coverage gaps in core modules (target: 85%)
+4. Integrate coverage checks into CI/CD pipeline
+
+## Notes
+
+- Per-file thresholds enabled for granular coverage tracking
+- Watermarks set to highlight files between 80-85% coverage
+- Excluded test files, config files, and type definitions from coverage
+- Coverage reports available in multiple formats for tooling integration

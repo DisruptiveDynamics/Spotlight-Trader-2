@@ -24,6 +24,8 @@
     "fix:root": "eslint . --fix",
     "typecheck": "pnpm -r typecheck || true",
     "test:ci": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:coverage:summary": "pnpm test:coverage && tsx scripts/generate-coverage-summary.ts",
     "cleanup": "tsx scripts/cleanup-ports.ts"
   },
   "devDependencies": {

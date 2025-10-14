@@ -10,6 +10,14 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### October 14, 2025 - Phase 9: Test Expansion + Coverage (In Progress)
+
+- **Test Infrastructure**: Added 75 new unit tests across 6 critical modules with mock-based validation
+- **Coverage Configuration**: Set coverage thresholds (80% overall, 85% core modules) with v8 provider and multi-format reporting
+- **Test Categories Created**: Voice state machine (11 tests), audit middleware (18 tests), incremental indicators (7 tests), SSE reconciliation (13 tests), memory flush (13 tests), snapshot hash (13 tests)
+- **Coverage Tooling**: Added `pnpm test:coverage` and `pnpm test:coverage:summary` scripts with audits/coverage_summary.txt output
+- **Known Limitation**: Tests currently use mock implementations for isolation; refactoring needed to import and exercise actual production code for meaningful coverage metrics
+
 ### October 14, 2025 - Phase 8: Memory Flush + Proactive Risk Gating
 
 - **Shutdown Flush with Retries**: Implemented graceful shutdown for voice memory with 3-attempt retry logic (500ms delays), ensures insights are persisted even during unexpected termination

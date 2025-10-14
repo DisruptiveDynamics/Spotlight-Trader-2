@@ -74,7 +74,7 @@ export async function switchTimeframe(params: {
     activeStates.set(key, newState);
 
     // Step 4: Emit bar:reset to signal client to redraw
-    eventBus.emit("bar:reset" as any, {
+    eventBus.emit("bar:reset", {
       symbol,
       timeframe,
       bars: rolled,

@@ -145,6 +145,13 @@ export async function getChartSnapshot(params: GetChartSnapshotParams): Promise<
     ];
   }
 
+  // [PHASE-8] Calculate snapshot hash for change detection
+  // Hash = seqLast + firstBarTime + timeframe + barCount
+  const seqLast = cachedBars[cachedBars.length - 1]?.seq || 0;
+  const firstBarTime = cachedBars[0]?.bar_start || 0;
+  const snapshotHash = `${seqLast}-${firstBarTime}-${params.timeframe}-${barCount}`;
+  const hasChanged = params.lastSeenHash ? snapshotHash !== params.lastSeenHash : undefined;
+
   return {
     symbol: params.symbol,
     timeframe: params.timeframe,
@@ -157,6 +164,9 @@ export async function getChartSnapshot(params: GetChartSnapshotParams): Promise<
     },
     volatility,
     regime,
+    // [PHASE-8] Include snapshot hash
+    snapshotHash,
+    hasChanged,
   };
 }
 

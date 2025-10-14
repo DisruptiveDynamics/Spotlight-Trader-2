@@ -10,6 +10,15 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### October 14, 2025 - Phase 8: Memory Flush + Proactive Risk Gating
+
+- **Shutdown Flush with Retries**: Implemented graceful shutdown for voice memory with 3-attempt retry logic (500ms delays), ensures insights are persisted even during unexpected termination
+- **Risk Status System**: Added GREEN/YELLOW/RED risk status to Rules Sentinel based on circuit breaker state, daily P&L, and consecutive losses
+- **Proactive Callout Gating**: Callouts now only emit when risk status is GREEN or YELLOW, suppressing alerts during RED (circuit breaker active or critical loss)
+- **Pattern Statistics Integration**: Proactive callouts now include win rate, avg holding duration (timeToTarget), and EV-R from pattern memory for data-driven coaching
+- **Snapshot Hash System**: Added deterministic hash (seqLast-firstBarTime-timeframe-barCount) to chart snapshots with `lastSeenHash` param for efficient change detection
+- **Enhanced Callout Context**: Callouts now carry risk status and pattern stats for voice/UI consumption
+
 ### October 14, 2025 - Phase 6: Voice Tool Integrity & Performance
 
 - **Micro Tools Implementation**: Added high-frequency micro tools (`get_last_price`, `get_last_vwap`, `get_last_ema`) with sub-1s latency targets, returning structured `{symbol, value, ts}` responses

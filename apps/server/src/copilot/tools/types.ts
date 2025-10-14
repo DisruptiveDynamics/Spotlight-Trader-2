@@ -5,6 +5,7 @@ export interface GetChartSnapshotParams {
   timeframe: string;
   lookback?: number; // Legacy parameter name
   barCount?: number; // Voice tool parameter name
+  lastSeenHash?: string; // [PHASE-8] For change detection
 }
 
 export interface ChartSnapshot {
@@ -25,6 +26,9 @@ export interface ChartSnapshot {
   };
   volatility: "low" | "medium" | "high";
   regime: "trend-up" | "trend-down" | "chop" | "news";
+  // [PHASE-8] Snapshot hash for change detection
+  snapshotHash?: string;
+  hasChanged?: boolean | undefined; // True if hash differs from lastSeenHash
 }
 
 export interface SubscribeMarketStreamParams {

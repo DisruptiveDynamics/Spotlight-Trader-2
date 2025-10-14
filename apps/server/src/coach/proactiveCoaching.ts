@@ -176,9 +176,41 @@ export const proactiveCoachingEngine = new ProactiveCoachingEngine();
 
 // Wire up to copilot broadcaster for voice delivery
 import { copilotBroadcaster } from "../copilot/broadcaster";
+import { rulesSentinel } from "../copilot/sentinel";
+import { patternMemory } from "../copilot/patterns/lookup";
 
-proactiveCoachingEngine.on("coaching_alert", (alert: MarketCondition) => {
+proactiveCoachingEngine.on("coaching_alert", async (alert: MarketCondition) => {
   console.log("[ProactiveCoaching] Market condition detected:", alert);
+
+  // [PHASE-8] Risk gating: Only emit if GREEN or YELLOW
+  const riskStatus = rulesSentinel.getRiskStatus();
+  if (riskStatus === "RED") {
+    console.log(
+      `[ProactiveCoaching] Callout suppressed due to RED risk status (circuit breaker or critical loss)`,
+    );
+    return;
+  }
+
+  // [PHASE-8] Fetch pattern stats for this symbol/condition if available
+  let patternStats;
+  try {
+    const stats = await patternMemory.getPatternStats(
+      alert.symbol,
+      "5m", // Default timeframe
+      alert.condition,
+    );
+
+    if (stats && stats.length > 0) {
+      const stat = stats[0]!;
+      patternStats = {
+        winRate: stat.winRate,
+        avgHoldingDuration: stat.timeToTarget || 0, // in bars
+        evR: stat.evR,
+      };
+    }
+  } catch (err) {
+    console.warn("[ProactiveCoaching] Failed to fetch pattern stats:", err);
+  }
 
   // Broadcast to copilot system (which feeds to voice via VoiceCalloutBridge)
   copilotBroadcaster.emit("callout", {
@@ -192,5 +224,8 @@ proactiveCoachingEngine.on("coaching_alert", (alert: MarketCondition) => {
     rationale: alert.message,
     timestamp: new Date(),
     data: alert.data,
+    // [PHASE-8] Include pattern stats
+    patternStats,
+    riskStatus, // Include risk status for UI/voice context
   });
 });

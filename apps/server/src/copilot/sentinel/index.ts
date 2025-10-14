@@ -168,6 +168,37 @@ export class RulesSentinel {
   getVersion(): string {
     return this.version;
   }
+
+  /**
+   * [PHASE-8] Get current risk status for gating proactive callouts
+   * GREEN: All clear, no restrictions
+   * YELLOW: Some warnings, proceed with caution
+   * RED: Circuit breaker active or critical failures, no callouts
+   */
+  getRiskStatus(): "GREEN" | "YELLOW" | "RED" {
+    // RED: Circuit breaker active
+    if (this.circuitBreaker.active) {
+      return "RED";
+    }
+
+    // RED: At or near daily loss limit
+    if (Math.abs(this.dailyPnLR) >= this.MAX_DAILY_LOSS * 0.9) {
+      return "RED";
+    }
+
+    // YELLOW: Moderate daily loss (40-90% of limit)
+    if (Math.abs(this.dailyPnLR) >= this.MAX_DAILY_LOSS * 0.4) {
+      return "YELLOW";
+    }
+
+    // YELLOW: One consecutive loss (warning zone)
+    if (this.consecutiveLosses >= 1) {
+      return "YELLOW";
+    }
+
+    // GREEN: All clear
+    return "GREEN";
+  }
 }
 
 export const rulesSentinel = new RulesSentinel();

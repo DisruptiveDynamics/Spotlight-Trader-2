@@ -29,6 +29,9 @@ importers:
       pdf-parse:
         specifier: ^2.2.16
         version: 2.3.0
+      vite:
+        specifier: ^5.4.20
+        version: 5.4.20(@types/node@20.19.21)
     devDependencies:
       '@testing-library/dom':
         specifier: ^10.4.1

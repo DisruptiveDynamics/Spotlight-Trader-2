@@ -128,18 +128,26 @@ triggerManager.initialize(sessionStartMs);
 proactiveCoachingEngine.setupMarketMonitoring(telemetryBus);
 console.log("✅ Proactive coaching engine initialized");
 
-// Error middleware - must be last
-app.use(notFound); // 404 handler
-app.use(errorHandler); // Global error handler
-
 const PORT = Number(process.env.PORT ?? 8080);
 
 // Initialize market source (Polygon auth check with simulator fallback)
 await initializeMarketSource();
 
+// Unified Dev Mode: Attach Vite middleware (BEFORE error handlers)
+if (process.env.UNIFIED_DEV === "1") {
+  const { attachViteMiddleware } = await import("./dev/unifiedVite.js");
+  await attachViteMiddleware(app, server);
+}
+
+// Error middleware - must be last
+app.use(notFound); // 404 handler
+app.use(errorHandler); // Global error handler
+
 server.listen(PORT, "0.0.0.0", () => {
   const proto = env.NODE_ENV === "production" ? "wss" : "ws";
+  const mode = process.env.UNIFIED_DEV === "1" ? "unified dev (Express + Vite)" : "API only";
   console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
+  console.log(`   Mode: ${mode}`);
   console.log(`   Environment: ${env.NODE_ENV}`);
   console.log(`   Log level: ${env.LOG_LEVEL}`);
   console.log(`   Routes: /health (GET), /realtime/sse (SSE), /ws/realtime (WS), /ws/tools (WS)`);

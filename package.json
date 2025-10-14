@@ -63,6 +63,7 @@
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
     "jsonwebtoken": "^9.0.2",
-    "pdf-parse": "^2.2.16"
+    "pdf-parse": "^2.2.16",
+    "vite": "^5.4.20"
   }
 }

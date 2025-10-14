@@ -1,3 +1,23 @@
-Need to install the following packages:
-depcheck@1.4.7
-Ok to proceed? (y) 
+Unused dependencies
+* @openai/agents
+* @types/compression
+* compression
+* date-fns
+* date-fns-tz
+* get-tsconfig
+* jsonwebtoken
+* pdf-parse
+Unused devDependencies
+* @testing-library/dom
+* @testing-library/react
+* @testing-library/user-event
+* @types/jsonwebtoken
+* @vitest/coverage-v8
+* esbuild
+* husky
+* kill-port
+* lint-staged
+* ws
+Missing dependencies
+* eslint-jsonc: ./.eslintrc.cjs
+* eslint-import-resolver-typescript: ./.eslintrc.cjs

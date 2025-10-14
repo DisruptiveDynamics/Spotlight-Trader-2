@@ -18,6 +18,7 @@ import {
   type Candle,
 } from "@spotlight/shared";
 import { useChartContext } from "./hooks/useChartContext";
+import { connectMarketSSE, type Bar, type Micro } from "../../lib/marketStream";
 
 interface PaneProps {
   paneId: number;
@@ -230,30 +231,55 @@ export function Pane({ className = "" }: PaneProps) {
         // Update chart with candles
         if (seriesRef.current) {
           if (chartStyle === "line") {
-            const lineData = history.map((bar) => ({
-              time: bar.time as UTCTimestamp,
-              value: bar.close,
-            }));
+            const lineData = history
+              .filter((bar) => 
+                bar.time != null && 
+                bar.close != null && 
+                !isNaN(bar.close)
+              )
+              .map((bar) => ({
+                time: bar.time as UTCTimestamp,
+                value: bar.close,
+              }));
             seriesRef.current.setData(lineData);
           } else {
-            const ohlcData = history.map((bar) => ({
-              time: bar.time as UTCTimestamp,
-              open: bar.open,
-              high: bar.high,
-              low: bar.low,
-              close: bar.close,
-            }));
+            const ohlcData = history
+              .filter((bar) => 
+                bar.time != null && 
+                bar.open != null && 
+                bar.high != null && 
+                bar.low != null && 
+                bar.close != null &&
+                !isNaN(bar.open) &&
+                !isNaN(bar.high) &&
+                !isNaN(bar.low) &&
+                !isNaN(bar.close)
+              )
+              .map((bar) => ({
+                time: bar.time as UTCTimestamp,
+                open: bar.open,
+                high: bar.high,
+                low: bar.low,
+                close: bar.close,
+              }));
             seriesRef.current.setData(ohlcData);
           }
         }
 
         // Update volume
         if (volumeSeriesRef.current) {
-          const volumeData = history.map((bar) => ({
-            time: bar.time as UTCTimestamp,
-            value: bar.volume ?? 0,
-            color: bar.close >= bar.open ? "#10b98166" : "#ef444466",
-          }));
+          const volumeData = history
+            .filter((bar) => 
+              bar.time != null && 
+              bar.volume != null && 
+              bar.close != null &&
+              !isNaN(bar.volume)
+            )
+            .map((bar) => ({
+              time: bar.time as UTCTimestamp,
+              value: bar.volume ?? 0,
+              color: bar.close >= bar.open ? "#10b98166" : "#ef444466",
+            }));
           volumeSeriesRef.current.setData(volumeData);
         }
 
@@ -278,6 +304,115 @@ export function Pane({ className = "" }: PaneProps) {
       mounted = false;
     };
   }, [active.symbol, active.timeframe, chartStyle]);
+
+  // Connect to SSE for real-time updates
+  useEffect(() => {
+    if (!seriesRef.current || !volumeSeriesRef.current) return;
+
+    const sseConnection = connectMarketSSE([active.symbol]);
+
+    sseConnection.onBar((bar: Bar) => {
+      if (!seriesRef.current || !volumeSeriesRef.current) return;
+
+      const time = Math.floor(bar.bar_end / 1000) as UTCTimestamp;
+      
+      // Validate OHLC data before updating
+      if (
+        bar.ohlcv.o != null && 
+        bar.ohlcv.h != null && 
+        bar.ohlcv.l != null && 
+        bar.ohlcv.c != null &&
+        !isNaN(bar.ohlcv.o) &&
+        !isNaN(bar.ohlcv.h) &&
+        !isNaN(bar.ohlcv.l) &&
+        !isNaN(bar.ohlcv.c)
+      ) {
+        // Update main series
+        if (chartStyle === "line") {
+          seriesRef.current.update({
+            time,
+            value: bar.ohlcv.c,
+          });
+        } else {
+          seriesRef.current.update({
+            time,
+            open: bar.ohlcv.o,
+            high: bar.ohlcv.h,
+            low: bar.ohlcv.l,
+            close: bar.ohlcv.c,
+          });
+        }
+
+        // Update volume
+        if (bar.ohlcv.v != null && !isNaN(bar.ohlcv.v)) {
+          volumeSeriesRef.current.update({
+            time,
+            value: bar.ohlcv.v,
+            color: bar.ohlcv.c >= bar.ohlcv.o ? "#10b98166" : "#ef444466",
+          });
+        }
+
+        // Update candles state for indicators
+        const newCandle: Candle = {
+          t: bar.bar_end,
+          ohlcv: bar.ohlcv,
+        };
+
+        setCandles((prev) => {
+          const lastCandle = prev[prev.length - 1];
+          if (lastCandle && lastCandle.t === newCandle.t) {
+            // Update existing candle
+            return [...prev.slice(0, -1), newCandle];
+          } else {
+            // Add new candle
+            return [...prev, newCandle];
+          }
+        });
+
+        currentMinuteRef.current = Math.floor(bar.bar_end / 60000) * 60000;
+        currentBarTimeRef.current = time;
+      }
+    });
+
+    sseConnection.onMicro((micro: Micro) => {
+      if (!seriesRef.current) return;
+
+      const microMinute = Math.floor(micro.ts / 60000) * 60000;
+
+      // Only update if microbar belongs to current minute
+      if (microMinute === currentMinuteRef.current && currentBarTimeRef.current > 0) {
+        if (
+          micro.ohlcv.o != null && 
+          micro.ohlcv.h != null && 
+          micro.ohlcv.l != null && 
+          micro.ohlcv.c != null &&
+          !isNaN(micro.ohlcv.o) &&
+          !isNaN(micro.ohlcv.h) &&
+          !isNaN(micro.ohlcv.l) &&
+          !isNaN(micro.ohlcv.c)
+        ) {
+          if (chartStyle === "line") {
+            seriesRef.current.update({
+              time: currentBarTimeRef.current as UTCTimestamp,
+              value: micro.ohlcv.c,
+            });
+          } else {
+            seriesRef.current.update({
+              time: currentBarTimeRef.current as UTCTimestamp,
+              open: micro.ohlcv.o,
+              high: micro.ohlcv.h,
+              low: micro.ohlcv.l,
+              close: micro.ohlcv.c,
+            });
+          }
+        }
+      }
+    });
+
+    return () => {
+      sseConnection.close();
+    };
+  }, [active.symbol, chartStyle]);
 
   // Update indicators
   useEffect(() => {

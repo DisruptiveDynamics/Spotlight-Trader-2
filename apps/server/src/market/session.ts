@@ -36,11 +36,11 @@ export function isRthOpen(nowUtc: number = Date.now()): SessionStatus {
   }
 
   if (timeInMinutes >= premarketStart && timeInMinutes < marketOpen) {
-    return { open: false, session: "premarket" };
+    return { open: true, session: "premarket" }; // Market data available in premarket
   }
 
   if (timeInMinutes >= marketClose && timeInMinutes < afterHoursEnd) {
-    return { open: false, session: "after" };
+    return { open: true, session: "after" }; // Market data available after hours
   }
 
   return { open: false, session: "closed" };

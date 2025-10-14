@@ -38,15 +38,29 @@ export async function fetchHistory(
     throw new Error("Invalid history response format");
   }
 
-  return data.map((bar: any) => ({
-    time: Math.floor(bar.bar_end / 1000),
-    open: bar.ohlcv.o,
-    high: bar.ohlcv.h,
-    low: bar.ohlcv.l,
-    close: bar.ohlcv.c,
-    volume: bar.ohlcv.v,
-    msEnd: bar.bar_end,
-  }));
+  return data
+    .filter((bar: any) => 
+      bar.bar_end != null &&
+      bar.ohlcv?.o != null &&
+      bar.ohlcv?.h != null &&
+      bar.ohlcv?.l != null &&
+      bar.ohlcv?.c != null &&
+      bar.ohlcv?.v != null &&
+      !isNaN(bar.ohlcv.o) &&
+      !isNaN(bar.ohlcv.h) &&
+      !isNaN(bar.ohlcv.l) &&
+      !isNaN(bar.ohlcv.c) &&
+      !isNaN(bar.ohlcv.v)
+    )
+    .map((bar: any) => ({
+      time: Math.floor(bar.bar_end / 1000),
+      open: bar.ohlcv.o,
+      high: bar.ohlcv.h,
+      low: bar.ohlcv.l,
+      close: bar.ohlcv.c,
+      volume: bar.ohlcv.v,
+      msEnd: bar.bar_end,
+    }));
 }
 
 /**

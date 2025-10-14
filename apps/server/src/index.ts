@@ -147,3 +147,37 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`   [SSE] mounted at /realtime/sse`);
   console.log(`   [WS] voice at /ws/realtime, tools at /ws/tools`);
 });
+
+// Global process error handlers for crash visibility
+process.on("uncaughtException", (error) => {
+  console.error("[CRITICAL] Uncaught Exception:", {
+    message: error.message,
+    stack: error.stack,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("[CRITICAL] Unhandled Rejection:", {
+    reason,
+    promise,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Graceful shutdown handlers
+process.on("SIGTERM", () => {
+  console.log("[Server] SIGTERM received, closing server gracefully...");
+  server.close(() => {
+    console.log("[Server] Server closed");
+    process.exit(0);
+  });
+});
+
+process.on("SIGINT", () => {
+  console.log("[Server] SIGINT received, closing server gracefully...");
+  server.close(() => {
+    console.log("[Server] Server closed");
+    process.exit(0);
+  });
+});

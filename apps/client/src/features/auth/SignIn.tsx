@@ -66,21 +66,14 @@ export function SignIn({ sessionExpired = false }: SignInProps) {
 
       if (data.user) {
         console.log("Setting user in auth store:", data.user);
+        // Clean setUser - AuthGate will handle the flip immediately after hydration
         setUser({
-          userId: data.user.id,
+          id: data.user.id,
           email: data.user.email,
-          createdAt: data.user.createdAt || new Date().toISOString(),
+          name: data.user.name || "Demo User",
+          demo: true,
         });
         console.log("User set successfully");
-
-        // Fallback: if the view doesn't switch quickly, force a refresh
-        setTimeout(() => {
-          // Only refresh if still on the sign-in view (very conservative check)
-          const root = document.getElementById("root");
-          if (root && root.textContent && root.textContent.includes("Sign in to your account")) {
-            window.location.reload();
-          }
-        }, 400);
       }
     } catch (err) {
       console.error("Demo login error:", err);

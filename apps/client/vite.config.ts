@@ -2,6 +2,10 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import { defineConfig } from "vite";
 
+const USE_HTTPS = true;
+const HMR_PROTOCOL = USE_HTTPS ? "wss" : "ws";
+const HMR_CLIENT_PORT = USE_HTTPS ? 443 : 5000;
+
 export default defineConfig({
   plugins: [react()],
   define: {
@@ -15,16 +19,15 @@ export default defineConfig({
     },
   },
   server: {
-    host: "0.0.0.0",
+    host: true,
     port: 5000,
     strictPort: true,
     allowedHosts: true,
     hmr: {
-      protocol: "ws",
-      host: "0.0.0.0",
-      port: 5000,
+      protocol: HMR_PROTOCOL,
+      // host: undefined - let client use window.location.host
+      clientPort: HMR_CLIENT_PORT,
       path: "/__vite_hmr",
-      clientPort: 5000,
     },
     // NOTE: No proxy config needed - using unified dev server mode
     // (Express serves both API and Vite middleware on port 8080)

@@ -10,6 +10,13 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### October 15, 2025 - Voice Context Refresh & Fine-Tuning Enhancements
+
+- **Voice Context Refresh**: Added automatic market context injection before each AI response - fetches latest price via get_last_price tool and updates session instructions with live data (symbol, price, timeframe)
+- **Best-Effort Error Handling**: Context refresh failures are logged but don't break voice flow, ensuring resilient real-time coaching
+- **Training Materials Upload**: Verified KnowledgeUploadModal is fully functional with YouTube URL input, PDF file upload (drag & drop), and text notes - integrated in NexaMenu
+- **SSE Heartbeat**: Confirmed 15-second heartbeat ping already implemented in SSE stream to prevent connection timeouts
+
 ### October 15, 2025 - Authentication Flow & SSE Stability Fixes
 
 - **Auth Store Refactor**: Implemented Zustand persist + subscribeWithSelector middleware to prevent race conditions between auth hydration and component rendering, added `authReady` flag with `markReady()` to coordinate state initialization

@@ -10,6 +10,17 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### October 15, 2025 - Authentication Flow & SSE Stability Fixes
+
+- **Auth Store Refactor**: Implemented Zustand persist + subscribeWithSelector middleware to prevent race conditions between auth hydration and component rendering, added `authReady` flag with `markReady()` to coordinate state initialization
+- **AuthGate Enhancement**: Updated to use `authReady` + `user` selectors, calls `markReady()` on mount, renders `AppShell` only when fully authenticated (prevents premature dashboard loading)
+- **SignIn Simplification**: Removed 400ms reload workaround, now calls `setUser()` directly with clean state update pattern
+- **SSE Server CORS Fix**: Added `Access-Control-Allow-Origin` and `Vary` headers to SSE stream endpoint for cross-origin compatibility
+- **SSE Client Auth Guard**: Created `startMarketStream()` wrapper that waits for `authReady` before connecting EventSource (prevents 401 errors on premature connections)
+- **AppShell Lifecycle**: Manages market stream start/stop strictly based on auth state (authReady && user), ensuring SSE only connects when authenticated
+- **Error Normalization**: Added `toLogError()` utility and applied to flags, market status, voice components - eliminates empty error objects in console
+- **Error Handling Verification**: Confirmed server error middleware returns structured `{ok,error:{code,message}}` responses for consistent client error handling
+
 ### October 14, 2025 - Unified Dev Server (Complete)
 
 - **Single-Port Architecture**: Implemented unified dev server serving both Express API and Vite frontend on port 5000 (UNIFIED_DEV=1 mode)

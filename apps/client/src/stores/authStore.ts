@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist, subscribeWithSelector } from "zustand/middleware";
 
 import { authStorage } from "../auth/authStorage";
 
@@ -9,50 +10,54 @@ if (import.meta.hot) {
   });
 }
 
-interface User {
-  userId: string;
+export type User = {
+  id: string;
   email: string;
-  createdAt?: string;
-}
+  name?: string;
+  demo?: boolean;
+} | null;
 
-interface AuthState {
-  user: User | null;
-  setUser: (user: User | null) => void;
+type AuthState = {
+  user: User;
+  authReady: boolean; // hydration + logic guard
+  setUser: (u: User) => void;
   logout: () => void;
-}
-
-const getInitialUser = (): User | null => {
-  const stored = authStorage.get();
-  const isValid = stored && stored.user && !authStorage.isExpired();
-  return isValid && stored?.user ? stored.user : null;
+  markReady: () => void;
 };
 
-// Export store as singleton
-export const useAuthStore = create<AuthState>((set) => ({
-  user: getInitialUser(),
-
-  setUser: (user) => {
-    console.log("[authStore] setUser called with:", user);
-    set({ user });
-    if (user) {
-      const authData = {
-        user,
-        expiresAt: Date.now() + 30 * 60 * 1000,
-      };
-      console.log("[authStore] Saving to localStorage:", authData);
-      authStorage.set(authData);
-    } else {
-      console.log("[authStore] Clearing localStorage");
-      authStorage.clear();
-    }
-  },
-
-  logout: () => {
-    authStorage.clear();
-    set({ user: null });
-    fetch("/api/auth/logout", {
-      method: "POST",
-      credentials: "include",
-    }).catch(console.error);
-  },
-}));
+export const useAuthStore = create<AuthState>()(
+  subscribeWithSelector(
+    persist(
+      (set) => ({
+        user: null,
+        authReady: false,
+        setUser: (u) => {
+          console.log("[authStore] setUser:", u);
+          set({ user: u });
+          // Keep legacy authStorage in sync for now
+          if (u) {
+            authStorage.set({
+              user: { userId: u.id, email: u.email, createdAt: new Date().toISOString() },
+              expiresAt: Date.now() + 30 * 60 * 1000,
+            });
+          } else {
+            authStorage.clear();
+          }
+        },
+        logout: () => {
+          authStorage.clear();
+          set({ user: null, authReady: false });
+          fetch("/api/auth/logout", {
+            method: "POST",
+            credentials: "include",
+          }).catch(console.error);
+        },
+        markReady: () => {
+          console.log("[authStore] Marking auth as ready");
+          set({ authReady: true });
+        },
+      }),
+      { name: "spotlight-auth" },
+    ),
+  ),
+);

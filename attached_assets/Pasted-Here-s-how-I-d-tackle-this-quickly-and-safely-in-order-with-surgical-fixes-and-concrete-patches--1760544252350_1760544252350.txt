@@ -1,0 +1,370 @@
+Here’s how I’d tackle this quickly and safely, in order, with surgical fixes and concrete patches.
+
+Tier-1 fixes (auth → data → errors)
+
+1) AuthGate never re-renders after setUser()
+
+Likely cause: Zustand hydration + subscription pattern + StrictMode double mount.
+Fix pattern:
+	•	Use persist with a hydration flag.
+	•	Subscribe via selectors (no inline objects).
+	•	Centralize a single loginDemo() that sets user and flips authReady.
+
+Patch (store):
+
+// apps/client/src/stores/auth.ts
+import { create } from 'zustand';
+import { persist, subscribeWithSelector } from 'zustand/middleware';
+
+export type User = { id: string; email: string; name?: string; demo?: boolean } | null;
+
+type AuthState = {
+  user: User;
+  authReady: boolean; // hydration + logic guard
+  setUser: (u: User) => void;
+  logout: () => void;
+  markReady: () => void;
+};
+
+export const useAuthStore = create<AuthState>()(
+  subscribeWithSelector(
+    persist(
+      (set, get) => ({
+        user: null,
+        authReady: false,
+        setUser: (u) => set({ user: u }),
+        logout: () => set({ user: null }),
+        markReady: () => set({ authReady: true }),
+      }),
+      { name: 'spotlight-auth' }
+    )
+  )
+);
+
+Patch (AuthGate):
+
+// apps/client/src/components/AuthGate.tsx
+import { useEffect } from 'react';
+import { useAuthStore } from '../stores/auth';
+import SignIn from './SignIn';
+import AppShell from './AppShell';
+
+export default function AuthGate() {
+  const user = useAuthStore((s) => s.user);
+  const authReady = useAuthStore((s) => s.authReady);
+  const markReady = useAuthStore((s) => s.markReady);
+
+  // Ensure re-render after persist hydration
+  useEffect(() => {
+    // Zustand persist hydrates on first render; marking ready on mount ensures the gate flips.
+    markReady();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!authReady) return null; // or a tiny spinner
+
+  return user ? <AppShell /> : <SignIn />;
+}
+
+Patch (SignIn):
+
+// apps/client/src/components/SignIn.tsx
+import { useAuthStore } from '../stores/auth';
+
+export default function SignIn() {
+  const setUser = useAuthStore((s) => s.setUser);
+
+  async function loginDemo() {
+    // (Optionally) call API to create/get a demo user
+    const demo = { id: 'demo', email: 'demo@spotlight', name: 'Demo', demo: true };
+    setUser(demo); // triggers gate immediately after hydration
+  }
+
+  return (
+    <div>
+      {/* ...fields... */}
+      <button onClick={loginDemo}>Try Demo Mode</button>
+    </div>
+  );
+}
+
+This removes the “400ms reload” hack and guarantees the gate flips as soon as the persisted store hydrates and setUser() runs.
+
+⸻
+
+2) SSE connection fails (no market data)
+
+Likely causes: CORS/headers for SSE, stream initialized before auth, wrong origin on Replit, or event source opened while user is null.
+
+Server-side SSE hardening (Express):
+
+// apps/server/src/routes/stream.ts
+import type { Request, Response } from 'express';
+
+export function sseHandler(req: Request, res: Response) {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // nginx-friendly
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Vary', 'Origin');
+
+  res.flushHeaders?.();
+
+  const ping = setInterval(() => {
+    res.write(`: ping\n\n`);
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(ping);
+  });
+
+  // TODO: wire market bus → write("event: tick\ndata: {...}\n\n")
+}
+
+Client-side guard (init only after authReady + user):
+
+// apps/client/src/lib/marketStream.ts
+import { useAuthStore } from '../stores/auth';
+
+export function startMarketStream() {
+  const user = useAuthStore.getState().user;
+  const authReady = useAuthStore.getState().authReady;
+  if (!authReady || !user) return; // don’t open SSE early
+
+  const url = new URL(import.meta.env.VITE_STREAM_URL);
+  // If you require auth, prefer a short-lived token via header fallback; if not, keep anonymous
+  const es = new EventSource(url.toString(), { withCredentials: false });
+
+  es.addEventListener('tick', (evt) => {
+    // handle tick
+  });
+
+  es.onerror = (e) => {
+    console.error('[SSE] error:', e);
+    // EventSource auto-reconnects; optionally expo-backoff on client state
+  };
+
+  return () => es.close();
+}
+
+Mount the stream after auth (e.g., inside AppShell):
+
+// apps/client/src/components/AppShell.tsx
+import { useEffect } from 'react';
+import { useAuthStore } from '../stores/auth';
+import { startMarketStream } from '../lib/marketStream';
+
+export default function AppShell() {
+  const user = useAuthStore((s) => s.user);
+  const authReady = useAuthStore((s) => s.authReady);
+
+  useEffect(() => {
+    if (!authReady || !user) return;
+    const stop = startMarketStream();
+    return stop;
+  }, [authReady, user]);
+
+  return (
+    <>
+      {/* MultiChart, MarketStatus, etc. */}
+    </>
+  );
+}
+
+This eliminates the race where the stream opens while auth is “uncertain,” which often throws CORS-ish or reconnect loops.
+
+⸻
+
+3) Empty error objects everywhere (flags, market status, voice)
+
+Likely cause: catch (e) with non-Error or lost message, then JSON.stringify(e) → {}.
+
+Drop-in error normalizer:
+
+// apps/client/src/lib/errors.ts
+export function toLogError(err: unknown) {
+  if (err instanceof Error) return { name: err.name, message: err.message, stack: err.stack };
+  try { return { message: JSON.stringify(err) }; } catch { return { message: String(err) }; }
+}
+
+Use it consistently:
+
+try {
+  // ...
+} catch (e) {
+  console.error('Failed to sync flags', toLogError(e));
+}
+
+Server middleware (Express) to always emit structured errors:
+
+// apps/server/src/middleware/error.ts
+import type { Request, Response, NextFunction } from 'express';
+
+export function errorHandler(err: any, _req: Request, res: Response, _next: NextFunction) {
+  const payload = {
+    name: err?.name || 'Error',
+    message: err?.message || 'Unknown error',
+    detail: err?.detail ?? undefined,
+  };
+  console.error('[API ERROR]', payload, err?.stack);
+  res.status(err?.status || 500).json({ error: payload });
+}
+
+Wire it after routes:
+
+app.use(errorHandler);
+
+
+⸻
+
+Tier-2 fixes (flags, market status, voice logging)
+
+4) Feature flags fail silently
+	•	Make flags non-blocking with defaults.
+	•	Defer UI that truly requires flags, but don’t crash dashboard.
+
+// apps/client/src/lib/flags.ts
+type Flags = { [k: string]: boolean };
+const DEFAULTS: Flags = { newChart: true, voiceCoach: true };
+
+export async function fetchFlags(): Promise<Flags> {
+  try {
+    const r = await fetch(import.meta.env.VITE_FLAGS_URL, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`Flags ${r.status}`);
+    return { ...DEFAULTS, ...(await r.json()) };
+  } catch (e) {
+    console.warn('[Flags] fallback to defaults', e);
+    return DEFAULTS;
+  }
+}
+
+Initialize flags after auth, but don’t block the shell render:
+
+useEffect(() => {
+  let active = true;
+  (async () => {
+    const f = await fetchFlags();
+    if (active) setFlags(f);
+  })();
+  return () => { active = false; };
+}, [authReady, user]);
+
+5) Market status endpoint with fallback
+
+export async function getMarketStatus(): Promise<'open'|'closed'|'pre'|'halted'> {
+  try {
+    const r = await fetch(import.meta.env.VITE_MARKET_STATUS_URL, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`MarketStatus ${r.status}`);
+    const j = await r.json();
+    return j.status ?? 'closed';
+  } catch (e) {
+    console.warn('[MarketStatus] fallback closed', e);
+    return 'closed';
+  }
+}
+
+6) Voice error handling
+
+Log full error object and session events; surface toast so failures aren’t silent:
+
+// apps/client/src/voice/realtime.ts
+import { toLogError } from '../lib/errors';
+// ...
+client.on('error', (err) => {
+  console.error('[RealtimeVoiceClient] Session error', toLogError(err));
+  toast.error('Voice session error — check console for details.');
+});
+
+
+⸻
+
+Tier-3 cleanup (dev noise & hacks)
+	•	Remove the 400ms page reload in SignIn.tsx.
+	•	Document Replit HMR SSL quirk; ignore the HMR WSS error in console.
+	•	Add a lightweight loading placeholder in AuthGate instead of reloads.
+
+⸻
+
+One-shot “Agent Prompt” you can copy/paste
+
+Use this verbatim with your Replit/Cursor agent:
+
+You are an expert senior full-stack TypeScript engineer. Apply these fixes in the Spotlight-Trader-2 repo:
+
+GOALS
+1) Fix authentication rendering so the dashboard shows immediately after demo login, without timeouts.
+2) Stabilize SSE market stream by correcting server headers and delaying client initialization until auth is ready.
+3) Replace empty "{}" errors with structured errors across flags, market status, and voice.
+
+CHANGES
+A) Zustand auth store:
+- apps/client/src/stores/auth.ts: create store with persist + subscribeWithSelector and add 'authReady' flag and 'markReady'.
+- Expose { user, authReady, setUser, logout, markReady }.
+
+B) AuthGate:
+- apps/client/src/components/AuthGate.tsx: on mount call markReady(), read user + authReady via selectors, render <AppShell/> when user exists. Remove any local loading hacks.
+
+C) SignIn:
+- apps/client/src/components/SignIn.tsx: implement loginDemo() that calls setUser({ id:'demo', email:'demo@spotlight', demo:true }). Delete any 400ms reload workaround.
+
+D) SSE server endpoint:
+- apps/server/src/routes/stream.ts: set headers:
+  Content-Type: text/event-stream
+  Cache-Control: no-store
+  Connection: keep-alive
+  X-Accel-Buffering: no
+  Access-Control-Allow-Origin: <req origin or *>
+  Vary: Origin
+- Keep an interval ping every 15s. Flush headers. Ensure close cleans timers.
+
+E) SSE client:
+- apps/client/src/lib/marketStream.ts: export startMarketStream(); only open EventSource when authReady && user are true; handle 'tick' events; log errors; return cleanup function.
+
+F) AppShell:
+- apps/client/src/components/AppShell.tsx: useEffect(() => start stream when authReady && user; cleanup on deps change).
+
+G) Error normalization:
+- apps/client/src/lib/errors.ts: add toLogError(err).
+- Replace all console.error calls in flags, market status, voice with toLogError.
+
+H) Feature flags:
+- apps/client/src/lib/flags.ts: implement fetchFlags() with DEFAULTS and non-blocking fallback to defaults. Initialize flags after auth, but don’t block render.
+
+I) Market status:
+- apps/client/src/lib/marketStatus.ts: implement getMarketStatus() with 'closed' fallback and no-throw logging.
+
+J) Server error middleware:
+- apps/server/src/middleware/error.ts: add errorHandler that returns {error:{name,message,detail}} and logs stack. Register after routes.
+
+QUALITY
+- Run typecheck, lint --fix, and ensure no unused exports/imports.
+- Delete the SignIn 400ms reload logic.
+- Add a tiny null spinner in AuthGate while !authReady.
+
+After changes:
+- pnpm i
+- pnpm -w typecheck && pnpm -w lint --fix
+- pnpm dev
+- Verify flow: click “Try Demo Mode” → user persists → AuthGate flips → AppShell renders → MarketStatus/Flags load with fallbacks → SSE ticks populate charts.
+
+Shell checklist (monorepo safe)
+
+pnpm i
+pnpm -w typecheck
+pnpm -w lint --fix
+pnpm --filter @spotlight/server build
+pnpm --filter @spotlight/client build
+pnpm dev
+
+
+⸻
+
+Why this works
+	•	AuthGate + hydration flag fixes the render chain deterministically (no StrictMode surprises).
+	•	Stream after authReady removes the race that kills SSE (and often looks like CORS).
+	•	Sane SSE headers stop proxy buffering and mixed-origin flakiness.
+	•	Structured errors end the {} problem so you can actually see what’s wrong.
+	•	Non-blocking flags/market status prevent optional services from blocking the dashboard.
+
+If you want, I can also drop in a tiny integration test (Playwright) that: logs in demo → asserts that MultiChart and MarketStatus render and that at least one tick arrives within 5s.

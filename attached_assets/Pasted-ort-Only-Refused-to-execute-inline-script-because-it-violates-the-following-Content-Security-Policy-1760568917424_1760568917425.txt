@@ -1,0 +1,272 @@
+ort Only] Refused to execute inline script because it violates the following Content Security Policy directive: "script-src 'none'". Either the 'unsafe-inline' keyword, a hash ('sha256-avH3APy8A+aW29yVyDOFdeDjY1Hupg/PRFshxTdAS5g='), or a nonce ('nonce-...') is required to enable inline execution.
+
+Spotlight-Trader-2:147 [Report Only] Refused to execute inline script because it violates the following Content Security Policy directive: "script-src 'none'". Either the 'unsafe-inline' keyword, a hash ('sha256-/jHy94eyFL8dTfREdmM+mpzO07r+XDqQPgiy6bP0ZUU='), or a nonce ('nonce-...') is required to enable inline execution.
+
+Spotlight-Trader-2:147 [Report Only] Refused to execute inline script because it violates the following Content Security Policy directive: "script-src 'none'". Either the 'unsafe-inline' keyword, a hash ('sha256-07l5B4sWF6cor6yDQ+CQBYw+BXfYaB+C6wxFZmj0wqo='), or a nonce ('nonce-...') is required to enable inline execution.
+
+132[Report Only] Refused to load the script '<URL>' because it violates the following Content Security Policy directive: "script-src 'none'". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback.
+
+Spotlight-Trader-2:150 [Report Only] Refused to execute inline script because it violates the following Content Security Policy directive: "script-src 'none'". Either the 'unsafe-inline' keyword, a hash ('sha256-AQueeHl2N8bLd4p6xnNE6DshmhLYMb+Bl9ut5mkadvY='), or a nonce ('nonce-...') is required to enable inline execution.
+
+88Tracking Prevention blocked access to storage for <URL>.
+_app-90e5ce64a81d4ca4.js:16 [Report Only] Refused to create a worker from 'https://replit.com/public/stallwart.build.js' because it violates the following Content Security Policy directive: "script-src 'none'". Note that 'worker-src' was not explicitly set, so 'script-src' is used as a fallback.
+
+10The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+10The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+10The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+Spotlight-Trader-2:1  The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+Spotlight-Trader-2:1  The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+Spotlight-Trader-2:1  The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+4652-43c4ee69972228c7.js:1 [Report Only] Refused to evaluate a string as JavaScript because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: "script-src 'none'".
+
+4652-43c4ee69972228c7.js:1 [Report Only] Refused to evaluate a string as JavaScript because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: "script-src 'none'".
+
+464-68f03df44a8cd933.js:1 [Report Only] Refused to evaluate a string as JavaScript because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: "script-src 'none'".
+
+_app-90e5ce64a81d4ca4.js:28 
+      /////////////////////
+   ///////////////////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////        Curious and driven?
+  ///////////////@@@@@@@///////        Work with us!
+  ///////////////@@@@@@@///////
+  ///////////////@@@@@@@///////        https://join.replit.com/hack.with.us
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@#//////////////
+   ///////////////////////////
+      /////////////////////
+      
+_app-90e5ce64a81d4ca4.js:28 [LaunchDarkly] LaunchDarkly client initialized
+framework-a82aaefb90a72c9a.js:1  Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+_ @ framework-a82aaefb90a72c9a.js:1
+framework-a82aaefb90a72c9a.js:1  Unrecognized feature: 'ambient-light-sensor'.
+_ @ framework-a82aaefb90a72c9a.js:1
+framework-a82aaefb90a72c9a.js:1  Unrecognized feature: 'battery'.
+_ @ framework-a82aaefb90a72c9a.js:1
+framework-a82aaefb90a72c9a.js:1  Unrecognized feature: 'execution-while-not-rendered'.
+_ @ framework-a82aaefb90a72c9a.js:1
+framework-a82aaefb90a72c9a.js:1  Unrecognized feature: 'execution-while-out-of-viewport'.
+_ @ framework-a82aaefb90a72c9a.js:1
+framework-a82aaefb90a72c9a.js:1  Unrecognized feature: 'layout-animations'.
+_ @ framework-a82aaefb90a72c9a.js:1
+framework-a82aaefb90a72c9a.js:1  Unrecognized feature: 'legacy-image-formats'.
+_ @ framework-a82aaefb90a72c9a.js:1
+framework-a82aaefb90a72c9a.js:1  Unrecognized feature: 'navigation-override'.
+_ @ framework-a82aaefb90a72c9a.js:1
+framework-a82aaefb90a72c9a.js:1  Unrecognized feature: 'oversized-images'.
+_ @ framework-a82aaefb90a72c9a.js:1
+framework-a82aaefb90a72c9a.js:1  Unrecognized feature: 'publickey-credentials'.
+_ @ framework-a82aaefb90a72c9a.js:1
+framework-a82aaefb90a72c9a.js:1  Unrecognized feature: 'speaker-selection'.
+_ @ framework-a82aaefb90a72c9a.js:1
+framework-a82aaefb90a72c9a.js:1  Unrecognized feature: 'unoptimized-images'.
+_ @ framework-a82aaefb90a72c9a.js:1
+framework-a82aaefb90a72c9a.js:1  Unrecognized feature: 'unsized-media'.
+_ @ framework-a82aaefb90a72c9a.js:1
+framework-a82aaefb90a72c9a.js:1  Unrecognized feature: 'pointer-lock'.
+_ @ framework-a82aaefb90a72c9a.js:1
+framework-a82aaefb90a72c9a.js:1  Allow attribute will take precedence over 'allowfullscreen'.
+_ @ framework-a82aaefb90a72c9a.js:1
+framework-a82aaefb90a72c9a.js:1  Allow attribute will take precedence over 'allowpaymentrequest'.
+_ @ framework-a82aaefb90a72c9a.js:1
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:32  Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:32  Unrecognized feature: 'ambient-light-sensor'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:32  Unrecognized feature: 'battery'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:32  Unrecognized feature: 'execution-while-not-rendered'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:32  Unrecognized feature: 'execution-while-out-of-viewport'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:32  Unrecognized feature: 'layout-animations'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:32  Unrecognized feature: 'legacy-image-formats'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:32  Unrecognized feature: 'navigation-override'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:32  Unrecognized feature: 'oversized-images'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:32  Unrecognized feature: 'publickey-credentials'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:32  Unrecognized feature: 'speaker-selection'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:32  Unrecognized feature: 'unoptimized-images'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:32  Unrecognized feature: 'unsized-media'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:32  Allow attribute will take precedence over 'allowfullscreen'.
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:32  Allow attribute will take precedence over 'allowpaymentrequest'.
+client:536  WebSocket connection to 'wss://0.0.0.0:5000/__vite_hmr?token=_NdX5G8MiFto' failed: 
+setupWebSocket @ client:536
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:142  Refused to load the script 'https://replit.com/public/js/beacon.js' because it violates the following Content Security Policy directive: "script-src 'self' 'unsafe-inline'". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback.
+
+onIframeLoad @ workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:142
+sw_iframe.html?origin=https%3A%2F%2Freplit.com:1  Error handling response: Error: runtime/sendMessage: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+    at chrome-extension://gehmmocbbkpblljhkekmfhjpfbkclbph/content/contentScripts/kwift.CHROME.js:1:186336
+sw_iframe.html?origin=https%3A%2F%2Freplit.com:1  Error handling response: Error: runtime/sendMessage: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+    at chrome-extension://gehmmocbbkpblljhkekmfhjpfbkclbph/content/contentScripts/kwift.CHROME.js:1:186336
+_app-90e5ce64a81d4ca4.js:30 [Report Only] Refused to create a worker from 'https://replit.com/service-worker.js' because it violates the following Content Security Policy directive: "script-src 'none'". Note that 'worker-src' was not explicitly set, so 'script-src' is used as a fallback.
+
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+Spotlight-Trader-2:1 Banner not shown: beforeinstallpromptevent.preventDefault() called. The page must call beforeinstallpromptevent.prompt() to show the banner.
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:32  Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+client:536  WebSocket connection to 'wss://0.0.0.0:5000/__vite_hmr?token=_NdX5G8MiFto' failed: 
+setupWebSocket @ client:536
+injected.js:27 [vite] server connection lost. Polling for restart...
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+injected.js:27 [AppShell] Starting market stream
+injected.js:27 [marketStream] Starting market stream (auth ready)
+injected.js:27 [SSE] Creating EventSource connection to: /stream/market?symbols=SPY%2CQQQ
+injected.js:27 [authStore] Verifying server auth status
+injected.js:27 [SSE] Creating EventSource connection to: /stream/market?symbols=SPY
+workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:142  Refused to load the script 'https://replit.com/public/js/beacon.js' because it violates the following Content Security Policy directive: "script-src 'self' 'unsafe-inline'". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback.
+
+onIframeLoad @ workspace_iframe.html?initialPath=%2F&id=%3Ar2b%3A:142
+injected.js:27 [authStore] Server auth valid, user: owner
+2injected.js:27 [SSE] Connection OPENED successfully
+injected.js:27 [SSE] Creating EventSource connection to: /stream/market?symbols=SPY
+injected.js:27 [SSE] Connection OPENED successfully
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+Spotlight-Trader-2:1  Error handling response: Error: runtime/sendMessage: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+    at chrome-extension://gehmmocbbkpblljhkekmfhjpfbkclbph/content/contentScripts/kwift.CHROME.js:1:186336
+e199d459-9ac1-4537-92b9-45e1d8c9ce73-00-3tbav7f2sae7.worf.replit.dev/api/metrics/tools:1   Failed to load resource: the server responded with a status of 401 (Unauthorized)
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+0.0.0.0:5000/__vite_hmr:1   Failed to load resource: net::ERR_ADDRESS_INVALID
+[NEW] Explain Console errors by using Copilot in Edge: click
+         
+         to explain an error. 
+        Learn more
+        Don't show again
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755
+injected.js:204   GET https://0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID
+apply @ injected.js:204
+ping @ client:736
+waitForSuccessfulPing @ client:755

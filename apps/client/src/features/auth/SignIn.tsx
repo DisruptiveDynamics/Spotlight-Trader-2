@@ -72,6 +72,15 @@ export function SignIn({ sessionExpired = false }: SignInProps) {
           createdAt: data.user.createdAt || new Date().toISOString(),
         });
         console.log("User set successfully");
+
+        // Fallback: if the view doesn't switch quickly, force a refresh
+        setTimeout(() => {
+          // Only refresh if still on the sign-in view (very conservative check)
+          const root = document.getElementById("root");
+          if (root && root.textContent && root.textContent.includes("Sign in to your account")) {
+            window.location.reload();
+          }
+        }, 400);
       }
     } catch (err) {
       console.error("Demo login error:", err);

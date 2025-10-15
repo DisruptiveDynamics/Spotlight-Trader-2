@@ -13,7 +13,7 @@ export function AuthGate() {
   useEffect(() => {
     // Zustand persist hydrates on first render; marking ready on mount ensures the gate flips.
     markReady();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // Tiny spinner while auth hydrates

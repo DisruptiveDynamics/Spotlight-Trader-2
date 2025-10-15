@@ -1,10 +1,10 @@
-import type { Express, Request } from "express";
+import type { Express, Request, Response } from "express";
 import multer, { type FileFilterCallback } from "multer";
 
 import { uploadKnowledge, getUserUploads } from "../knowledge/uploader.js";
-import { requireUser, AuthRequest } from "../middleware/requireUser.js";
+import { requirePin } from "../middleware/requirePin";
 
-interface MulterRequest extends AuthRequest {
+interface MulterRequest extends Request {
   file?: Express.Multer.File;
 }
 
@@ -26,7 +26,7 @@ const upload = multer({
 
 export function setupNexaKnowledgeRoutes(app: Express) {
   // POST /api/nexa/upload/youtube - Upload YouTube video transcript
-  app.post("/api/nexa/upload/youtube", requireUser, async (req: AuthRequest, res) => {
+  app.post("/api/nexa/upload/youtube", requirePin, async (req: Request, res: Response) => {
     try {
       const { url, title, tags } = req.body;
 
@@ -34,7 +34,7 @@ export function setupNexaKnowledgeRoutes(app: Express) {
         return res.status(400).json({ error: "YouTube URL is required" });
       }
 
-      const userId = req.user!.userId;
+      const userId = (req as any).userId || "owner";
 
       const result = await uploadKnowledge({
         userId,
@@ -65,7 +65,7 @@ export function setupNexaKnowledgeRoutes(app: Express) {
   });
 
   // POST /api/nexa/upload/pdf - Upload PDF document
-  app.post("/api/nexa/upload/pdf", requireUser, upload.single("file"), async (req, res) => {
+  app.post("/api/nexa/upload/pdf", requirePin, upload.single("file"), async (req, res) => {
     const multerReq = req as MulterRequest;
     try {
       if (!multerReq.file) {
@@ -73,7 +73,7 @@ export function setupNexaKnowledgeRoutes(app: Express) {
       }
 
       const { title, tags } = multerReq.body;
-      const userId = multerReq.user!.userId;
+      const userId = (multerReq as any).userId || "owner";
 
       const result = await uploadKnowledge({
         userId,
@@ -104,7 +104,7 @@ export function setupNexaKnowledgeRoutes(app: Express) {
   });
 
   // POST /api/nexa/upload/text - Upload raw text notes
-  app.post("/api/nexa/upload/text", requireUser, async (req: AuthRequest, res) => {
+  app.post("/api/nexa/upload/text", requirePin, async (req: Request, res: Response) => {
     try {
       const { text, title, tags } = req.body;
 
@@ -116,7 +116,7 @@ export function setupNexaKnowledgeRoutes(app: Express) {
         return res.status(400).json({ error: "Text must be at least 50 characters" });
       }
 
-      const userId = req.user!.userId;
+      const userId = (req as any).userId || "owner";
 
       const result = await uploadKnowledge({
         userId,
@@ -147,9 +147,9 @@ export function setupNexaKnowledgeRoutes(app: Express) {
   });
 
   // GET /api/nexa/uploads - Get upload history
-  app.get("/api/nexa/uploads", requireUser, async (req: AuthRequest, res) => {
+  app.get("/api/nexa/uploads", requirePin, async (req: Request, res: Response) => {
     try {
-      const userId = req.user!.userId;
+      const userId = (req as any).userId || "owner";
       const uploads = await getUserUploads(userId);
 
       res.json({ uploads });

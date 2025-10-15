@@ -14,6 +14,7 @@ import { rulesEngineService } from "@server/rules/service";
 import { signalsService } from "@server/signals/service";
 import { sseMarketStream } from "@server/stream/sse";
 import type { Express } from "express";
+import { requirePin } from "@server/middleware/requirePin";
 
 const DEFAULT_FAVORITES = ["SPY", "QQQ"];
 const DEFAULT_TIMEFRAME = "1m";
@@ -119,7 +120,7 @@ export function initializeMarketPipeline(app: Express) {
 
   // [PERFORMANCE] Paged history endpoint for lazy loading
   // Supports: initial load, gap-fill (sinceSeq), and scroll-back pagination (before)
-  app.get("/api/history", async (req, res) => {
+  app.get("/api/history", requirePin, async (req, res) => {
     try {
       const { symbol, timeframe = "1m", limit = 500, before, sinceSeq } = req.query;
 
@@ -163,12 +164,12 @@ export function initializeMarketPipeline(app: Express) {
     }
   });
 
-  app.get("/stream/market", sseMarketStream);
+  app.get("/stream/market", requirePin, sseMarketStream);
 
   // Endpoint to change timeframe for a symbol (replaced with new implementation)
-  app.post("/api/chart/timeframe", handleChartTimeframe);
+  app.post("/api/chart/timeframe", requirePin, handleChartTimeframe);
 
-  app.get("/api/market/status", (_req, res) => {
+  app.get("/api/market/status", requirePin, (_req, res) => {
     const source = getMarketSource();
     const reason = getMarketReason();
     const sessionStatus = isRthOpen();

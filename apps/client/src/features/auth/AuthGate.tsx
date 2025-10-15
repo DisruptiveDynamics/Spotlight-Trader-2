@@ -2,7 +2,7 @@ import { useEffect } from "react";
 
 import { useAuthStore } from "../../stores/authStore";
 import { AppShell } from "../../components/AppShell";
-import { SignIn } from "./SignIn";
+import { PinGate } from "./PinGate";
 
 export function AuthGate() {
   const user = useAuthStore((s) => s.user);
@@ -25,5 +25,5 @@ export function AuthGate() {
     );
   }
 
-  return user ? <AppShell /> : <SignIn />;
+  return user ? <AppShell /> : <PinGate />;
 }

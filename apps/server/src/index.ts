@@ -25,6 +25,7 @@ import memoryRouter from "./routes/memory";
 import { signalsRouter } from "./routes/signals";
 import { metricsRouter } from "./routes/metrics";
 import authRouter from "./routes/auth";
+import { pinAuthRouter } from "./routes/pinAuth";
 import exportRouter from "./routes/export";
 import importRouter from "./routes/import";
 import coachSettingsRouter from "./routes/coachSettings";
@@ -32,8 +33,7 @@ import { copilotToolsRouter } from "./routes/copilotTools";
 import copilotActionsRouter from "./routes/copilotActions";
 import triggerTestRouter from "./routes/triggerTest";
 import voicePreviewRouter from "./routes/voicePreview";
-// TODO: Apply requireUser middleware to protected routes
-// import { requireUser } from "./middleware/requireUser";
+import { requirePin } from "./middleware/requirePin";
 import { initializeMarketSource } from "./market/bootstrap";
 import { errorHandler, notFound } from "./middleware/error";
 import { setupVoiceProxy } from "./realtime/voiceProxy";
@@ -88,12 +88,14 @@ app.get("/api/voice/health", (_req, res) => {
   res.json({ ok: true, timestamp: Date.now() });
 });
 
-app.use("/api/auth", authRouter);
-app.use("/auth", authRouter);
+// PIN auth routes (public - no middleware)
+app.use("/api/auth", pinAuthRouter);
+app.use("/auth", pinAuthRouter);
 
-app.use("/api/flags", flagsRouter);
-app.use("/api/metrics", metricsRouter);
-app.use("/api/admin", adminRouter);
+// Protected routes (require PIN authentication)
+app.use("/api/flags", requirePin, flagsRouter);
+app.use("/api/metrics", requirePin, metricsRouter);
+app.use("/api/admin", requirePin, adminRouter);
 
 initializeMarketPipeline(app);
 initializeTelemetryBridge();
@@ -103,20 +105,20 @@ setupPreferencesRoutes(app);
 setupVoiceProxy(app, server);
 setupToolsBridge(server);
 
-app.use("/api", rulesRouter);
-app.use("/api/journals", journalsRouter);
-app.use("/api/memory", rateLimit(), memoryRouter);
-app.use("/api/insight", rateLimit(), insightRouter);
-app.use("/api/feedback", feedbackRouter);
-app.use("/api/backtest", rateLimit(), backtestRouter);
-app.use("/api/signals", signalsRouter);
-app.use("/api/export", exportRouter);
-app.use("/api/import", importRouter);
-app.use("/api/coach", coachSettingsRouter);
-app.use("/api/copilot", copilotToolsRouter);
-app.use("/api/copilot", copilotActionsRouter);
-app.use("/api/voice", voicePreviewRouter);
-app.use("/api/triggers", triggerTestRouter);
+app.use("/api", requirePin, rulesRouter);
+app.use("/api/journals", requirePin, journalsRouter);
+app.use("/api/memory", requirePin, rateLimit(), memoryRouter);
+app.use("/api/insight", requirePin, rateLimit(), insightRouter);
+app.use("/api/feedback", requirePin, feedbackRouter);
+app.use("/api/backtest", requirePin, rateLimit(), backtestRouter);
+app.use("/api/signals", requirePin, signalsRouter);
+app.use("/api/export", requirePin, exportRouter);
+app.use("/api/import", requirePin, importRouter);
+app.use("/api/coach", requirePin, coachSettingsRouter);
+app.use("/api/copilot", requirePin, copilotToolsRouter);
+app.use("/api/copilot", requirePin, copilotActionsRouter);
+app.use("/api/voice", requirePin, voicePreviewRouter);
+app.use("/api/triggers", requirePin, triggerTestRouter);
 
 initializeLearningLoop();
 startEodScheduler();

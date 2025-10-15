@@ -1,6 +1,9 @@
 import type { Router as ExpressRouter } from "express";
 import { Router } from "express";
-import { clearAuthCookie, setAuthCookie, signPinToken } from "../middleware/requirePin";
+import jwt from "jsonwebtoken";
+import { clearAuthCookie, setAuthCookie, signPinToken, type PinAuthPayload } from "../middleware/requirePin";
+
+const APP_AUTH_SECRET = process.env.APP_AUTH_SECRET || "dev_secret_change_me";
 
 export const pinAuthRouter: ExpressRouter = Router();
 
@@ -29,7 +32,13 @@ pinAuthRouter.get("/status", (req, res) => {
     if (!cookie) {
       return res.status(401).json({ ok: false });
     }
-    res.json({ ok: true });
+    
+    const decoded = jwt.verify(cookie, APP_AUTH_SECRET) as PinAuthPayload;
+    if (!decoded || decoded.typ !== "pin") {
+      return res.status(401).json({ ok: false });
+    }
+    
+    res.json({ ok: true, user: { id: decoded.sub, email: `${decoded.sub}@spotlight.local` } });
   } catch {
     res.status(401).json({ ok: false });
   }

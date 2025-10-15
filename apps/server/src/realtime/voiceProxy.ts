@@ -2,8 +2,13 @@ import { validateEnv } from "@shared/env";
 import type { Express } from "express";
 import type { Server as HTTPServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
+import jwt from "jsonwebtoken";
+import cookie from "cookie";
 
 import { verifyVoiceToken } from "./auth";
+import type { PinAuthPayload } from "../middleware/requirePin";
+
+const APP_AUTH_SECRET = process.env.APP_AUTH_SECRET || "dev_secret_change_me";
 import { voiceCalloutBridge } from "./voiceCalloutBridge";
 import { ToolCallTracker } from "../coach/responseGuard.js";
 import { getMinimalSessionUpdate, getInitialSessionUpdate } from "../coach/sessionContext";
@@ -98,19 +103,31 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
       return;
     }
 
-    const url = new URL(request.url || "", `http://${request.headers.host}`);
-    const token = url.searchParams.get("t") || request.headers["x-user-token"];
-
-    let userId: string = "demo-user"; // Default for POC
-
-    // Try to verify token if present, but don't reject if missing
-    if (token && typeof token === "string") {
-      try {
-        const payload = verifyVoiceToken(token);
-        userId = payload.userId;
-      } catch {
-        // Use default demo-user if token invalid
+    // Verify PIN authentication via cookie
+    let userId: string;
+    try {
+      const cookies = cookie.parse(request.headers.cookie || "");
+      const authCookie = cookies["st_auth"];
+      
+      if (!authCookie) {
+        clientWs.send(JSON.stringify({ type: "error", error: "Not authenticated" }));
+        clientWs.close(1008, "Authentication required");
+        return;
       }
+
+      const decoded = jwt.verify(authCookie, APP_AUTH_SECRET) as PinAuthPayload;
+      if (!decoded || decoded.typ !== "pin") {
+        clientWs.send(JSON.stringify({ type: "error", error: "Invalid authentication" }));
+        clientWs.close(1008, "Invalid authentication");
+        return;
+      }
+
+      userId = decoded.sub;
+    } catch (err) {
+      console.error("[VoiceProxy] Auth failed:", err);
+      clientWs.send(JSON.stringify({ type: "error", error: "Authentication failed" }));
+      clientWs.close(1008, "Authentication failed");
+      return;
     }
 
     if (!activeConnections.has(userId)) {

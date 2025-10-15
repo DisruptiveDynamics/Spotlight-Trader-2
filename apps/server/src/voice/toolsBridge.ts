@@ -3,7 +3,11 @@ import { randomUUID } from "crypto"; // [RESILIENCE] For correlation IDs
 import type { IncomingMessage } from "http";
 import type { Server } from "http";
 import jwt from "jsonwebtoken";
+import cookie from "cookie";
 import { WebSocketServer } from "ws";
+import type { PinAuthPayload } from "../middleware/requirePin";
+
+const APP_AUTH_SECRET = process.env.APP_AUTH_SECRET || "dev_secret_change_me";
 
 import { toolThrottler } from "./throttle"; // [PHASE-6] Throttling
 import { recordToolExecution } from "./toolMetrics"; // [OBS] Metrics tracking
@@ -43,12 +47,26 @@ export function setupToolsBridge(httpServer: Server) {
   httpServer.on("upgrade", (req: IncomingMessage, socket, head) => {
     if (!req.url?.startsWith("/ws/tools")) return;
 
-    const url = new URL(req.url, "http://localhost");
-    const token = url.searchParams.get("token") ?? "";
-
     try {
-      const decoded = jwt.verify(token, process.env.AUTH_JWT_SECRET || "dev-secret");
-      const userId = (decoded as any).userId;
+      const cookies = cookie.parse(req.headers.cookie || "");
+      const authCookie = cookies["st_auth"];
+      
+      if (!authCookie) {
+        console.error("[ToolsBridge] No auth cookie");
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+
+      const decoded = jwt.verify(authCookie, APP_AUTH_SECRET) as PinAuthPayload;
+      if (!decoded || decoded.typ !== "pin") {
+        console.error("[ToolsBridge] Invalid auth token");
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+
+      const userId = decoded.sub;
 
       wss.handleUpgrade(req, socket as any, head, (ws) => {
         console.log("[ToolsBridge] Client connected, userId:", userId);
@@ -56,6 +74,7 @@ export function setupToolsBridge(httpServer: Server) {
       });
     } catch (err) {
       console.error("[ToolsBridge] Auth failed:", err);
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
     }
   });

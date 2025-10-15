@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 
 import { db } from "../db/index.js";
 import { userPreferences } from "../db/schema.js";
-import { requireUser, AuthRequest } from "../middleware/requireUser.js";
+import { requirePin } from "../middleware/requirePin";
 
 interface UserPreferences {
   favoriteSymbols?: string[];
@@ -23,9 +23,9 @@ interface UserPreferences {
 
 export function setupPreferencesRoutes(app: Express) {
   // GET /api/nexa/preferences - Get user preferences
-  app.get("/api/nexa/preferences", requireUser, async (req: AuthRequest, res) => {
+  app.get("/api/nexa/preferences", requirePin, async (req: Request, res: Response) => {
     try {
-      const userId = req.user!.userId;
+      const userId = (req as any).userId || "owner";
 
       const prefs = await db
         .select()
@@ -73,9 +73,9 @@ export function setupPreferencesRoutes(app: Express) {
   });
 
   // PUT /api/nexa/preferences - Update all preferences (for migration)
-  app.put("/api/nexa/preferences", requireUser, async (req: AuthRequest, res) => {
+  app.put("/api/nexa/preferences", requirePin, async (req: Request, res: Response) => {
     try {
-      const userId = req.user!.userId;
+      const userId = (req as any).userId || "owner";
       const updates: UserPreferences = req.body;
 
       // Check if preferences exist
@@ -121,9 +121,9 @@ export function setupPreferencesRoutes(app: Express) {
   });
 
   // PATCH /api/nexa/preferences - Partial update with deep merge
-  app.patch("/api/nexa/preferences", requireUser, async (req: AuthRequest, res) => {
+  app.patch("/api/nexa/preferences", requirePin, async (req: Request, res: Response) => {
     try {
-      const userId = req.user!.userId;
+      const userId = (req as any).userId || "owner";
       const updates: Partial<UserPreferences> = req.body;
 
       if (Object.keys(updates).length === 0) {

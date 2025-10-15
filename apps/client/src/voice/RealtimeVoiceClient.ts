@@ -160,6 +160,9 @@ export class RealtimeVoiceClient {
           output: JSON.stringify(result),
         });
 
+        // [CONTEXT REFRESH] Inject latest chart data before AI responds
+        await this.refreshContext();
+
         // Tell the model it can continue producing its response
         await s.response?.create({});
 
@@ -252,6 +255,41 @@ export class RealtimeVoiceClient {
           instructions,
         });
       }
+    }
+  }
+
+  private async refreshContext(): Promise<void> {
+    if (!this.session || !this.toolBridge) return;
+
+    try {
+      // Get current chart state
+      const { useChartState } = await import("../state/chartState");
+      const { active } = useChartState.getState();
+
+      // Fetch latest price via tool bridge
+      const priceResult = await this.toolBridge.exec(
+        "get_last_price",
+        { symbol: active.symbol },
+        1000,
+      );
+
+      if (priceResult.ok && priceResult.output) {
+        const output = priceResult.output as { value: number; symbol: string; ts: number };
+        const contextUpdate = `Current ${active.symbol} price: $${output.value} (timeframe: ${active.timeframe})`;
+        
+        // Update session context with fresh data
+        const s = this.session as any;
+        if (typeof s.update === "function") {
+          s.update({
+            instructions: `${this.config.instructions}\n\n[LIVE CONTEXT] ${contextUpdate}`,
+          });
+        }
+
+        console.log(`[RealtimeVoiceClient] Context refreshed: ${contextUpdate}`);
+      }
+    } catch (err) {
+      console.warn("[RealtimeVoiceClient] Context refresh failed:", err);
+      // Don't throw - context refresh is best-effort
     }
   }
 }

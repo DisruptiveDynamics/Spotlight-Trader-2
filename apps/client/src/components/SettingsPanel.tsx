@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
+
+import { AccessibilityControls } from "./AccessibilityControls";
 import { useCoachSettings } from "../state/coachSettings";
 import { useAuthStore } from "../stores/authStore";
-import { AccessibilityControls } from "./AccessibilityControls";
 
 interface Voice {
   id: string;

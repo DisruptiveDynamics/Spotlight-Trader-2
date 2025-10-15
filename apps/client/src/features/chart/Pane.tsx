@@ -1,14 +1,3 @@
-import { useEffect, useRef, useState, useMemo } from "react";
-import {
-  createChart,
-  IChartApi,
-  ISeriesApi,
-  UTCTimestamp,
-  LineStyle,
-  CrosshairMode,
-} from "lightweight-charts";
-import { useChartState } from "../../state/chartState";
-import { fetchHistory, sessionStartMs } from "../../lib/history";
 import {
   emaBatch,
   bollingerBatch,
@@ -17,8 +6,20 @@ import {
   volumeSmaBatch,
   type Candle,
 } from "@spotlight/shared";
+import {
+  createChart,
+  IChartApi,
+  ISeriesApi,
+  UTCTimestamp,
+  LineStyle,
+  CrosshairMode,
+} from "lightweight-charts";
+import { useEffect, useRef, useState, useMemo } from "react";
+
 import { useChartContext } from "./hooks/useChartContext";
+import { fetchHistory, sessionStartMs } from "../../lib/history";
 import { connectMarketSSE, type Bar, type Micro } from "../../lib/marketStream";
+import { useChartState } from "../../state/chartState";
 
 interface PaneProps {
   paneId: number;

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+
 import { connectMarketSSE, type Tick } from "../lib/marketStream";
 
 interface TapePanelProps {

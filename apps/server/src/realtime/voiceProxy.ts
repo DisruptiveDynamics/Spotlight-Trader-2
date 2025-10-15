@@ -1,21 +1,22 @@
-import type { Server as HTTPServer } from "http";
-import type { Express } from "express";
-import { WebSocketServer, WebSocket } from "ws";
-import { verifyVoiceToken } from "./auth";
-import { getMinimalSessionUpdate, getInitialSessionUpdate } from "../coach/sessionContext";
 import { validateEnv } from "@shared/env";
+import type { Express } from "express";
+import type { Server as HTTPServer } from "http";
+import { WebSocketServer, WebSocket } from "ws";
+
+import { verifyVoiceToken } from "./auth";
+import { voiceCalloutBridge } from "./voiceCalloutBridge";
+import { ToolCallTracker } from "../coach/responseGuard.js";
+import { getMinimalSessionUpdate, getInitialSessionUpdate } from "../coach/sessionContext";
+import { traderPatternDetector } from "../coach/traderPatternDetector";
+import { voiceMemoryBridge } from "../coach/voiceMemoryBridge";
+import { toolHandlers } from "../copilot/tools/handlers";
 import {
   recordWSConnection,
   recordWSDisconnection,
   recordWSLRUEviction,
 } from "../metrics/registry";
-import { toolHandlers } from "../copilot/tools/handlers";
-import { voiceCalloutBridge } from "./voiceCalloutBridge";
-import { voiceMemoryBridge } from "../coach/voiceMemoryBridge";
-import { traderPatternDetector } from "../coach/traderPatternDetector";
 // TODO: Integrate market context checks into voice responses
 // import { ensureMarketContext } from "../coach/ensureMarketContext.js";
-import { ToolCallTracker } from "../coach/responseGuard.js";
 
 const env = validateEnv(process.env);
 

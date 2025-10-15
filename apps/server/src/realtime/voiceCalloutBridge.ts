@@ -1,5 +1,6 @@
 import { EventEmitter } from "events";
 import type { WebSocket } from "ws";
+
 import { copilotBroadcaster } from "../copilot/broadcaster";
 
 interface VoiceSession {

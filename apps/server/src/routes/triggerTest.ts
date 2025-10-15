@@ -1,6 +1,6 @@
-import { Router, type Router as ExpressRouter } from "express";
-import { eventBus, type MarketBarEvent, toSharedBar } from "@server/market/eventBus";
 import { ringBuffer } from "@server/cache/ring";
+import { eventBus, type MarketBarEvent, toSharedBar } from "@server/market/eventBus";
+import { Router, type Router as ExpressRouter } from "express";
 
 const router: ExpressRouter = Router();
 

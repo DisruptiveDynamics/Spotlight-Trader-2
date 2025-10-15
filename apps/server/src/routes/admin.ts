@@ -1,7 +1,8 @@
 import { Router, type RequestHandler } from "express";
-import { requireAdmin } from "../middleware/requireAdmin";
-import { metrics } from "../metrics/registry";
+
 import { getFlags } from "../flags/store";
+import { metrics } from "../metrics/registry";
+import { requireAdmin } from "../middleware/requireAdmin";
 
 const router: Router = Router();
 

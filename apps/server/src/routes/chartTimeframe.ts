@@ -1,7 +1,6 @@
 // POST /api/chart/timeframe - Server-authoritative timeframe switching
 // Client requests timeframe change, server validates and orchestrates the transition
 
-import type { Request, Response } from "express";
 import { switchTimeframe } from "@server/chart/switchTimeframe";
 import { flags } from "@shared/flags";
 import type {
@@ -9,6 +8,7 @@ import type {
   TimeframeSwitchRequest,
   TimeframeSwitchResponse,
 } from "@shared/types/market";
+import type { Request, Response } from "express";
 
 const VALID_TIMEFRAMES: Timeframe[] = ["1m", "2m", "5m", "10m", "15m", "30m", "1h"];
 

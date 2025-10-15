@@ -1,7 +1,8 @@
+import { eq, and, gte, desc } from "drizzle-orm";
+
+import { voiceMemoryBridge } from "./voiceMemoryBridge";
 import { db } from "../db/index";
 import { journalEvents } from "../db/schema";
-import { eq, and, gte, desc } from "drizzle-orm";
-import { voiceMemoryBridge } from "./voiceMemoryBridge";
 
 interface TraderPattern {
   type: "late_entry" | "oversizing" | "ignoring_stop" | "chasing" | "fomo" | "revenge_trade";

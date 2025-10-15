@@ -1,5 +1,6 @@
-import { eventBus, type Tick, type Microbar, type MarketBarEvent } from "./eventBus";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
+
+import { eventBus, type Tick, type Microbar, type MarketBarEvent } from "./eventBus";
 
 const ET = "America/New_York";
 

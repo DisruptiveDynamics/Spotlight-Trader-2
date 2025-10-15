@@ -176,8 +176,8 @@ export const proactiveCoachingEngine = new ProactiveCoachingEngine();
 
 // Wire up to copilot broadcaster for voice delivery
 import { copilotBroadcaster } from "../copilot/broadcaster";
-import { rulesSentinel } from "../copilot/sentinel";
 import { patternMemory } from "../copilot/patterns/lookup";
+import { rulesSentinel } from "../copilot/sentinel";
 
 proactiveCoachingEngine.on("coaching_alert", async (alert: MarketCondition) => {
   console.log("[ProactiveCoaching] Market condition detected:", alert);

@@ -1,14 +1,15 @@
-import { telemetryBus } from "../../telemetry/bus";
 // TODO: Integrate copilotBroadcaster for trigger notifications
 // import { copilotBroadcaster } from "../broadcaster";
-import { VwapReclaimTrigger, VwapRejectTrigger } from "./vwapReclaim";
-import { OrbTrigger } from "./orb";
-import { EmaPullbackTrigger } from "./emaPullback";
 import { ringBuffer } from "@server/cache/ring";
-import type { Bar } from "@shared/types";
 import type { Candle } from "@shared/indicators";
-import { proposeCallout } from "../tools/handlers";
+import type { Bar } from "@shared/types";
+
+import { EmaPullbackTrigger } from "./emaPullback";
+import { OrbTrigger } from "./orb";
+import { VwapReclaimTrigger, VwapRejectTrigger } from "./vwapReclaim";
+import { telemetryBus } from "../../telemetry/bus";
 import type { TelemetryEvent } from "../../telemetry/types";
+import { proposeCallout } from "../tools/handlers";
 
 interface TriggerSet {
   vwapReclaim: VwapReclaimTrigger;

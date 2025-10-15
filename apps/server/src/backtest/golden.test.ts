@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
+
 import { runBacktest } from "./engine";
 import { goldenTestCases, expectedTriggers } from "./fixtures";
 import * as historyService from "../history/service";

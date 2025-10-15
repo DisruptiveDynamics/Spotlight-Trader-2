@@ -1,16 +1,17 @@
+import type { InsightContext } from "@spotlight/shared";
 import React, { useState, useEffect, Suspense, lazy } from "react";
+
+import { Brand } from "./components/Brand";
 import { LatencyHUD } from "./components/LatencyHUD";
 import { SignalDensityControl } from "./components/SignalDensityControl";
-import { Brand } from "./components/Brand";
 import { Splash } from "./components/Splash";
-import { Toolbar } from "./features/chart/Toolbar";
-import { focusManager } from "./services/FocusManager";
-import { startFlagSync, stopFlagSync } from "./state/flags";
-import type { InsightContext } from "@spotlight/shared";
-import { MarketStatus } from "./features/hud/MarketStatus";
-import { useAuthStore } from "./stores/authStore";
 import { SignIn } from "./features/auth/SignIn";
+import { Toolbar } from "./features/chart/Toolbar";
+import { MarketStatus } from "./features/hud/MarketStatus";
+import { focusManager } from "./services/FocusManager";
 import { useChartState } from "./state/chartState";
+import { startFlagSync, stopFlagSync } from "./state/flags";
+import { useAuthStore } from "./stores/authStore";
 
 // Lazy load heavy components for code-splitting
 const MultiChart = lazy(() =>

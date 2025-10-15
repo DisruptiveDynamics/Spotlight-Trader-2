@@ -1,12 +1,13 @@
-import { z } from "zod";
 import { validateEnv } from "@shared/env";
+import { desc, eq } from "drizzle-orm";
+import { z } from "zod";
+
+import { bars1m } from "../chart/bars1m";
 import { getChartSnapshot } from "../copilot/tools/handlers";
 import { db } from "../db";
 import { rules, journalEvents, signals } from "../db/schema";
-import { desc, eq } from "drizzle-orm";
-import { retrieveTopK } from "../memory/store";
-import { bars1m } from "../chart/bars1m";
 import { getSessionVWAPForSymbol } from "../indicators/vwap";
+import { retrieveTopK } from "../memory/store";
 
 const env = validateEnv(process.env);
 

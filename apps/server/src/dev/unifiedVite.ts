@@ -6,10 +6,10 @@
  */
 
 import type { Application } from "express";
-import type { Server } from "http";
-import { createServer as createViteServer } from "vite";
 import fs from "fs/promises";
+import type { Server } from "http";
 import path from "path";
+import { createServer as createViteServer } from "vite";
 
 export async function attachViteMiddleware(app: Application, server: Server) {
   const clientRoot = path.resolve(process.cwd(), "../client");

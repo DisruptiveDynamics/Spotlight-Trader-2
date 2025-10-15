@@ -1,7 +1,8 @@
-import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { setHours, setMinutes, setSeconds, setMilliseconds } from "date-fns";
-import type { Timeframe } from "../state/chartState";
+import { toZonedTime, fromZonedTime } from "date-fns-tz";
+
 import { HISTORY_URL } from "../config";
+import type { Timeframe } from "../state/chartState";
 
 export interface HistoryCandle {
   time: number; // Unix timestamp in seconds (for lightweight-charts)

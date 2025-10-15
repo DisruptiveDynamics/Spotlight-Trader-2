@@ -3,8 +3,8 @@
  * These fixtures lock in expected behavior
  */
 
-import type { Rule } from "@shared/types/rules";
 import type { Bar } from "@shared/types";
+import type { Rule } from "@shared/types/rules";
 
 /**
  * Sample bars for testing

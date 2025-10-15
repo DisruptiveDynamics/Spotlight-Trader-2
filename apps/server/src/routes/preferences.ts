@@ -1,8 +1,9 @@
+import { eq } from "drizzle-orm";
 import type { Express } from "express";
-import { requireUser, AuthRequest } from "../middleware/requireUser.js";
+
 import { db } from "../db/index.js";
 import { userPreferences } from "../db/schema.js";
-import { eq } from "drizzle-orm";
+import { requireUser, AuthRequest } from "../middleware/requireUser.js";
 
 interface UserPreferences {
   favoriteSymbols?: string[];

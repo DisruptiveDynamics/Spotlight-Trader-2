@@ -1,7 +1,7 @@
-import cors from "cors";
-import helmet from "helmet";
-import { type Express } from "express";
 import { validateEnv } from "@shared/env";
+import cors from "cors";
+import { type Express } from "express";
+import helmet from "helmet";
 
 const env = validateEnv(process.env);
 

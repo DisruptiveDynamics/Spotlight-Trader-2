@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+
 import { getEpochInfo } from "./stream/epoch";
 
 let serverReady = true;

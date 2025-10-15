@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+
 import type { AppEvent, ChartSnapshot, CoachMessage, JournalEntry, Toolbelt } from "./types";
 
 const bus = new EventEmitter();

@@ -2,9 +2,10 @@
 // Passive logging only, no functional impact - useful for debugging
 // Guarded behind flags.marketAudit (default: false)
 
-import { eventBus } from "./eventBus";
 import { getSessionVWAPForSymbol } from "@server/indicators/vwap";
 import { flags } from "@shared/flags";
+
+import { eventBus } from "./eventBus";
 
 class MarketAuditTap {
   private lastTickPrices = new Map<string, number>();

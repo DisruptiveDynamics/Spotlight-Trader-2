@@ -1,5 +1,5 @@
-import { useState, useCallback } from "react";
 import type { InsightContext, InsightResponse } from "@spotlight/shared";
+import { useState, useCallback } from "react";
 
 interface UseExplainSignalResult {
   explain: (question: string, context: InsightContext) => Promise<void>;

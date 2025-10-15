@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { RingBuffer } from "../cache/ring";
 import type { Bar } from "@shared/types";
+import { describe, it, expect, beforeEach } from "vitest";
+
+import { RingBuffer } from "../cache/ring";
 
 describe("RingBuffer", () => {
   let ring: RingBuffer;

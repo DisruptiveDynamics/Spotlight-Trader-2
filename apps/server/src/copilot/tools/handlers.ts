@@ -1,3 +1,17 @@
+import { ringBuffer } from "@server/cache/ring";
+import { bars1m } from "@server/chart/bars1m";
+import { rollupFrom1m } from "@server/chart/rollups";
+import { db } from "@server/db";
+import { callouts, journalEvents } from "@server/db/schema";
+import { getSessionVWAPForSymbol } from "@server/indicators/vwap";
+import { flags } from "@shared/flags";
+import type { Timeframe } from "@shared/types/market";
+import { nanoid } from "nanoid";
+
+import { copilotBroadcaster } from "../broadcaster";
+import { patternMemory } from "../patterns/lookup";
+import { perfMonitor } from "../performance";
+import { rulesSentinel } from "../sentinel";
 import type {
   GetChartSnapshotParams,
   ChartSnapshot,
@@ -20,19 +34,6 @@ import type {
   GenerateTradePlanParams,
   TradePlan,
 } from "./types";
-import { patternMemory } from "../patterns/lookup";
-import { rulesSentinel } from "../sentinel";
-import { nanoid } from "nanoid";
-import { db } from "@server/db";
-import { callouts, journalEvents } from "@server/db/schema";
-import { copilotBroadcaster } from "../broadcaster";
-import { perfMonitor } from "../performance";
-import { ringBuffer } from "@server/cache/ring";
-import { bars1m } from "@server/chart/bars1m";
-import { rollupFrom1m } from "@server/chart/rollups";
-import { flags } from "@shared/flags";
-import type { Timeframe } from "@shared/types/market";
-import { getSessionVWAPForSymbol } from "@server/indicators/vwap";
 
 export async function getChartSnapshot(params: GetChartSnapshotParams): Promise<ChartSnapshot> {
   // Support both 'barCount' (voice tool) and 'lookback' (legacy) parameter names

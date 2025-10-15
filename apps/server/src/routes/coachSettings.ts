@@ -1,7 +1,8 @@
+import { eq } from "drizzle-orm";
 import { Router } from "express";
+
 import { db } from "../db/index.js";
 import { coachProfiles } from "../db/schema.js";
-import { eq } from "drizzle-orm";
 import { requireUser, AuthRequest } from "../middleware/requireUser.js";
 
 const router = Router();

@@ -1,4 +1,5 @@
 import { eventBus, type MarketBarEvent, type Tick } from "@server/market/eventBus";
+
 import { telemetryBus } from "./bus";
 
 export function initializeTelemetryBridge(): void {

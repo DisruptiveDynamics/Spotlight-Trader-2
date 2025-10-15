@@ -1,19 +1,19 @@
-import type { Express } from "express";
-import { polygonWs } from "@server/market/polygonWs";
-import { barBuilder } from "@server/market/barBuilder";
-import { sseMarketStream } from "@server/stream/sse";
-import { getHistory } from "@server/history/service";
-import { eventBus } from "@server/market/eventBus";
 import { ringBuffer } from "@server/cache/ring";
 import { bars1m } from "@server/chart/bars1m";
+import { coachAdvisor } from "@server/coach/advisor";
+import { getHistory } from "@server/history/service";
 import { sessionVWAP } from "@server/indicators/vwap";
 import { marketAuditTap } from "@server/market/auditTap";
-import { rulesEngineService } from "@server/rules/service";
-import { signalsService } from "@server/signals/service";
-import { coachAdvisor } from "@server/coach/advisor";
+import { barBuilder } from "@server/market/barBuilder";
 import { getMarketSource, getMarketReason } from "@server/market/bootstrap";
+import { eventBus } from "@server/market/eventBus";
+import { polygonWs } from "@server/market/polygonWs";
 import { isRthOpen } from "@server/market/session";
 import { handleChartTimeframe } from "@server/routes/chartTimeframe";
+import { rulesEngineService } from "@server/rules/service";
+import { signalsService } from "@server/signals/service";
+import { sseMarketStream } from "@server/stream/sse";
+import type { Express } from "express";
 
 const DEFAULT_FAVORITES = ["SPY", "QQQ"];
 const DEFAULT_TIMEFRAME = "1m";

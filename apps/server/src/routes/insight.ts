@@ -1,6 +1,6 @@
+import type { InsightRequest, InsightResponse } from "@spotlight/shared";
 import { Router } from "express";
 import type { Request, Response } from "express";
-import type { InsightRequest, InsightResponse } from "@spotlight/shared";
 import OpenAI from "openai";
 
 const router = Router();

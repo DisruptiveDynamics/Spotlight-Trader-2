@@ -1,5 +1,5 @@
-import jwt from "jsonwebtoken";
 import { validateEnv } from "@shared/env";
+import jwt from "jsonwebtoken";
 
 const env = validateEnv(process.env);
 

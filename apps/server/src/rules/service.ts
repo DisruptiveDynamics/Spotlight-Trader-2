@@ -1,7 +1,9 @@
-import { eventBus, type MarketBarEvent, toSharedBar } from "../market/eventBus";
-import { ruleRegistry } from "./registry";
-import { ruleEvaluator } from "./evaluator";
 import type { RuleContext } from "@shared/types/rules";
+
+import { ruleEvaluator } from "./evaluator";
+import { ruleRegistry } from "./registry";
+import { eventBus, type MarketBarEvent, toSharedBar } from "../market/eventBus";
+
 
 export class RulesEngineService {
   private userId = "demo-user";

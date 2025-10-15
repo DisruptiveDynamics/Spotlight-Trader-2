@@ -1,8 +1,9 @@
-import type { Express } from "express";
-import { signVoiceToken } from "../realtime/auth";
-import { requireUser, AuthRequest } from "../middleware/requireUser.js";
 import { validateEnv } from "@shared/env";
+import type { Express } from "express";
 import jwt from "jsonwebtoken";
+
+import { requireUser, AuthRequest } from "../middleware/requireUser.js";
+import { signVoiceToken } from "../realtime/auth";
 
 const env = validateEnv(process.env);
 

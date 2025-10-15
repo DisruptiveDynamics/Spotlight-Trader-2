@@ -1,8 +1,9 @@
+import { VOICE_COACH_SYSTEM } from "@spotlight/shared";
 import { useEffect, useRef, useState } from "react";
-import { RealtimeVoiceClient } from "../../voice/RealtimeVoiceClient";
+
 import { VoiceFallback } from "./VoiceFallback";
 import { ensureiOSAudioUnlocked } from "../../voice/ios";
-import { VOICE_COACH_SYSTEM } from "@spotlight/shared";
+import { RealtimeVoiceClient } from "../../voice/RealtimeVoiceClient";
 
 type CoachState = "listening" | "thinking" | "speaking" | "idle" | "muted";
 type ConnectionState =

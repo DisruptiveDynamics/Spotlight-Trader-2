@@ -1,12 +1,13 @@
 // Server-authoritative timeframe switching
 // Atomic transition: stop old aggregation → backfill history → start new aggregation
 
+import { barBuilder } from "@server/market/barBuilder";
+import { eventBus } from "@server/market/eventBus";
+import type { Bar } from "@shared/types";
+import { type Timeframe } from "@shared/types/market";
+
 import { bars1m } from "./bars1m";
 import { rollupFrom1m, apply1mCloseToRollup } from "./rollups";
-import { type Timeframe } from "@shared/types/market";
-import { eventBus } from "@server/market/eventBus";
-import { barBuilder } from "@server/market/barBuilder";
-import type { Bar } from "@shared/types";
 
 interface TimeframeState {
   symbol: string;

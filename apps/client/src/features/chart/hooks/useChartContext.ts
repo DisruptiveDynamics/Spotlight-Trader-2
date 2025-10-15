@@ -1,6 +1,7 @@
-import { useMemo } from "react";
-import { useChartState } from "../../../state/chartState";
 import type { InsightContext, InsightBar, InsightOverlays } from "@spotlight/shared";
+import { useMemo } from "react";
+
+import { useChartState } from "../../../state/chartState";
 
 interface UseChartContextProps {
   candles: Array<{

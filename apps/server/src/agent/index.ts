@@ -1,6 +1,7 @@
 import type { Express } from "express";
-import { buildAgentRouter } from "./router";
+
 import { startProactiveRules } from "./proactive";
+import { buildAgentRouter } from "./router";
 
 let stopRules: (() => void) | null = null;
 

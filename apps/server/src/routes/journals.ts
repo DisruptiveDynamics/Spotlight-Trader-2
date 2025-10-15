@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
+
+import { generateEodSummary, formatEodSummary } from "../journals/eod.js";
 import {
   addJournalEntry,
   listJournals,
@@ -8,7 +10,6 @@ import {
   deleteJournal,
   linkJournalToSignal,
 } from "../journals/service.js";
-import { generateEodSummary, formatEodSummary } from "../journals/eod.js";
 import { AuthRequest } from "../middleware/requireUser.js";
 
 const router: Router = Router();

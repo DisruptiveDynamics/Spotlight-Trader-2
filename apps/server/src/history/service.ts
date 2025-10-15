@@ -1,8 +1,8 @@
-import { validateEnv } from "@shared/env";
 import { ringBuffer } from "@server/cache/ring";
-import type { Bar } from "@shared/types";
 import type { Timeframe } from "@server/market/eventBus";
 import { polygonWs } from "@server/market/polygonWs";
+import { validateEnv } from "@shared/env";
+import type { Bar } from "@shared/types";
 
 const env = validateEnv(process.env);
 

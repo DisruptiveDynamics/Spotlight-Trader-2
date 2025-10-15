@@ -1,7 +1,8 @@
-import { eventBus } from "../market/eventBus";
 import type { Signal, SignalExplanation } from "@shared/types/rules";
+
 import { db } from "../db";
 import { signalExplanations } from "../db/schema";
+import { eventBus } from "../market/eventBus";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 

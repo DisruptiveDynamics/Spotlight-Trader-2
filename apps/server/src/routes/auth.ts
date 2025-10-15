@@ -1,12 +1,13 @@
-import { Router, type Router as RouterType } from "express";
-import { nanoid } from "nanoid";
-import { db } from "../db/index.js";
-import { users, magicLinks, sessions } from "../db/schema.js";
-import { startAuthSchema, callbackQuerySchema } from "../auth/models.js";
-import { sendMagicLink } from "../auth/mail.js";
-import { signJwt, verifyJwt } from "../auth/jwt.js";
 import { validateEnv } from "@shared/env";
 import { eq, and, gte } from "drizzle-orm";
+import { Router, type Router as RouterType } from "express";
+import { nanoid } from "nanoid";
+
+import { signJwt, verifyJwt } from "../auth/jwt.js";
+import { sendMagicLink } from "../auth/mail.js";
+import { startAuthSchema, callbackQuerySchema } from "../auth/models.js";
+import { db } from "../db/index.js";
+import { users, magicLinks, sessions } from "../db/schema.js";
 
 const env = validateEnv(process.env);
 const router: RouterType = Router();

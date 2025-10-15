@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { Signal } from "@shared/types/rules";
+import { useState } from "react";
 
 interface SignalFeedbackProps {
   signal: Signal;

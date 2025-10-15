@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
+ 
 
 // Vitest sets up jsdom for this project; we just polyfill a few gaps safely.
 

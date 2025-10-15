@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
+
 import { runBacktest, getBacktestPresets, BacktestValidationError } from "../backtest/engine";
-import { ruleRegistry } from "../rules/registry";
 import { isEnabled } from "../flags";
 import { AuthRequest } from "../middleware/requireUser.js";
+import { ruleRegistry } from "../rules/registry";
 
 export const backtestRouter: Router = Router();
 

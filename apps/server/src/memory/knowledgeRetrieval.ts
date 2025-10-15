@@ -1,6 +1,7 @@
+import { eq, and, sql } from "drizzle-orm";
+
 import { db } from "../db/index.js";
 import { coachMemories } from "../db/schema.js";
-import { eq, and, sql } from "drizzle-orm";
 
 export interface KnowledgeChunk {
   id: string;

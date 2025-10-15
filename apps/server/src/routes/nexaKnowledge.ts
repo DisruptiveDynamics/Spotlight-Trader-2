@@ -1,7 +1,8 @@
 import type { Express, Request } from "express";
-import { requireUser, AuthRequest } from "../middleware/requireUser.js";
-import { uploadKnowledge, getUserUploads } from "../knowledge/uploader.js";
 import multer, { type FileFilterCallback } from "multer";
+
+import { uploadKnowledge, getUserUploads } from "../knowledge/uploader.js";
+import { requireUser, AuthRequest } from "../middleware/requireUser.js";
 
 interface MulterRequest extends AuthRequest {
   file?: Express.Multer.File;

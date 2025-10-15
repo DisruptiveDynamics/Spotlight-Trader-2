@@ -1,13 +1,15 @@
-import { WebSocketServer } from "ws";
+import { perfMetrics } from "@shared/perf/metrics"; // [PHASE-6] Tool latency metrics
+import { randomUUID } from "crypto"; // [RESILIENCE] For correlation IDs
 import type { IncomingMessage } from "http";
 import type { Server } from "http";
 import jwt from "jsonwebtoken";
+import { WebSocketServer } from "ws";
+
+import { toolThrottler } from "./throttle"; // [PHASE-6] Throttling
+import { recordToolExecution } from "./toolMetrics"; // [OBS] Metrics tracking
 import { voiceTools } from "./tools";
 import { toolHandlers as copilotHandlers } from "../copilot/tools/handlers";
-import { randomUUID } from "crypto"; // [RESILIENCE] For correlation IDs
-import { recordToolExecution } from "./toolMetrics"; // [OBS] Metrics tracking
-import { toolThrottler } from "./throttle"; // [PHASE-6] Throttling
-import { perfMetrics } from "@shared/perf/metrics"; // [PHASE-6] Tool latency metrics
+
 
 type ToolExecRequest = {
   type: "tool.exec";

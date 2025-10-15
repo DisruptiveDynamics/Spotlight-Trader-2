@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
+
 import { BarBuilder } from "../market/barBuilder";
 import { eventBus } from "../market/eventBus";
 

@@ -1,8 +1,9 @@
-import { eventBus } from "../market/eventBus";
 import type { EvaluatedRule, Signal } from "@shared/types/rules";
-import { riskGovernor } from "../risk/governor";
+
 import { db } from "../db";
 import { signals } from "../db/schema";
+import { eventBus } from "../market/eventBus";
+import { riskGovernor } from "../risk/governor";
 
 export class SignalsService {
   start(): void {

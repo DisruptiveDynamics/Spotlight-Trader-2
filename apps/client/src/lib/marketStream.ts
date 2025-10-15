@@ -1,6 +1,7 @@
-import { STREAM_URL, HISTORY_URL } from "../config";
-import { reconcileBars } from "@shared/utils/barHash";
 import { perfMetrics } from "@shared/perf/metrics";
+import { reconcileBars } from "@shared/utils/barHash";
+
+import { STREAM_URL, HISTORY_URL } from "../config";
 
 export type Ohlcv = { o: number; h: number; l: number; c: number; v: number };
 

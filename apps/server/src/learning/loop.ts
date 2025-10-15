@@ -3,10 +3,12 @@
  * Listens to feedback and maintains per-rule rolling metrics
  */
 
-import { eventBus } from "../market/eventBus";
+import { eq, and, gte, sql } from "drizzle-orm";
+
 import { db } from "../db";
 import { feedback, ruleMetricsDaily } from "../db/schema";
-import { eq, and, gte, sql } from "drizzle-orm";
+import { eventBus } from "../market/eventBus";
+
 
 interface RuleMetrics {
   ruleId: string;

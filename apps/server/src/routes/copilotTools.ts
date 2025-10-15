@@ -1,6 +1,7 @@
 import { Router, type Request, type Router as ExpressRouter } from "express";
-import { toolHandlers } from "../copilot/tools/handlers";
+
 import { copilotBroadcaster } from "../copilot/broadcaster";
+import { toolHandlers } from "../copilot/tools/handlers";
 import type {
   GetChartSnapshotParams,
   SubscribeMarketStreamParams,

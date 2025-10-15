@@ -1,14 +1,15 @@
-import type { Request, Response } from "express";
-import { eventBus } from "@server/market/eventBus";
 import { getHistory } from "@server/history/service";
-import { BackpressureController } from "./backpressure";
+import { getMarketSource, getMarketReason } from "@server/market/bootstrap";
+import { eventBus } from "@server/market/eventBus";
 import {
   recordSSEConnection,
   recordSSEDisconnection,
   recordSSEEvent,
   recordSSEBackpressure,
 } from "@server/metrics/registry";
-import { getMarketSource, getMarketReason } from "@server/market/bootstrap";
+import type { Request, Response } from "express";
+
+import { BackpressureController } from "./backpressure";
 import { getEpochId, getEpochStartMs } from "./epoch"; // [RESILIENCE] Server restart detection
 import { MicrobarBatcher } from "./microbatcher"; // [PHASE-5] SSE micro-batching
 

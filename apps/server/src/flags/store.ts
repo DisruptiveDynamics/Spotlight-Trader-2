@@ -4,8 +4,9 @@
  * Supports optional DB persistence
  */
 
-import { db } from "../db";
 import { sql } from "drizzle-orm";
+
+import { db } from "../db";
 
 export interface Flags {
   // Existing flags

@@ -229,7 +229,9 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
     emitStatus(reconnectAttempts === 0 ? "connecting" : "degraded_ws");
 
-    es = new EventSource(`${STREAM_URL}?${params.toString()}`);
+    const url = `${STREAM_URL}?${params.toString()}`;
+    console.log(`[SSE] Creating EventSource connection to: ${url}`);
+    es = new EventSource(url);
 
     es.addEventListener("open", async () => {
       reconnectAttempts = 0;
@@ -393,7 +395,12 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       listeners.tick.forEach((fn) => fn(t));
     });
 
-    es.onerror = () => {
+    es.onerror = (event) => {
+      console.error("[SSE] Connection error occurred:", {
+        readyState: es?.readyState,
+        url: es?.url,
+        event: event,
+      });
       console.warn("SSE error, scheduling reconnect");
       emitStatus("error");
       es?.close();

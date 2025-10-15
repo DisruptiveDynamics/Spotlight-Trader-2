@@ -1,0 +1,331 @@
+Got it. I can’t open every file in the tree from here (GitHub’s UI blocks deep file fetches in this environment), but I **did** confirm your repo layout, tech stack, and intended features (SSE market streaming, WebSocket voice proxy, React client, Express server, etc.). I’ll give you a **refined, repo-aware single prompt** that (1) removes brittle bits you described, (2) adds the missing glue for a “Thinkorswim-smooth” chart + **state-of-the-art Voice Coach**, and (3) includes guardrails that will work even if a couple files are named slightly differently. These changes align with the structure/intent shown in your README and features list. ([GitHub][1])
+
+---
+
+# 🔧 One **Replit Mega-Prompt** (paste as-is)
+
+````
+You are an expert senior full-stack TypeScript engineer. In the monorepo “Spotlight-Trader-2”, implement the following to achieve Thinkorswim-smooth charts and a state-of-the-art Voice Coach with low latency, tool-calling, and Bring-Your-Alpha (RAG) uploads.
+
+GOALS
+1) Auth renders dashboard instantly after demo login — no reload hacks.
+2) Real-time market data: SSE stable with proper headers; optional WS fallback. Latest bar and wick update smoothly.
+3) Voice Coach: push-to-talk, barge-in, partial ASR, confidence + RR outputs; always aware of symbol/timeframe/last bar/VWAP/EMAs/journal/rules.
+4) Bring-Your-Alpha: drag-and-drop docs/links → chunk → embed (pgvector) → instantly queryable by the coach.
+5) Zero "{}" errors; structured logs + latency metrics; robust reconnection.
+
+ASSUMPTIONS
+- Client: React + Vite in `apps/client`
+- Server: Express in `apps/server`
+- We can create small new files under `apps/server/src/voice/*` and `apps/server/src/rag/*`.
+- SSE/WS endpoints and OpenAI/Polygon are configured via `.env` (see README env hints).
+If any path doesn’t exist, create it.
+
+────────────────────────────────────────────────────────────────
+A) AUTH/GATE: deterministic hydration (remove reload hacks)
+────────────────────────────────────────────────────────────────
+1) Create/Update `apps/client/src/stores/auth.ts` with Zustand + persist:
+   - state: { user: User|null, authReady: boolean }
+   - actions: setUser(User|null), logout(), markReady()
+   - initialize `authReady=false`; `markReady()` sets true.
+2) Update `apps/client/src/components/AuthGate.tsx`:
+   - `useEffect(()=>markReady(),[])`
+   - if (!authReady) return a tiny spinner/null
+   - return user ? <AppShell/> : <SignIn/>
+3) Update `apps/client/src/components/SignIn.tsx`:
+   - Implement `loginDemo()` → `setUser({ id:'demo', email:'demo@spotlight', name:'Demo', demo:true })`
+   - **Delete** any `setTimeout(..., 400)` reload or similar hacks.
+
+────────────────────────────────────────────────────────────────
+B) SSE STREAM: headers, reconnection, and late init after auth
+────────────────────────────────────────────────────────────────
+Server — add/modify SSE handler file `apps/server/src/routes/stream.ts`:
+```ts
+import type { Request, Response } from 'express';
+
+export function sseHandler(req: Request, res: Response) {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Vary', 'Origin');
+  res.flushHeaders?.();
+
+  const ping = setInterval(() => res.write(': ping\n\n'), 15000);
+  req.on('close', () => clearInterval(ping));
+
+  // TODO: write ticks as: res.write(`event: tick\ndata:${JSON.stringify(payload)}\n\n`)
+}
+````
+
+Client — create/update `apps/client/src/lib/marketStream.ts`:
+
+```ts
+import { useAuthStore } from '../stores/auth';
+
+let es: EventSource | null = null;
+let backoff = 1000;
+
+export function startMarketStream(url = import.meta.env.VITE_STREAM_URL) {
+  const { user, authReady } = useAuthStore.getState();
+  if (!authReady || !user) return () => {};
+
+  function open() {
+    es = new EventSource(url);
+    es.addEventListener('open', () => { backoff = 1000; });
+    es.addEventListener('tick', (evt) => {
+      const payload = JSON.parse((evt as MessageEvent).data);
+      // TODO: batch ticks (e.g., requestAnimationFrame or 100–200ms buffer) before setState to keep chart smooth
+    });
+    es.onerror = () => {
+      es?.close();
+      setTimeout(open, Math.min(backoff, 10000));
+      backoff *= 2;
+    };
+  }
+  open();
+  return () => es?.close();
+}
+```
+
+Mount it **after** auth settles in `apps/client/src/components/AppShell.tsx`:
+
+```tsx
+useEffect(() => {
+  if (!authReady || !user) return;
+  const stop = startMarketStream();
+  return stop;
+}, [authReady, user]);
+```
+
+────────────────────────────────────────────────────────────────
+C) CHART FLUIDITY: batch rendering of in-progress bar
+────────────────────────────────────────────────────────────────
+
+* In your chart state manager, buffer multiple tick updates for ~100–200ms and update the current bar once per batch; avoid re-computing indicators on each tick.
+* Ensure your chart component is wrapped in `React.memo` and only re-renders on actual OHLC change.
+* Confirm latest (in-progress) bar’s HL/C move in real time (Thinkorswim feel).
+
+────────────────────────────────────────────────────────────────
+D) ERRORS/OBS: never log "{}"; add metrics/ids
+────────────────────────────────────────────────────────────────
+Create `apps/client/src/lib/errors.ts`:
+
+```ts
+export function toLogError(err: unknown) {
+  if (err instanceof Error) return { name: err.name, message: err.message, stack: err.stack };
+  try { return { message: JSON.stringify(err) }; } catch { return { message: String(err) }; }
+}
+```
+
+Create `apps/server/src/middleware/error.ts`:
+
+```ts
+export function errorHandler(err:any, _req:any, res:any, _next:any) {
+  const payload = { name: err?.name || 'Error', message: err?.message || 'Unknown error', detail: err?.detail };
+  console.error('[API ERROR]', payload, err?.stack);
+  res.status(err?.status || 500).json({ error: payload });
+}
+```
+
+Register `errorHandler` **after** all routes. Add a light observability middleware with request id + duration logs.
+
+────────────────────────────────────────────────────────────────
+E) VOICE COACH: low-latency WS gateway + tool-calling + barge-in
+────────────────────────────────────────────────────────────────
+
+1. Server WS gateway — create `apps/server/src/voice/gateway.ts`:
+
+```ts
+import { WebSocketServer } from 'ws';
+import { routeToCoach } from './router';
+
+export function attachVoiceGateway(server:any) {
+  const wss = new WebSocketServer({ server, path: '/voice' });
+  wss.on('connection', (ws) => {
+    const send = (o:any) => ws.readyState===1 && ws.send(JSON.stringify(o));
+    send({ type:'latency', t: Date.now() });
+    ws.on('message', async (raw) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        await routeToCoach({ ws, send, msg });
+      } catch (e:any) {
+        send({ type:'error', error: { message: e?.message || 'parse' } });
+      }
+    });
+  });
+}
+```
+
+2. Router + tools — create `apps/server/src/voice/router.ts` and `apps/server/src/voice/tools.ts`:
+
+```ts
+// router.ts
+import type WebSocket from 'ws';
+import { tools } from './tools';
+import { systemPrompt } from './system';
+
+export async function routeToCoach({ ws, send, msg }:{ ws:WebSocket; send:(o:any)=>void; msg:any }) {
+  if (msg.type==='audio_begin') {
+    // store compact context on session if needed
+    return send({ type:'coach_ready' });
+  }
+  if (msg.type==='barge_in') {
+    // implement cancellation of current TTS/tool work if applicable
+    return send({ type:'ack', code:'barge_in' });
+  }
+  if (msg.type==='audio_end') {
+    const snapshot = await tools.getChartSnapshot();
+    const indicators = await tools.getIndicators();
+    // Call your model with function/tool calling; for now, return a deterministic stub:
+    const result = await tools.callLLM({ query: 'user utterance', snapshot, indicators, systemPrompt });
+    return send({ type:'coach_text', text: result.text, confidence: result.confidence, riskReward: result.riskReward });
+  }
+}
+```
+
+```ts
+// tools.ts
+import { getCurrentSnapshot, getIndicators, rrCalc, annotate } from '../core/market';
+
+export const tools = {
+  async getChartSnapshot(){ return getCurrentSnapshot(); },
+  async getIndicators(){ return getIndicators(); },
+  async riskReward(i:{entry:number; stop:number; targets:number[]}){ return rrCalc(i); },
+  async writeAnnotation(i:{text:string}){ return annotate(i.text); },
+  async callLLM({ query, snapshot, indicators, systemPrompt }: any) {
+    // Wire your LLM (OpenAI Realtime / responses API) with tool schema.
+    // Return structured outputs:
+    return { text: 'Plan… Entry/SL/Targets… Not financial advice.', confidence: 0.72, riskReward: { rr: 2.0 } };
+  },
+};
+```
+
+3. System prompt — create `apps/server/src/voice/system.ts`:
+
+```ts
+export const systemPrompt = `
+You are "Nexa", an elite intraday trading coach. You DO NOT execute trades.
+Always include: concise setup, Entry & Invalidation levels, Stop Loss, ≥2 Targets, RR estimate, Confidence (0–100%), one risk and one alternative scenario. Use current symbol/timeframe/last bar/VWAP/EMAs. End with: "Not financial advice."
+`;
+```
+
+4. Server bootstrap — in `apps/server/src/index.ts` (or equivalent):
+
+   * Replace `app.listen(PORT)` with:
+
+     ```ts
+     const server = app.listen(PORT, () => console.log('server on', PORT));
+     import('./voice/gateway').then(m => m.attachVoiceGateway(server));
+     ```
+   * Ensure `errorHandler` is registered **after** routes.
+
+5. Client Voice UI — create `apps/client/src/features/coach/voiceClient.ts` and `VoicePanel.tsx`:
+
+```ts
+// voiceClient.ts
+export type VoiceClient = { pttStart():void; pttStop():void; bargeIn():void; close():void };
+export function startVoiceClient(h:{onConnect():void; onDisconnect():void; onPartialASR(txt:string):void; onLatency(ms:number):void;}): VoiceClient {
+  let ws: WebSocket|null = null, t0 = 0;
+  function open(){
+    ws = new WebSocket(import.meta.env.VITE_VOICE_WS_URL || (location.origin.replace(/^http/,'ws') + '/voice'));
+    ws.onopen = () => { t0 = performance.now(); h.onConnect(); };
+    ws.onclose = () => { h.onDisconnect(); setTimeout(open, 750); };
+    ws.onmessage = (ev) => {
+      const msg = JSON.parse(ev.data);
+      if (msg.type==='latency') h.onLatency(Math.round(performance.now()-t0));
+      if (msg.type==='asr_partial') h.onPartialASR(msg.text);
+    };
+  }
+  open();
+  return {
+    pttStart(){ ws?.send(JSON.stringify({ type:'audio_begin' })); },
+    pttStop(){ ws?.send(JSON.stringify({ type:'audio_end' })); },
+    bargeIn(){ ws?.send(JSON.stringify({ type:'barge_in' })); },
+    close(){ ws?.close(); },
+  };
+}
+```
+
+```tsx
+// VoicePanel.tsx
+import { useEffect, useRef, useState } from 'react';
+import { startVoiceClient, type VoiceClient } from './voiceClient';
+
+export default function VoicePanel(){
+  const ref = useRef<VoiceClient|null>(null);
+  const [live,setLive]=useState(false);
+  const [asr,setAsr]=useState(''); const [lat,setLat]=useState<number|undefined>();
+  useEffect(()=>{ ref.current = startVoiceClient({ onConnect:()=>setLive(true), onDisconnect:()=>setLive(false), onPartialASR:setAsr, onLatency:setLat }); return ()=>ref.current?.close(); },[]);
+  return (
+    <div className="flex items-center gap-3">
+      <button className="btn" onMouseDown={()=>ref.current?.pttStart()} onMouseUp={()=>ref.current?.pttStop()}>Hold to Talk</button>
+      <button className="btn-secondary" onClick={()=>ref.current?.bargeIn()}>Barge-in</button>
+      <span className={live?'text-green-500':'text-red-500'}>{live?'Live':'Reconnecting…'}</span>
+      <span>{lat?`${lat} ms`:''}</span>
+      <div className="truncate text-sm opacity-70">{asr}</div>
+    </div>
+  );
+}
+```
+
+────────────────────────────────────────────────────────────────
+F) Bring-Your-Alpha (RAG): upload → chunk → embed → query
+────────────────────────────────────────────────────────────────
+
+1. Server: create `apps/server/src/rag/ingest.ts` and `apps/server/src/rag/query.ts` with stubs:
+
+   * `ingestDoc({ userId, name, text })` → chunk(800/160) → embed → store (pgvector).
+   * `queryRag(q,k=4)` → vector search → return [{chunk, source, score}].
+2. Endpoints:
+
+   * `POST /api/coach/ingest` accepts file or URL → extracts text → `ingestDoc`.
+   * `GET  /api/coach/search?q=...` → `queryRag`.
+3. Client: small `CoachUpload.tsx` in `apps/client/src/features/coach/` to POST files/URLs to `/api/coach/ingest`.
+
+────────────────────────────────────────────────────────────────
+G) Flags & Market Status (non-blocking defaults)
+────────────────────────────────────────────────────────────────
+
+* Implement `apps/client/src/lib/flags.ts` with DEFAULTS and fallback to defaults on fetch error.
+* Implement `apps/client/src/lib/marketStatus.ts` with safe `'closed'` fallback.
+* Load both **after** auth, do not block rendering.
+
+────────────────────────────────────────────────────────────────
+H) Cleanup & Quality
+────────────────────────────────────────────────────────────────
+
+* Remove any SignIn reload/timeout hacks.
+* Memoize chart components; throttle/batch tick application.
+* Document Replit HMR WSS warnings as expected noise only.
+* Run and fix:
+  pnpm i
+  pnpm -w typecheck
+  pnpm -w lint --fix
+  pnpm --filter @spotlight/server build
+  pnpm --filter @spotlight/client build
+  pnpm dev
+
+ACCEPTANCE
+
+* Click Demo → dashboard mounts immediately.
+* Latest bar/wick update smoothly with streaming ticks.
+* Voice: Push-to-talk returns plan with Entry/SL/Targets, RR, Confidence, plus disclaimer.
+* Barge-in interrupts promptly.
+* Upload a PDF/URL; ask coach to summarize/apply; snippets influence its advice.
+* No `{}` errors; console logs show structured payloads and latencies.
+
+```
+
+---
+
+### Why this is tailored to your repo
+- Your README explicitly lists **SSE market streaming** and a **WebSocket voice proxy** as intended features; this prompt finishes the plumbing and adds the UX/latency polish those features need. :contentReference[oaicite:1]{index=1}  
+- It keeps changes modular (client features in `apps/client/src/features/coach/*`, server features in `apps/server/src/voice/*` and `apps/server/src/rag/*`) to match your monorepo architecture. :contentReference[oaicite:2]{index=2}
+
+If you want me to generate **diff-style patches** for specific files once you confirm exact paths (e.g., where your chart store lives, where you currently mount routes), I can do that too.
+::contentReference[oaicite:3]{index=3}
+```
+
+[1]: https://github.com/DisruptiveDynamics/Spotlight-Trader-2 "GitHub - DisruptiveDynamics/Spotlight-Trader-2"

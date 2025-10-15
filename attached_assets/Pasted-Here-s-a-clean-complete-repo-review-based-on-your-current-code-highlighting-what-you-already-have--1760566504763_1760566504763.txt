@@ -1,0 +1,164 @@
+Here’s a clean, complete repo review based on your current code, highlighting what you already have versus what’s missing/broken, followed by a precise Replit Agent prompt to ship the next steps fast (no demo data; PIN-only; live Polygon feed).
+
+Note: I could only retrieve a subset of files via the GitHub API (limit ~30 items). The results may be incomplete. Browse the full repo tree here: https://github.com/DisruptiveDynamics/Spotlight-Trader-2/tree/chore/health-setup
+
+What you already have (strong foundation)
+- Live charts and UI
+  - Pane.tsx renders lightweight-charts with indicators (EMA, Bollinger, VWAP session/anchored, Volume SMA), tooltips, “Ask AI Coach,” and proper series cleanup.
+    - apps/client/src/features/chart/Pane.tsx
+  - ChartView.tsx streams live “bar” and “micro” events, merges micro into the in-flight bar, manages rAF, and UI “LIVE/PAUSED.”
+    - apps/client/src/features/chart/ChartView.tsx
+  - ChartErrorBoundary.tsx for safe recovery.
+    - apps/client/src/components/ChartErrorBoundary.tsx
+  - Vite config with proxy for /api, /stream, /ws and code split “charts”.
+    - apps/client/vite.config.ts
+
+- Voice and tools scaffold
+  - RealtimeVoiceClient fully wires OpenAI Realtime: sets tools, handles streaming function call args, executes tools via ToolBridge over /ws/tools, returns result chunks, and continues the model response. This is excellent and nearly “production-grade.”
+    - apps/client/src/voice/RealtimeVoiceClient.ts
+  - Voice token issuance route with rate-limiting; voice preview route; voice selector UI; voice callout bridge to inject alerts into the assistant stream.
+    - apps/server/src/routes/voiceToken.ts
+    - apps/server/src/routes/voicePreview.ts
+    - apps/client/src/features/coach/VoiceSelector.tsx
+    - apps/server/src/realtime/voiceCalloutBridge.ts
+
+- Indicators/shared logic and chart state
+  - Pane.tsx uses shared indicator batch functions (from @spotlight/shared), chart state hooks, and a ChartContext to supply “current context” to the AI coach trigger.
+
+- Docs and engineering notes
+  - Multiple attached assets with clear plans for Thinkorswim-grade polish, tests, accessibility, and real provider enforcement.
+
+What’s likely missing or broken (root causes of “Loading”/no data)
+- SSE server endpoint: Client is wired to connectMarketSSE with a Vite proxy mapping “/stream,” but I didn’t see a definitive live SSE route in the server snippets retrieved. If it exists, it likely needs:
+  - Correct SSE headers (Content-Type: text/event-stream, no-transform, keep-alive).
+  - Heartbeats (e.g., ping every 15s) to keep intermediaries from buffering/closing.
+  - Symbol filtering and subscription to your Polygon hub (AM/T channels).
+  - Auth behavior that doesn’t block EventSource (cookies vs Authorization header).
+- EventSource options: If withCredentials: true is not set and your server requires cookies, the stream won’t authenticate.
+- Dev proxy timeouts: Vite proxy may buffer or close the long-lived SSE if proxyTimeout/timeout aren’t set to 0.
+- History route is present (chartTimeframe.ts), but for intraday you’ll want Polygon aggregates normalization and “no-store” headers.
+
+What’s not yet implemented but requested by your vision
+- PIN-only auth (single-user) to replace email/demo. You requested this simplification.
+- Tools for the agent to “see” charts and “decide”: get_chart_snapshot and score_setup (the ToolBridge is ready; toolSchemas scaffold exists; server endpoints not yet).
+- Server-side agent memory ring buffers keyed by symbol:timeframe to power snapshots and scoring.
+- Watchlist scanner to produce A/A– callouts via voiceCalloutBridge based on confidence thresholds.
+- Persisted preferences (favorites, voice/tone, risk) and recent setups (can be Phase 2).
+
+High-confidence fix/optimize plan
+
+1) Make live SSE rock-solid (Polygon only, no demo)
+- Server:
+  - Add /stream/market route with proper SSE headers + 15s heartbeats.
+  - Subscribe to Polygon hub (AM + T) for requested symbols; emit “bar” and “micro” events.
+  - Authenticate via cookie (will work with PIN-only auth).
+- Client:
+  - Ensure EventSource uses { withCredentials: true } and same-origin “/stream/market?symbols=SPY,QQQ”.
+  - Add robust onopen/onerror logging.
+- Dev proxy:
+  - In Vite, set proxyTimeout: 0 and timeout: 0 for “/stream” to avoid stream closure.
+
+2) PIN-only auth (personal mode)
+- Replace requireUser with a tiny requirePin middleware using a 6‑digit APP_PIN and a signed st_auth cookie (httpOnly).
+- PinGate modal in client blocks the app until unlocked (single file, simple).
+- All /api, /stream, /ws protected by PIN cookie automatically (no auth headers needed).
+
+3) History from Polygon Aggregates REST
+- Implement /api/history fetching Polygon candles normalized to { time, msEnd, open, high, low, close, volume } with Cache-Control: no-store.
+- Pane.tsx already expects this structure; your fetchHistory is in place—point it at the server route.
+
+4) Give the agent eyes and a brain
+- Add agentMemory (in-memory ring buffers per symbol,timeframe) on the server; keep it updated from your live Polygon bars.
+- Expose tools:
+  - get_chart_snapshot: returns normalized latest N OHLCV bars (+ optional computed features).
+  - score_setup: deterministic compute (EMA20/50, VWAP session, ATR14, last-bar strength, simple R:R heuristics, confidence and reasons).
+- Your client already streams tool calls via ToolBridge; add toolSchemas entries for these functions.
+
+5) Optional: watchlist scanner → voice callouts
+- Every 5s score favorites; if confidence >= threshold, emit a voice callout via voiceCalloutBridge with A/A– gating and “Not financial advice.”
+
+6) Optimizations and modularization (after data flows)
+- Charts:
+  - rAF coalescing only when queues non-empty; ensure resize listener cleanup; rightOffset and shiftVisibleRangeOnNewBar to stabilize last bar; micro merge only within active bucket.
+  - Overlay series reuse keyed by title; update setData instead of tear-down/recreate on every change.
+- Architecture:
+  - Market hub (Polygon), SSE route, Agent memory/tools, Scanner separated under apps/server/src/{market, routes, realtime, agent, scanner}.
+  - Client services: keep marketStream.ts and toolSchemas small and focused; voice client already modular.
+
+Replit Agent “Super Prompt” (live Polygon, no demo, PIN-only)
+Copy everything between the backticks into your Replit agent.
+
+```
+You are an expert full‑stack engineer working inside the Spotlight Trader monorepo (TypeScript). Do NOT introduce new frameworks. Respect current structure (apps/client, apps/server), Vite, Express, lightweight-charts, existing voice client and ToolBridge. Strict TypeScript, ESLint/Prettier. Small, focused PRs. No dead code.
+
+CONTEXT (what exists)
+- Client charts: Pane.tsx + ChartView.tsx integrate lightweight-charts, live “bar/micro” updates, indicators, tooltips, error boundary.
+- Voice: RealtimeVoiceClient streams function calls via ToolBridge (/ws/tools), voice token route, voice preview, voice selector, voiceCalloutBridge for callouts.
+- Vite proxy maps /api, /stream, /ws.
+
+VISION (personal super coach, live Polygon only)
+- Personal mode (PIN-only). Remove email/demo flows.
+- Live Polygon feed only (wss stocks). SSE must stream without buffering.
+- AI Coach has real-time awareness via tools: get_chart_snapshot, score_setup.
+- Callouts (voice) only for A/A– setups or urgent risk alerts; otherwise log to panel.
+- Preferences (favorites, voice/tone, risk) remembered across sessions (Phase 2 OK).
+
+NON-GOALS
+- No demo data, no multi-user. One owner user via PIN.
+- No new providers, no new frameworks.
+
+DELIVERABLES (Phase 0–1; 2–3 are optional next PRs)
+
+PHASE 0 — Live SSE + PIN-only (no demo)
+1) Server: Add PIN auth.
+   - apps/server/src/middleware/requirePin.ts: verify st_auth JWT cookie; helpers to sign & set cookie; 6‑digit APP_PIN.
+   - apps/server/src/routes/pinAuth.ts: POST /api/auth/pin (body.pin) => set cookie; GET /api/auth/status; POST /api/auth/logout.
+   - apps/server/src/index.ts: mount /api/auth; then protect /api, /stream, /ws via requirePin.
+2) Polygon streaming hub (stocks) and SSE route.
+   - apps/server/src/market/polygonHub.ts: connect to wss://socket.polygon.io/stocks; auth; subscribe to AM.{SYMBOL}, T.{SYMBOL} for symbols; emit “bar” from AM and “micro” from T.
+   - apps/server/src/routes/marketStream.ts: GET /stream/market?symbols=SPY,QQQ -> SSE headers + heartbeats; filter emits by requested symbols; no demo code.
+3) Client SSE:
+   - apps/client/src/lib/marketStream.ts: EventSource("/stream/market?symbols=...",{ withCredentials:true}); add onopen/onerror logs; typed “bar” and “micro” listeners. Do not use demo flags.
+4) Dev proxy:
+   - apps/client/vite.config.ts -> proxyTimeout: 0 and timeout: 0 for “/stream” to keep SSE open.
+
+ACCEPTANCE for Phase 0:
+- PIN modal appears; correct PIN unlocks; wrong PIN fails.
+- DevTools shows “[MarketSSE] OPEN”; /stream/market stays pending with heartbeats; bars/micros flow.
+- Charts render and update within 1–2s; no console errors.
+
+PHASE 1 — Agent tools + history
+1) Agent memory + tools (server):
+   - apps/server/src/realtime/agentMemory.ts: Map key `${symbol}:${timeframe}` -> ring buffer of candles; update from Polygon “bar” events (and micro if desired).
+   - apps/server/src/agent/tools/chartSnapshotTool.ts: POST /api/tools/get_chart_snapshot {symbol,timeframe,lookback?} -> latest normalized OHLCV window.
+   - apps/server/src/agent/tools/scoreSetupTool.ts: POST /api/tools/score_setup {symbol,timeframe,side?} -> entry, stop, target(s), R:R, confidence 0–100, reasons, disclaimer. Deterministic: EMA20/50, VWAP(session), ATR14, last-bar strength, simple R:R heuristic, VWAP alignment.
+   - Mount these under /api/tools (protected by PIN).
+2) Client toolSchemas:
+   - apps/client/src/voice/toolSchemas.ts: add get_chart_snapshot and score_setup schemas.
+   - RealtimeVoiceClient already handles streaming function call args and returns outputs via ToolBridge—no changes unless schema wiring is missing.
+3) History:
+   - apps/server/src/routes/history.ts: GET /api/history?symbol=SPY&timeframe=1m&limit=300 -> Polygon REST aggregates normalized to { time, msEnd, open, high, low, close, volume }; set Cache-Control: no-store.
+   - Point Pane.tsx fetchHistory to this.
+
+ACCEPTANCE for Phase 1:
+- “Score SPY on 1m for a long” triggers tool_call → score_setup → response includes entry/stop/targets, R:R, confidence, reasons.
+- get_chart_snapshot returns recent window used by the coach for explanations.
+- Chart history loads quickly and aligns with live stream (no duplicate last bar).
+
+PHASE 2 (optional) — Watchlist scanner → voice callouts
+- apps/server/src/scanner/watchlistScanner.ts: Every 5s, for FAVORITES and SCAN_TIMEFRAME, call /api/tools/score_setup; if confidence >= CONF_THRESH, emit callout via voiceCalloutBridge with setup tag, rationale (R:R, confidence, entry/stop/target), and quality grade (A/A–). Keep unsolicited audio minimal.
+
+PHASE 3 (optional) — Preferences & persistence
+- Persist favorites, voice/tone/name, risk, and recent setups to SQLite or existing DB. Small endpoints to update/load. Load on boot.
+
+GUARDRAILS
+- Authentication: PIN-only cookie (httpOnly, sameSite=lax, secure in prod) protects all /api, /stream, /ws.
+- Polygon: No redistribution; respect rate limits; do not cache intraday beyond allowed—use no-store.
+- Voice: Only speak for A/A– setups or urgent risk; include “Not financial advice.”
+- One active voice session per tab; barge-in cancels speech.
+
+DONE means:
+- Live Polygon SSE is flowing; charts load & update; PIN-only auth; tools callable with structured outputs; (optional) scanner triggers callouts; no console errors or leaks; lint/typecheck pass.
+```
+
+If you want, I can also generate a second, ultra-focused prompt just for Phase 0 (PIN + live SSE) so your agent ships that in under an hour before moving to tools and scoring.

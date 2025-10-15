@@ -25,6 +25,7 @@ export async function sseMarketStream(req: Request, res: Response) {
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
   res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Vary", "Origin");
   res.setHeader("X-Market-Source", getMarketSource());
   res.setHeader("X-Market-Reason", getMarketReason());

@@ -7,9 +7,10 @@ import App from "../App";
 export function AppShell() {
   const user = useAuthStore((s) => s.user);
   const authReady = useAuthStore((s) => s.authReady);
+  const userId = user?.id;
 
   useEffect(() => {
-    if (!authReady || !user) return;
+    if (!authReady || !userId) return;
 
     console.log("[AppShell] Starting market stream");
     const stopStream = startMarketStream();
@@ -18,7 +19,7 @@ export function AppShell() {
       console.log("[AppShell] Cleaning up market stream");
       stopStream();
     };
-  }, [authReady, user]);
+  }, [authReady, userId]);
 
   return <App />;
 }

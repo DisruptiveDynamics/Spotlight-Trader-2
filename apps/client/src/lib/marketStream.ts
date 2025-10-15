@@ -231,7 +231,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
     const url = `${STREAM_URL}?${params.toString()}`;
     console.log(`[SSE] Creating EventSource connection to: ${url}`);
-    es = new EventSource(url);
+    es = new EventSource(url, { withCredentials: true });
 
     es.addEventListener("open", async () => {
       reconnectAttempts = 0;

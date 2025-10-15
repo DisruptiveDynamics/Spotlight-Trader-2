@@ -52,8 +52,20 @@ const server = createServer(app);
 server.keepAliveTimeout = 75000; // 75 seconds
 server.headersTimeout = 80000; // 80 seconds
 
-// [PERFORMANCE] Enable gzip compression for all responses
-app.use(compression());
+// [PERFORMANCE] Enable gzip compression for all responses EXCEPT SSE streams
+// SSE requires unbuffered streaming, compression would buffer events
+app.use(
+  compression({
+    filter: (req, res) => {
+      // Never compress Server-Sent Events (SSE) - they require unbuffered streaming
+      if (req.path.startsWith("/stream/") || req.path.startsWith("/realtime/sse")) {
+        return false;
+      }
+      // Use default compression filter for everything else
+      return compression.filter(req, res);
+    },
+  }),
+);
 
 app.use(express.json());
 app.use(cookieParser());

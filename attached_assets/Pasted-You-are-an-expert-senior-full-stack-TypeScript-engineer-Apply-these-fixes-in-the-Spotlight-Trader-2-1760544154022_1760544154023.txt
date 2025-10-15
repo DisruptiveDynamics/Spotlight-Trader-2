@@ -1,0 +1,57 @@
+You are an expert senior full-stack TypeScript engineer. Apply these fixes in the Spotlight-Trader-2 repo:
+
+GOALS
+1) Fix authentication rendering so the dashboard shows immediately after demo login, without timeouts.
+2) Stabilize SSE market stream by correcting server headers and delaying client initialization until auth is ready.
+3) Replace empty "{}" errors with structured errors across flags, market status, and voice.
+
+CHANGES
+A) Zustand auth store:
+- apps/client/src/stores/auth.ts: create store with persist + subscribeWithSelector and add 'authReady' flag and 'markReady'.
+- Expose { user, authReady, setUser, logout, markReady }.
+
+B) AuthGate:
+- apps/client/src/components/AuthGate.tsx: on mount call markReady(), read user + authReady via selectors, render <AppShell/> when user exists. Remove any local loading hacks.
+
+C) SignIn:
+- apps/client/src/components/SignIn.tsx: implement loginDemo() that calls setUser({ id:'demo', email:'demo@spotlight', demo:true }). Delete any 400ms reload workaround.
+
+D) SSE server endpoint:
+- apps/server/src/routes/stream.ts: set headers:
+  Content-Type: text/event-stream
+  Cache-Control: no-store
+  Connection: keep-alive
+  X-Accel-Buffering: no
+  Access-Control-Allow-Origin: <req origin or *>
+  Vary: Origin
+- Keep an interval ping every 15s. Flush headers. Ensure close cleans timers.
+
+E) SSE client:
+- apps/client/src/lib/marketStream.ts: export startMarketStream(); only open EventSource when authReady && user are true; handle 'tick' events; log errors; return cleanup function.
+
+F) AppShell:
+- apps/client/src/components/AppShell.tsx: useEffect(() => start stream when authReady && user; cleanup on deps change).
+
+G) Error normalization:
+- apps/client/src/lib/errors.ts: add toLogError(err).
+- Replace all console.error calls in flags, market status, voice with toLogError.
+
+H) Feature flags:
+- apps/client/src/lib/flags.ts: implement fetchFlags() with DEFAULTS and non-blocking fallback to defaults. Initialize flags after auth, but don’t block render.
+
+I) Market status:
+- apps/client/src/lib/marketStatus.ts: implement getMarketStatus() with 'closed' fallback and no-throw logging.
+
+J) Server error middleware:
+- apps/server/src/middleware/error.ts: add errorHandler that returns {error:{name,message,detail}} and logs stack. Register after routes.
+
+QUALITY
+- Run typecheck, lint --fix, and ensure no unused exports/imports.
+- Delete the SignIn 400ms reload logic.
+- Add a tiny null spinner in AuthGate while !authReady.
+
+After changes:
+- pnpm i
+- pnpm -w typecheck && pnpm -w lint --fix
+- pnpm dev
+- Verify flow: click “Try Demo Mode” → user persists → AuthGate flips → AppShell renders → MarketStatus/Flags load with fallbacks → SSE ticks populate charts.

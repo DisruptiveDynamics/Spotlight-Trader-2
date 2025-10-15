@@ -9,26 +9,32 @@ const allowedOrigins = new Set([env.APP_ORIGIN, env.ADMIN_ORIGIN].filter(Boolean
 
 export function setupSecurity(app: Express) {
   const isUnifiedDev = process.env.UNIFIED_DEV === "1";
+  const isProd = env.NODE_ENV === "production";
   
-  app.use(
-    helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          connectSrc: [
-            "'self'", 
-            ...Array.from(allowedOrigins),
-            ...(isUnifiedDev ? ["ws:", "wss:", "http:", "https:"] : []),
-          ],
-          frameSrc: ["'none'"],
-          imgSrc: ["'self'", "data:", "https:"],
-          scriptSrc: ["'self'", ...(isUnifiedDev ? ["'unsafe-inline'"] : [])],
-          styleSrc: ["'self'", "'unsafe-inline'"],
+  // Disable CSP in development to allow Vite HMR/eval/inline during development
+  if (isProd) {
+    app.use(
+      helmet({
+        contentSecurityPolicy: {
+          useDefaults: true,
+          directives: {
+            "script-src": ["'self'"],
+            "connect-src": ["'self'", ...Array.from(allowedOrigins)],
+            "style-src": ["'self'", "'unsafe-inline'"],
+            "img-src": ["'self'", "data:"],
+          },
         },
-      },
-      crossOriginEmbedderPolicy: false,
-    }),
-  );
+        crossOriginEmbedderPolicy: false,
+      }),
+    );
+  } else {
+    app.use(
+      helmet({
+        contentSecurityPolicy: false,
+        crossOriginEmbedderPolicy: false,
+      }),
+    );
+  }
 
   app.use(
     cors({

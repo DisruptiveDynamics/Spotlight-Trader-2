@@ -234,6 +234,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     es = new EventSource(url, { withCredentials: true });
 
     es.addEventListener("open", async () => {
+      console.log(`[SSE] Connection OPENED successfully`);
       reconnectAttempts = 0;
       emitStatus("connected");
       window.dispatchEvent(new CustomEvent("sse:connected"));
@@ -269,6 +270,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
     // [RESILIENCE] Listen for epoch events to detect server restarts
     es.addEventListener("epoch", (e) => {
+      console.log(`[SSE] Received epoch event`);
       const data = JSON.parse((e as MessageEvent).data) as {
         epochId: string;
         epochStartMs: number;
@@ -293,6 +295,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     });
 
     es.addEventListener("bar", (e) => {
+      console.log(`[SSE] Received bar event`);
       processingPromise = processingPromise.then(async () => {
         const b = JSON.parse((e as MessageEvent).data) as Bar;
 

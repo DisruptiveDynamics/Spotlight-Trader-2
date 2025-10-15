@@ -1,0 +1,98 @@
+You are an expert full‑stack engineer working inside the Spotlight Trader monorepo (TypeScript). Do NOT introduce new frameworks. Respect the current structure (apps/client, apps/server), Vite on the client, Express on the server, lightweight-charts on the frontend, and the existing voice client and routes. Strict TypeScript, ESLint/Prettier. Keep PRs small, self‑contained, and well‑documented. No dead code.
+
+PERSONAL SUPER COACH — VISION
+- Personal app (single user). Replace email/login/demo with a simple 6‑digit PIN. PIN sets an httpOnly cookie that authenticates all APIs, SSE streams, and voice tokens.
+- Real-time charts for favorite symbols via robust SSE; reliable history alignment.
+- AI Coach with real-time awareness:
+  - Tools: get_chart_snapshot(symbol, timeframe, lookback?), score_setup(symbol, timeframe, side?)
+  - Decisions: entry, stop, targets, R:R, confidence (0–100), reasons (confluences/rules), plain-language summary, and “Not financial advice.”
+  - Speaks only for A/A‑ quality setups and urgent risk alerts; otherwise posts to side panel.
+- Voice-first UX: one active voice session per tab; barge-in cancels speech; selectable voice/tone/name; remembered across sessions.
+- Memory: agent-memory for live chart snapshots; persist preferences + recent setups (SQLite optional; can be Phase 2).
+
+CONSTRAINTS
+- No new infra or providers; wire to existing data layer where it already exists. If feed isn’t ready, keep a “demo mode” flag in code but default it to OFF for personal use.
+- Same-origin cookies for auth. EventSource must be same-origin and long-lived. Dev proxy must not buffer SSE.
+- Keep token lifetimes short for voice/tool bridges; PIN cookie is the durable auth.
+
+PHASED DELIVERABLES (PR-sized)
+Phase 0 — Rock-solid SSE + minimal PIN auth
+1) Server: Add PIN middleware + routes. Use APP_PIN and APP_AUTH_SECRET. Issue signed cookie st_auth (httpOnly, sameSite=lax).
+2) Client: Add PinGate modal. Block app until authenticated. POST /api/auth/pin with pin, then render normally.
+3) SSE: Add /stream/market route with correct SSE headers, 15s heartbeats, and optional demo emitters. Protect via PIN cookie. Ensure Vite proxy doesn't close streams.
+4) Client SSE: Update connectMarketSSE for withCredentials: true, add onopen/onerror logs, and typed custom events (“bar”, “micro”, “ping”).
+
+Phase 1 — Agent tools + compute core
+1) Server: Add agentMemory (in-memory snapshots keyed by symbol:timeframe) and keep updated from your market data path. Expose two tools:
+   - POST /api/tools/get_chart_snapshot {symbol,timeframe,lookback?}
+   - POST /api/tools/score_setup {symbol,timeframe,side?}
+2) Compute core (fast, deterministic): EMA(20/50), VWAP(session), ATR(14), last-bar strength, basic market-structure hints (HH/HL/LH/LL), and a sanity-check R:R heuristic. Return confidence, entry, stop, targets, reasons, disclaimer.
+3) Client toolSchemas: Add get_chart_snapshot and score_setup so the Realtime agent can call them. Make sure RealtimeVoiceClient’s tool bridge returns outputs to the model.
+
+Phase 2 — Watchlist scanner → voice callouts
+1) Server: Add small scanner that runs every 5s: for FAVORITES on TIMEFRAME, call score_setup and, if confidence >= threshold, emit a voice callout through voiceCalloutBridge (A/A‑ gating).
+2) Keep unsolicited audio minimal; non‑A setups go to the coach panel.
+
+Phase 3 — Preferences + persistence (optional in next PR)
+- Store favorites, voice/tone/name, risk settings, and last N setups to SQLite (or your existing DB). Load on boot; update via small endpoints.
+
+ACCEPTANCE CRITERIA
+- Visiting the app shows a PIN modal; entering the correct 6‑digit PIN unlocks the app. Wrong PIN doesn’t.
+- Network: GET /stream/market stays pending; DevTools shows “open” and heartbeats; bars/microbars stream.
+- Charts: Candles render within 1–2s of unlocking; live wicks update; no console errors.
+- Tools: The agent can call get_chart_snapshot and score_setup; outputs include entry, stop, targets, R:R, confidence, reasons.
+- Voice: On A/A‑ quality setups, the app speaks a succinct callout with R:R and confidence; “Not financial advice.” Only one voice session active; barge‑in cancels speech.
+- Security: All /api, /stream, and /ws paths require st_auth cookie. No Authorization headers needed. Tokens remain short‑lived.
+
+IMPLEMENTATION DETAILS AND FILES
+Create/modify the following files. Merge carefully where files already exist.
+
+1) PIN auth (server)
+
+- New middleware and helpers:
+
+```typescript name=apps/server/src/middleware/requirePin.ts
+import type { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
+
+const COOKIE_NAME = "st_auth";
+const APP_AUTH_SECRET = process.env.APP_AUTH_SECRET || "dev_secret_change_me";
+
+export interface PinAuthPayload {
+  sub: string; // "owner"
+  typ: "pin";
+}
+
+export function signPinToken(userId = "owner", maxAgeSec = 60 * 60 * 24 * 30) {
+  return jwt.sign({ sub: userId, typ: "pin" } as PinAuthPayload, APP_AUTH_SECRET, {
+    expiresIn: maxAgeSec,
+  });
+}
+
+export function setAuthCookie(res: Response, token: string) {
+  const isProd = process.env.NODE_ENV === "production";
+  res.cookie(COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: isProd,
+    maxAge: 1000 * 60 * 60 * 24 * 30,
+    path: "/",
+  });
+}
+
+export function clearAuthCookie(res: Response) {
+  res.clearCookie(COOKIE_NAME, { path: "/" });
+}
+
+export function requirePin(req: Request, res: Response, next: NextFunction) {
+  try {
+    const raw = req.cookies?.[COOKIE_NAME];
+    if (!raw) return res.status(401).json({ error: "Not authenticated" });
+    const decoded = jwt.verify(raw, APP_AUTH_SECRET) as PinAuthPayload;
+    if (!decoded || decoded.typ !== "pin") return res.status(401).json({ error: "Invalid token" });
+    (req as any).user = { userId: decoded.sub };
+    next();
+  } catch {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+}

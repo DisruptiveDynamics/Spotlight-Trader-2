@@ -1,6 +1,5 @@
-import { toZonedTime, fromZonedTime } from "date-fns-tz";
-
 import { eventBus, type Tick, type Microbar, type MarketBarEvent } from "./eventBus";
+import { toZonedTime, fromZonedTime } from "date-fns-tz";
 
 const ET = "America/New_York";
 
@@ -179,8 +178,7 @@ export class BarBuilder {
     state.microbars = [];
 
     // Emit with dynamic timeframe in event name
-    // @ts-expect-error - Dynamic event name prevents proper type inference, but emission is type-safe
-    eventBus.emit(`bar:new:${symbol}:${timeframe}`, finalizedBar);
+    eventBus.emit(`bar:new:${symbol}:${timeframe}` as any, finalizedBar);
   }
 
   private startMicrobarTimer(symbol: string, timeframe: string = "1m") {

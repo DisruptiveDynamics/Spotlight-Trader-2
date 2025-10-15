@@ -15,7 +15,7 @@ export function Brand() {
       <div className="relative">
         <img
           src="/brand/logo-mark.svg"
-          alt=""
+          alt="Spot Light Trader logo"
           className="w-8 h-8 transition-all duration-200"
           style={{
             filter: "drop-shadow(0 0 8px var(--brand-primary-glow))",
@@ -49,11 +49,3 @@ export function Brand() {
     </a>
   );
 }
-/* only the <img> line shown below needs to change */
-
-<img
-  alt="Spot Light Trader logo"
-  className="w-8 h-8 transition-all duration-200"
-  src="/brand/logo-mark.svg"
-  style={{ filter: "drop-shadow(0 0 8px var(--brand-primary-glow))" }}
-/>

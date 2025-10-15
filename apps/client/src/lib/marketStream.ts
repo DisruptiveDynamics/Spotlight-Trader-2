@@ -268,6 +268,13 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       }
     });
 
+    // [BOOTSTRAP] Listen for immediate bootstrap event
+    es.addEventListener("bootstrap", (e) => {
+      console.log(`[SSE] Received bootstrap event:`, e);
+      const data = JSON.parse((e as MessageEvent).data);
+      console.log(`[SSE] Bootstrap data:`, data);
+    });
+
     // [RESILIENCE] Listen for epoch events to detect server restarts
     es.addEventListener("epoch", (e) => {
       console.log(`[SSE] Received epoch event`);
@@ -396,6 +403,10 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     es.addEventListener("tick", (e) => {
       const t = JSON.parse((e as MessageEvent).data) as Tick;
       listeners.tick.forEach((fn) => fn(t));
+    });
+
+    es.addEventListener("message", (e) => {
+      console.log(`[SSE] Generic message event:`, e.type, e.data?.slice(0, 100));
     });
 
     es.onerror = (event) => {

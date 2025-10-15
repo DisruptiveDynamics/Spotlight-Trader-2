@@ -19,12 +19,12 @@ try {
   }
 } catch {}
 
-killServiceWorkers().finally(() => {
+(async () => {
+  await killServiceWorkers();
+  
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      <AuthGate>
-        <App />
-      </AuthGate>
+      <AuthGate />
     </React.StrictMode>,
   );
-});
+})();

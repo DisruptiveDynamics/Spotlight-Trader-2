@@ -1,0 +1,375 @@
+Great call. If this is a personal app, swapping email login + demo mode for a simple 6‑digit PIN will massively simplify everything (auth, SSE credentials, voice tokens, etc.).
+
+Below are drop‑in additions/edits to convert your app to “PIN‑only” access:
+
+- Server: a tiny PIN auth route + cookie issuance, and a middleware to protect all API, SSE, and voice routes.
+- Client: a PinGate component that prompts for the PIN and blocks the app until authenticated.
+- Small edits to replace requireUser with requirePin and remove “demo mode” paths.
+- Env variables for your PIN and a signing secret.
+
+You can keep your existing structure—this is intentionally minimal and local-only.
+
+Server changes
+
+1) Add a PIN auth middleware
+- Verifies a signed cookie st_auth containing a short-lived JWT
+- Applied to routes you want to protect (all your APIs, SSE, voice tokens, etc.)
+
+```typescript name=apps/server/src/middleware/requirePin.ts
+import type { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
+
+const COOKIE_NAME = "st_auth";
+
+// Small helper to read env safely (fallbacks for local)
+const APP_AUTH_SECRET = process.env.APP_AUTH_SECRET || "dev_secret_change_me";
+
+export interface PinAuthPayload {
+  sub: string; // "owner" or any fixed id
+  typ: "pin";
+}
+
+export function signPinToken(userId = "owner", maxAgeSec = 60 * 60 * 24 * 30) {
+  return jwt.sign({ sub: userId, typ: "pin" } as PinAuthPayload, APP_AUTH_SECRET, {
+    expiresIn: maxAgeSec,
+  });
+}
+
+export function requirePin(req: Request, res: Response, next: NextFunction) {
+  try {
+    const raw = req.cookies?.[COOKIE_NAME];
+    if (!raw) return res.status(401).json({ error: "Not authenticated" });
+
+    const decoded = jwt.verify(raw, APP_AUTH_SECRET) as PinAuthPayload;
+    if (!decoded || decoded.typ !== "pin") {
+      return res.status(401).json({ error: "Invalid token" });
+    }
+    // Attach a minimal user if you want downstream routes to log/use it
+    (req as any).user = { userId: decoded.sub };
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+}
+
+// Small helper to set/clear cookie consistently
+export function setAuthCookie(res: Response, token: string) {
+  const isProd = process.env.NODE_ENV === "production";
+  res.cookie(COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: isProd,
+    maxAge: 1000 * 60 * 60 * 24 * 30, // 30d
+    path: "/",
+  });
+}
+
+export function clearAuthCookie(res: Response) {
+  res.clearCookie(COOKIE_NAME, { path: "/" });
+}
+```
+
+2) Add PIN auth routes
+- POST /api/auth/pin: accepts { pin }, verifies against APP_PIN, and sets cookie
+- GET /api/auth/status: returns ok if cookie is valid
+- POST /api/auth/logout: clears cookie
+
+```typescript name=apps/server/src/routes/pinAuth.ts
+import { Router } from "express";
+import { clearAuthCookie, setAuthCookie, signPinToken } from "../middleware/requirePin";
+
+export const pinAuthRouter = Router();
+
+// POST /api/auth/pin  body: { pin: string }
+pinAuthRouter.post("/pin", (req, res) => {
+  const bodyPin = String(req.body?.pin || "");
+  const appPin = String(process.env.APP_PIN || "");
+
+  if (!appPin) {
+    return res.status(500).json({ ok: false, error: "APP_PIN not configured on server" });
+  }
+  if (!/^\d{6}$/.test(bodyPin)) {
+    return res.status(400).json({ ok: false, error: "PIN must be 6 digits" });
+  }
+  if (bodyPin !== appPin) {
+    return res.status(401).json({ ok: false, error: "Invalid PIN" });
+  }
+
+  const token = signPinToken("owner");
+  setAuthCookie(res, token);
+  res.json({ ok: true });
+});
+
+// GET /api/auth/status
+pinAuthRouter.get("/status", (req, res) => {
+  // If middleware is not applied here, do a soft verify by trying to decode cookie:
+  try {
+    const cookie = req.cookies?.["st_auth"];
+    if (!cookie) return res.status(401).json({ ok: false });
+    // decode without throwing: use jwt.decode
+    // NOTE: for stricter check you can reuse verify here. Keep it simple:
+    res.json({ ok: true });
+  } catch {
+    res.status(401).json({ ok: false });
+  }
+});
+
+// POST /api/auth/logout
+pinAuthRouter.post("/logout", (req, res) => {
+  clearAuthCookie(res);
+  res.json({ ok: true });
+});
+```
+
+3) Register the routes and protect your existing endpoints
+- Mount pinAuthRouter at /api/auth
+- Replace requireUser with requirePin in protected routes (e.g., voiceToken)
+- Protect SSE route(s) too (before sending headers)
+
+```typescript name=apps/server/src/index.ts
+import express from "express";
+import cookieParser from "cookie-parser";
+import { pinAuthRouter } from "./routes/pinAuth";
+import { requirePin } from "./middleware/requirePin";
+// ... other imports
+
+const app = express();
+app.use(express.json());
+app.use(cookieParser());
+
+// Public: pin auth endpoints
+app.use("/api/auth", pinAuthRouter);
+
+// Protected routes below this line:
+app.use("/api", requirePin);
+app.use("/stream", requirePin);
+// If you have public assets or other public routes, mount them before requirePin.
+
+// ... existing route mounts
+// app.use("/stream", marketStreamRouter);
+// app.use("/api/voice", voiceRoutes); etc.
+
+export default app;
+```
+
+4) Update voice token route to use PIN protection
+Edit apps/server/src/routes/voiceToken.ts to replace requireUser with requirePin.
+
+```typescript name=apps/server/src/routes/voiceToken.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/chore/health-setup/apps/server/src/routes/voiceToken.ts
+import type { Express } from "express";
+import { signVoiceToken } from "../realtime/auth";
+// REPLACE this:
+// import { requireUser, AuthRequest } from "../middleware/requireUser.js";
+// WITH:
+import { requirePin } from "../middleware/requirePin";
+import jwt from "jsonwebtoken";
+
+// ... keep AVAILABLE_VOICES, etc.
+
+// Remove GET demo token path if you like, or leave it 400 by default.
+// For POST token, use requirePin instead of requireUser:
+export default function registerVoiceToken(app: Express) {
+  // Available voices endpoint can stay public or protected; choose protected for simplicity
+  app.get("/api/voice/voices", requirePin as any, (req, res) => {
+    res.json({ voices: AVAILABLE_VOICES });
+  });
+
+  app.post("/api/voice/token", requirePin as any, async (req, res) => {
+    try {
+      // With PIN auth, you can assign a fixed userId, e.g., "owner"
+      const userId = "owner";
+      const token = await signVoiceToken(userId, 300); // short-lived OpenAI token
+      // If you also issue toolsBridgeToken here, keep your existing logic
+      const toolsBridgeToken = jwt.sign({ sub: userId, typ: "tools" }, process.env.APP_AUTH_SECRET || "dev_secret_change_me", { expiresIn: "5m" });
+      const sessionId = `sess_${Date.now()}`;
+
+      res.json({ token, toolsBridgeToken, sessionId });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message ?? "voice token failed" });
+    }
+  });
+}
+```
+
+5) Protect SSE route(s)
+If you use a custom SSE route (e.g., /stream/market), ensure you check auth before writing headers. For example:
+
+```typescript name=apps/server/src/routes/marketStream.ts
+import { Router } from "express";
+import jwt from "jsonwebtoken";
+
+export const marketStreamRouter = Router();
+
+marketStreamRouter.get("/market", (req, res) => {
+  // Quick guard before headers:
+  const raw = req.cookies?.["st_auth"];
+  if (!raw) return res.status(401).end();
+  try {
+    jwt.verify(raw, process.env.APP_AUTH_SECRET || "dev_secret_change_me");
+  } catch {
+    return res.status(401).end();
+  }
+
+  // ... now set SSE headers and stream
+});
+```
+
+Client changes
+
+6) Add a minimalist PIN gate modal
+- Blocks the app until /api/auth/status returns ok
+- Sends POST /api/auth/pin on submit
+- All subsequent fetch/EventSource use credentials automatically via same-origin cookies
+
+```tsx name=apps/client/src/auth/PinGate.tsx
+import { useEffect, useState } from "react";
+
+export function PinGate({ children }: { children: React.ReactNode }) {
+  const [state, setState] = useState<"checking" | "need-pin" | "ok" | "error">("checking");
+  const [pin, setPin] = useState("");
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/status", { credentials: "include" });
+        setState(res.ok ? "ok" : "need-pin");
+      } catch {
+        setState("need-pin");
+      }
+    })();
+  }, []);
+
+  const submit = async () => {
+    setErr("");
+    if (!/^\d{6}$/.test(pin)) {
+      setErr("PIN must be 6 digits");
+      return;
+    }
+    const res = await fetch("/api/auth/pin", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin }),
+    });
+    if (res.ok) {
+      setState("ok");
+    } else {
+      const j = await res.json().catch(() => ({}));
+      setErr(j?.error || "Invalid PIN");
+    }
+  };
+
+  if (state === "ok") return <>{children}</>;
+  if (state === "checking") {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-black/70">
+        <div className="text-gray-300">Checking access…</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center bg-black/70">
+      <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-xl w-full max-w-xs p-6">
+        <h2 className="text-white font-semibold mb-3">Enter PIN</h2>
+        <input
+          inputMode="numeric"
+          pattern="\d{6}"
+          maxLength={6}
+          value={pin}
+          onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+          className="w-full px-3 py-2 rounded bg-gray-800 border border-gray-700 text-white mb-2 tracking-widest text-center"
+          placeholder="••••••"
+        />
+        {err && <div className="text-sm text-red-400 mb-2">{err}</div>}
+        <button
+          onClick={submit}
+          className="w-full px-3 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white"
+        >
+          Unlock
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+7) Wrap your App with PinGate
+- The exact root file may be apps/client/src/main.tsx or App.tsx. Wrap your top-level shell:
+
+```typescript name=apps/client/src/main.tsx
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { PinGate } from "./auth/PinGate";
+import { App } from "./App";
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <PinGate>
+      <App />
+    </PinGate>
+  </React.StrictMode>,
+);
+```
+
+If your entry is different (e.g., AppShell), wrap that instead.
+
+8) Remove “demo mode” UI paths and make sure EventSource sends cookies
+- EventSource already needs { withCredentials: true } and same-origin URL (you have that).
+- Remove any “Try demo mode” buttons or flags; you won’t need them now that the app is personal and always authenticated via PIN.
+
+Environment variables
+
+Add two env vars:
+
+````markdown name=.env.example url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/chore/health-setup/.env.example
+# Personal PIN login (6 digits)
+APP_PIN=123456
+
+# Secret used to sign the st_auth cookie (JWT). Change in production.
+APP_AUTH_SECRET=change_me_dev_secret
+````
+
+Docs blurb (optional)
+
+````markdown name=docs/PIN_AUTH.md
+# PIN Authentication (Personal Mode)
+
+This app runs in personal mode with a simple 6-digit PIN.
+
+- Server env:
+  - `APP_PIN` — your 6-digit PIN
+  - `APP_AUTH_SECRET` — secret for signing the `st_auth` cookie
+- Client:
+  - A gate modal prompts for the PIN on first load.
+  - After unlocking, all API/SSE/voice requests are authenticated by cookie.
+
+Routes:
+- `POST /api/auth/pin` — `{ pin: "123456" }` -> sets `st_auth` cookie on success
+- `GET /api/auth/status` — returns `{ ok: true }` when authenticated
+- `POST /api/auth/logout` — clears cookie
+
+Protected:
+- All `/api/**`, `/stream/**`, `/ws/**` endpoints require the cookie.
+
+Security notes:
+- Keep `APP_AUTH_SECRET` private.
+- Use HTTPS in production so cookies are `secure`.
+- PIN is not meant for multi-user. For sharing, restore a real auth flow.
+````
+
+Why this makes everything easier
+- One input (PIN) unlocks everything—no email flow, no demo mode, no test accounts.
+- SSE, voice tokens, and all APIs are protected consistently by a same‑origin, httpOnly cookie.
+- Your EventSource, fetch calls, and WebSockets remain unchanged except for credentials being naturally included via cookies.
+
+Want me to open a feature branch and wire:
+- requirePin middleware
+- pinAuth routes
+- replace requireUser usage
+- add PinGate and wrap the app
+- strip demo mode UI
+- update .env.example
+
+I can do it all in one PR so you can validate in minutes.

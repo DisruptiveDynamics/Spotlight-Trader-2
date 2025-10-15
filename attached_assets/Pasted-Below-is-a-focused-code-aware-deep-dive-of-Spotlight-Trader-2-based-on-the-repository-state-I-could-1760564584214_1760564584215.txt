@@ -1,0 +1,353 @@
+Below is a focused, code-aware deep dive of Spotlight-Trader-2 based on the repository state I could inspect. I’ll cover:
+
+- How your charts are wired today, what can go wrong, and what to change to make them “TOS-grade” reliable
+- How to give your voice agent real-time, first-class access to app state (especially charts), and close the loop on tool calls
+- Practical compliance guardrails for data provider TOS and for voice/AI usage
+- Concrete file-level changes and patches
+
+Note: The file listing I retrieved may be incomplete because only a subset of repository contents could be listed at once. You can browse the full contents here: https://github.com/DisruptiveDynamics/Spotlight-Trader-2/tree/chore/health-setup
+
+Repository context I used
+- Default branch: chore/health-setup
+- TypeScript monorepo with client in apps/client and server in apps/server
+- Charting: lightweight-charts with components in apps/client/src/features/chart/Pane.tsx and ChartView.tsx; error boundary in apps/client/src/components/ChartErrorBoundary.tsx
+- Market stream: connectMarketSSE, fetchHistory (apps/client/src/lib/marketStream and lib/history)
+- Voice: RealtimeVoiceClient with ToolBridge and toolSchemas (apps/client/src/voice), server routes for tokens and previews, voiceCalloutBridge on server
+- Diagnostic/engineering notes in attached_assets and VOICE_OPTIMIZATIONS.md
+
+Deep dive: Charts
+
+What’s good now
+- Lazy-load of lightweight-charts in ChartView.tsx speeds first paint.
+- Pane.tsx handles overlays, indicators, tooltips, and removes overlay series on re-render to avoid leaks.
+- SSE wiring (connectMarketSSE) is present and logging first few bars, implying live feed integration.
+- Error boundary for charts is in place.
+
+Issues and concrete fixes
+
+1) ChartView.tsx lifecycle: listener cleanup and RAF hygiene
+- Problem: A resize listener is added but not removed on unmount. RAF can be left scheduled. SSE connection should be closed explicitly.
+- Fix: Remove the window resize listener in the effect cleanup and always close the SSE connection. Also ensure RAF only runs when queues are non-empty.
+
+Suggested patch (key parts):
+
+```typescript name=apps/client/src/features/chart/ChartView.tsx url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/src/features/chart/ChartView.tsx
+// ... inside useEffect
+window.addEventListener("resize", handleResize);
+
+// schedule rAF only when needed
+const pump = () => {
+  rafIdRef.current = null;
+  // drain microbarQueueRef first, then barUpdateQueueRef
+  // ... update seriesRef.current accordingly
+  if (microbarQueueRef.current.length || barUpdateQueueRef.current.length) {
+    rafIdRef.current = requestAnimationFrame(pump);
+  }
+};
+const ensurePump = () => {
+  if (rafIdRef.current == null) {
+    rafIdRef.current = requestAnimationFrame(pump);
+  }
+};
+
+// in onBar/onMicro handlers: push to queue then ensurePump();
+
+// cleanup
+return () => {
+  mounted = false;
+  if (chartRef.current) chartRef.current.remove();
+  if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+  if (sseConnection) sseConnection.close();
+  window.removeEventListener("resize", handleResize);
+};
+```
+
+2) Keep the last bar visible and stable during live updates
+- Problem: Without rightOffset and autoScrollToRealTime toggling, the last candle can jump or drift.
+- Fix: Apply timeScale rightOffset and real-time scrolling options.
+
+```typescript
+chart.applyOptions({
+  timeScale: {
+    timeVisible: true,
+    secondsVisible: false,
+    rightOffset: 2,
+    shiftVisibleRangeOnNewBar: true,
+  },
+});
+```
+
+3) Correctly merge micro-ticks into the in-flight candle
+- Problem: Micro updates must adjust the in-progress candle (wick, body) rather than add new bars prematurely.
+- Fix: In onMicro, check micro.bar_end (or server contract) and only update the current candle if within the active bucket; otherwise, roll to new candle and setData for series consistently. Use UTCTimestamp: const t = Math.floor(epochMs/1000) as UTCTimestamp.
+
+4) Avoid overlay series churn in Pane.tsx
+- Problem: Recreating overlay series on every indicator change can cause flicker and performance cost, even with cleanup.
+- Fix: Create overlay series once and reuse by title, updating setData only when the computed values change.
+
+Example pattern:
+
+```typescript name=apps/client/src/features/chart/Pane.tsx url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/src/features/chart/Pane.tsx
+// keep a Map<string, ISeriesApi<"Line">> for EMA series keyed by `EMA(20)` etc.
+// when indicators.emaLines changes:
+// - for each desired key: create if missing, then series.setData(newData)
+// - for removed keys: removeSeries and delete from Map
+```
+
+5) Tooltip and crosshair performance
+- Coalesce tooltip updates to rAF; avoid setState per mousemove. You already compute tooltip; ensure event listeners are attached once and removed on cleanup.
+
+6) Host container sizing
+- Make sure the chart container can grow inside flex layouts: parent panes need min-height: 0 and overflow properly controlled to avoid zero height when inside flex columns.
+
+7) Error boundary recovery
+- Your ChartErrorBoundary has a reset. Ensure the chart subtree is keyed so resetError triggers full remount:
+
+```tsx
+<ChartErrorBoundary key={active.symbol + ':' + timeframe}>
+  <Pane />
+</ChartErrorBoundary>
+```
+
+8) SSE gap-fill and history alignment
+- Ensure the first bars from SSE don’t duplicate the last history bar. Compare seq or bar_end; de-dup by time on the client before series.update. Your useLastSeq hook suggests persistent seqs; keep using that to request sinceSeq on reconnect.
+
+9) Server-side timeframe route hardening
+- In apps/server/src/routes/chartTimeframe.ts, validate inputs, normalize response shape, and set Cache-Control for historical windows. Also enforce genuine provider usage when SIMULATED_DATA !== 'true', per your own docs.
+
+Deep dive: Voice agent and “real-time full access” to app
+
+What’s good now
+- RealtimeVoiceClient wires an OpenAI RealtimeSession and ToolBridge; toolSchemas are passed to agent.
+- Server has voice token issuance with basic in-memory rate limiting and a voice preview endpoint.
+- UI has VoiceSelector and a text fallback component. There’s a voiceCalloutBridge on server.
+
+Key gaps and fixes to get truly real-time app access
+
+1) The agent needs a concrete tool to access chart state
+- Gap: No tool that returns the current chart snapshot or subscribes to updates (“get_chart_snapshot” and a “subscribe_to_chart_updates”).
+- Fix: Expose a server tool that queries the current chart state (in-memory or via an internal API) and another that opens a server-sent or WS subscription specifically for the agent. Maintain a shared in-memory snapshot.
+
+Add an agent memory store:
+
+```typescript name=apps/server/src/realtime/agentMemory.ts
+import { EventEmitter } from "events";
+
+export interface ChartSnapshot {
+  symbol: string;
+  timeframe: string;
+  lastSeq: number;
+  candles: Array<{ t: number; o: number; h: number; l: number; c: number; v?: number }>;
+}
+
+class AgentMemory extends EventEmitter {
+  private charts = new Map<string, ChartSnapshot>(); // key: `${symbol}:${timeframe}`
+
+  setChartSnapshot(key: string, snap: ChartSnapshot) {
+    this.charts.set(key, snap);
+    this.emit("chart:update", { key, snap });
+  }
+
+  getChartSnapshot(key: string) {
+    return this.charts.get(key) || null;
+  }
+}
+
+export const agentMemory = new AgentMemory();
+```
+
+Wire it from wherever you already handle market data on the server (e.g., market bootstrap or SSE producer): update agentMemory.setChartSnapshot(...) each time a new bar completes, and periodically for micro-updates (throttle to ~10/s).
+
+Expose tools on the server:
+
+```typescript name=apps/server/src/agent/tools/chartTools.ts
+import { Router } from "express";
+import { z } from "zod";
+import { agentMemory } from "../../realtime/agentMemory";
+
+export const chartToolsRouter = Router();
+
+const GetChartSchema = z.object({
+  symbol: z.string().min(1),
+  timeframe: z.string().min(1),
+});
+
+chartToolsRouter.post("/get_chart_snapshot", (req, res) => {
+  const parsed = GetChartSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.message });
+
+  const { symbol, timeframe } = parsed.data;
+  const key = `${symbol}:${timeframe}`;
+  const snap = agentMemory.getChartSnapshot(key);
+  if (!snap) return res.status(404).json({ ok: false, error: "No snapshot available" });
+
+  res.json({ ok: true, snapshot: snap });
+});
+
+chartToolsRouter.get("/subscribe_chart", (req, res) => {
+  const symbol = String(req.query.symbol || "");
+  const timeframe = String(req.query.timeframe || "");
+  if (!symbol || !timeframe) return res.status(400).end();
+
+  // SSE stream
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+  const key = `${symbol}:${timeframe}`;
+  const handler = (ev: { key: string; snap: any }) => {
+    if (ev.key === key) {
+      res.write(`event: chart_update\ndata:${JSON.stringify(ev.snap)}\n\n`);
+    }
+  };
+  agentMemory.on("chart:update", handler);
+
+  // send a first snapshot if exists
+  const snap = agentMemory.getChartSnapshot(key);
+  if (snap) res.write(`event: chart_update\ndata:${JSON.stringify(snap)}\n\n`);
+
+  req.on("close", () => {
+    agentMemory.off("chart:update", handler);
+  });
+});
+```
+
+2) Add client tool schemas so the agent can call them
+- Ensure apps/client/src/voice/toolSchemas.ts includes the new methods:
+
+```typescript name=apps/client/src/voice/toolSchemas.ts
+export const toolSchemas = [
+  {
+    type: "function",
+    function: {
+      name: "get_chart_snapshot",
+      description: "Returns the current chart data snapshot for a given symbol and timeframe",
+      parameters: {
+        type: "object",
+        properties: {
+          symbol: { type: "string" },
+          timeframe: { type: "string" },
+        },
+        required: ["symbol", "timeframe"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "subscribe_chart",
+      description: "Subscribes to server-sent chart updates for a symbol/timeframe during the current session",
+      parameters: {
+        type: "object",
+        properties: {
+          symbol: { type: "string" },
+          timeframe: { type: "string" },
+        },
+        required: ["symbol", "timeframe"],
+      },
+    },
+  },
+  // ... keep your existing tools
+] as const;
+```
+
+3) Close the loop in RealtimeVoiceClient for function calls (chunked args + outputs)
+- You already track pendingCalls and wire ToolBridge. Make sure you also handle argument deltas and map outputs back to the right function call id.
+
+Minimal addendum inside connect():
+
+```typescript name=apps/client/src/voice/RealtimeVoiceClient.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/src/voice/RealtimeVoiceClient.ts
+// ...
+const pendingCalls: Record<string, { name: string; argsJson: string[] }> = {};
+
+s.on?.("response.function_call.arguments.delta", (ev: { id: string; delta: string }) => {
+  const entry = pendingCalls[ev.id];
+  if (entry) entry.argsJson.push(ev.delta);
+});
+
+s.on?.("response.function_call.completed", async (ev: { id: string }) => {
+  const entry = pendingCalls[ev.id];
+  if (!entry) return;
+  const args = JSON.parse(entry.argsJson.join("") || "{}");
+
+  try {
+    const result = await this.toolBridge!.invoke(entry.name, args);
+    // feed result back to the agent
+    s.send?.({
+      type: "response.function_call.output",
+      id: ev.id,
+      output: JSON.stringify(result),
+    });
+  } catch (err: any) {
+    s.send?.({
+      type: "response.function_call.output",
+      id: ev.id,
+      output: JSON.stringify({ ok: false, error: String(err?.message || err) }),
+    });
+  } finally {
+    delete pendingCalls[ev.id];
+  }
+});
+```
+
+4) Real-time agent “situational awareness”
+- With get_chart_snapshot and subscribe_chart, the agent can:
+  - Answer “What’s the last SPY 1m candle?” immediately
+  - Push commentary only for A-/A setups (see VOICE_OPTIMIZATIONS.md guardrails)
+  - Maintain live awareness without scraping the UI
+
+5) Voice session robustness and compliance
+- Token: You already have POST /api/voice/token with auth and a GET demo path; keep using ephemeral tokens.
+- Rate limiting: Your in-memory limiter exists; tune MAX_REQUESTS_PER_WINDOW if needed.
+- Voice switching: Use session.update on the same RealtimeSession (no duplicate upstream connections).
+- Barge-in: Ensure UI calls client.response.cancel() when mic opens (per your docs).
+- Privacy: Do not log raw microphone data; redact PII in ToolBridge logs.
+
+TOS and compliance guardrails
+
+Data vendor (Polygon or similar)
+- Enforce real provider usage when SIMULATED_DATA !== 'true' (per your own doc snippet).
+- Fail fast if POLYGON_API_KEY missing; expose a /ready probe that fails if data provider is misconfigured.
+- Attribution: Follow vendor’s attribution/display rules in your UI where required.
+- Caching/rate limits: Don’t cache beyond allowed terms; throttle history endpoints; add Cache-Control headers only for allowed windows.
+
+OpenAI Realtime usage and voice
+- Consent: On first mic use, display a brief consent + “Audio will be sent to our voice service to transcribe/coach” text (your VoiceFallback and selector components are a good place for the notice).
+- Ephemeral tokens: Continue to use short-lived tokens and do not persist them in storage.
+- Content policy: Add a “Not financial advice” banner in the voice panel; rate-limit unsolicited callouts (only speak for A-/A setups or risk alerts, as your docs suggest).
+
+UI-accessibility and performance polish (Thinkorswim-grade)
+- Respect prefers-reduced-motion (disable shimmer/cursor glow).
+- Coalesce overlay updates to rAF; reuse arrays/objects where possible.
+- Ensure chart text >= 14px and high-contrast tooltips (you already lean into this).
+- ManualChunks in Vite: you’ve split charts, which helps TTI; keep it.
+
+Testing you should add or verify
+- Unit: timeframe bucketing math, monotonic bar creation from microticks, indicator calculations.
+- Voice: state machine (activate/mute/unmute/disconnect), voice change via session.update, and cancel on barge-in.
+- E2E (Playwright): symbol/timeframe switch renders within 1s; “double-click disconnect under load” doesn’t leak listeners; changing voice mid-speech works.
+
+Summary of key code changes
+- ChartView.tsx: add cleanup for resize and SSE; rAF scheduler that only runs when queues non-empty; rightOffset + shiftVisibleRangeOnNewBar; robust micro→bar merge.
+- Pane.tsx: overlay series caching by title; rAF-coalesced tooltip updates; guard array indexing when mapping indicators to candle indices.
+- Server: add agentMemory and chartTools endpoints; harden chartTimeframe route; enforce real data provider config.
+- Voice: ensure function call delta handling and output publication in RealtimeVoiceClient; include get_chart_snapshot/subscribe_chart in toolSchemas; keep using ephemeral token issuance with rate-limits.
+
+If you want to skim the most relevant code I referenced:
+- Chart components
+  - ChartView.tsx: https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/src/features/chart/ChartView.tsx
+  - Pane.tsx: https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/src/features/chart/Pane.tsx
+  - ChartErrorBoundary.tsx: https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/src/components/ChartErrorBoundary.tsx
+- Voice
+  - RealtimeVoiceClient.ts: https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/src/voice/RealtimeVoiceClient.ts
+  - voiceToken.ts: https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/server/src/routes/voiceToken.ts
+  - voicePreview.ts: https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/server/src/routes/voicePreview.ts
+  - voiceCalloutBridge.ts: https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/server/src/realtime/voiceCalloutBridge.ts
+- Build perf
+  - Vite config: https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/vite.config.ts
+
+Assumptions
+- “TOS standards” here covers both “Thinkorswim-grade” UX/perf and compliance with your data vendor(s) and voice service terms. If you meant a specific TOS, we can tailor the checks list to that vendor’s clauses.
+
+With these changes, your charts will render reliably under live load, your voice agent will have first-class real-time visibility into the app (especially charts), and your usage will align with common provider ToS and voice AI best practices.

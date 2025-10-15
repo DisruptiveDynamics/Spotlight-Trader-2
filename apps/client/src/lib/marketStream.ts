@@ -2,6 +2,7 @@ import { perfMetrics } from "@shared/perf/metrics";
 import { reconcileBars } from "@shared/utils/barHash";
 
 import { STREAM_URL, HISTORY_URL } from "../config";
+import { useAuthStore } from "../stores/authStore";
 
 export type Ohlcv = { o: number; h: number; l: number; c: number; v: number };
 
@@ -526,8 +527,6 @@ export async function loadHistoryPreset(
 
 // Auth-aware market stream starter
 export function startMarketStream() {
-  // Import authStore dynamically to avoid circular deps
-  const { useAuthStore } = require("../stores/authStore");
   const authReady = useAuthStore.getState().authReady;
   const user = useAuthStore.getState().user;
 

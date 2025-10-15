@@ -1,0 +1,371 @@
+Here’s what I validated from the repo and the best way to fix things, followed by a copy‑paste prompt you can give to your Replit agent.
+
+What’s true (validated)
+- Server SSE endpoint is correct: The backend mounts Server‑Sent Events on /stream/market in apps/server/src/wiring/index.ts. Any reference to /realtime/sse is outdated logging, not the active route.
+- AuthGate has TypeScript problems: It uses React.ReactNode without importing the React types and sets the store with the server’s user shape (id) instead of the client’s expected shape (userId). Although AuthGate isn’t currently used, it should be fixed (and we’ll use it to stabilize session validation).
+- The login “stuck on SignIn” symptom: App.tsx correctly selects user from the Zustand store and conditionally renders SignIn vs. dashboard. SignIn calls setUser with the correct shape. In principle, this should re-render App. To make the flow robust and remove flakiness, we’ll:
+  - Fix AuthGate types and shape mapping and actually use AuthGate to validate/rehydrate session.
+  - Add a conservative fallback after demo login (a one-time location.reload) so the UI always advances even if a re-render doesn’t occur for any environment-specific reason.
+- Endpoint mismatch is not the issue: Update any stale client references or logs to use /stream/market.
+
+Recommended approach
+1) Fix AuthGate TypeScript and data-shape mapping and put it in front of App.
+- Import the React types properly (ReactNode).
+- Map server user { id, email } into the store’s expected shape { userId, email, createdAt } in both storage and setUser.
+- Use selector-based store access: const user = useAuthStore(s => s.user); const setUser = useAuthStore(s => s.setUser).
+
+2) Use AuthGate in main.tsx.
+- Wrap <App /> inside <AuthGate> so session validation runs on boot and updates the store in a type-safe, shape-correct way.
+
+3) Harden the demo login flow.
+- After setUser succeeds, add a very short, one-time fallback reload to force the UI to advance in environments where a render doesn’t trigger. This is a safety net you can remove later once you verify the re-render is consistent.
+
+4) Ensure all client SSE connects use /stream/market.
+- Search for '/realtime/sse' and EventSource usage; update to /stream/market and adjust any outdated logs.
+
+Copy-and-paste prompt for your Replit agent
+Please apply the following changes:
+
+1) Fix and enable AuthGate.
+
+- Update apps/client/src/features/auth/AuthGate.tsx to:
+  - Import ReactNode from react.
+  - Use selector-based access to the Zustand store (avoid destructuring the entire store without a selector).
+  - Map server user shape { id, email, createdAt? } to the client’s expected store shape { userId, email, createdAt? } before writing to authStorage and calling setUser.
+
+Replace the file with this content:
+
+```tsx name=apps/client/src/features/auth/AuthGate.tsx url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/src/features/auth/AuthGate.tsx
+import { useEffect, useState } from "react";
+import { useAuthStore } from "../../stores/authStore";
+import { authStorage } from "../../auth/authStorage";
+import { SignIn } from "./SignIn";
+import type { ReactNode } from "react";
+
+interface AuthGateProps {
+  children: ReactNode;
+}
+
+export function AuthGate({ children }: AuthGateProps) {
+  const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
+  const [loading, setLoading] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const validateSession = async () => {
+      try {
+        const res = await fetch("/api/auth/session", {
+          credentials: "include",
+        });
+
+        if (cancelled) return;
+
+        if (res.ok) {
+          const data = await res.json();
+
+          // Map server user { id, email, createdAt? } -> store user { userId, email, createdAt? }
+          const mappedUser = data?.user
+            ? {
+                userId: data.user.id,
+                email: data.user.email,
+                createdAt: data.user.createdAt || new Date().toISOString(),
+              }
+            : null;
+
+          if (mappedUser) {
+            authStorage.set({
+              user: mappedUser,
+              expiresAt: data.expiresAt || Date.now() + 30 * 60 * 1000,
+            });
+            setUser(mappedUser);
+          } else {
+            authStorage.clear();
+            setUser(null);
+          }
+
+          setLoading(false);
+          setSessionExpired(false);
+        } else {
+          // Session invalid - clear everything
+          authStorage.clear();
+          setUser(null);
+          setLoading(false);
+
+          if (user) {
+            setSessionExpired(true);
+          }
+        }
+      } catch (error) {
+        if (cancelled) return;
+
+        console.error("Session validation failed:", error);
+        authStorage.clear();
+        setUser(null);
+        setLoading(false);
+
+        if (user) {
+          setSessionExpired(true);
+        }
+      }
+    };
+
+    validateSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []); // Only run once on mount
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-950">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-400 mx-auto"></div>
+          <p className="text-gray-400 mt-4">Checking session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <SignIn sessionExpired={sessionExpired} />;
+  }
+
+  return <>{children}</>;
+}
+```
+
+2) Wrap App with AuthGate.
+
+- Update apps/client/src/main.tsx to wrap <App /> with <AuthGate>:
+
+```tsx name=apps/client/src/main.tsx url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/src/main.tsx
+import React from "react";
+import ReactDOM from "react-dom/client";
+import "./index.css";
+import App from "./App";
+import { AuthGate } from "./features/auth/AuthGate";
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <AuthGate>
+      <App />
+    </AuthGate>
+  </React.StrictMode>,
+);
+```
+
+3) Add a conservative fallback refresh after demo login.
+
+- Update apps/client/src/features/auth/SignIn.tsx:
+  - After successfully calling setUser(...), add a short, one-time fallback reload in case the UI doesn’t re-render immediately. This is a temporary hardening step and can be removed later once verified.
+
+Replace the handleDemo success section like this (full file below for convenience):
+
+```tsx name=apps/client/src/features/auth/SignIn.tsx url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/src/features/auth/SignIn.tsx
+import { useState } from "react";
+import { useAuthStore } from "../../stores/authStore";
+import { fetchWithRetry } from "../../lib/retry";
+
+interface SignInProps {
+  sessionExpired?: boolean;
+}
+
+export function SignIn({ sessionExpired = false }: SignInProps) {
+  const setUser = useAuthStore((state) => state.setUser);
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+  const [retryStatus, setRetryStatus] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await fetch("/api/auth/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to send magic link");
+      }
+
+      setSent(true);
+    } catch {
+      setError("Failed to send magic link. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDemo = async () => {
+    console.log("Demo mode button clicked");
+    setLoading(true);
+    setError("");
+    setRetryStatus("Starting demo session...");
+
+    try {
+      const data = await fetchWithRetry(
+        "/api/auth/demo",
+        {
+          method: "POST",
+          credentials: "include",
+        },
+        {
+          maxAttempts: 8,
+          baseDelayMs: 500,
+          onRetry: (attempt) => {
+            setRetryStatus(`Server waking up... retrying (${attempt}/8)`);
+          },
+        }
+      );
+
+      console.log("Demo response data:", data);
+
+      if (data.user) {
+        console.log("Setting user in auth store:", data.user);
+        setUser({
+          userId: data.user.id,
+          email: data.user.email,
+          createdAt: data.user.createdAt || new Date().toISOString(),
+        });
+        console.log("User set successfully");
+
+        // Fallback: if the view doesn't switch quickly, force a refresh
+        setTimeout(() => {
+          // Only refresh if still on the sign-in view (very conservative check)
+          const root = document.getElementById("root");
+          if (root && root.textContent && root.textContent.includes("Sign in to your account")) {
+            window.location.reload();
+          }
+        }, 400);
+      }
+    } catch (err) {
+      console.error("Demo login error:", err);
+      setError("Demo login failed after multiple retries. The server may be down.");
+    } finally {
+      setLoading(false);
+      setRetryStatus("");
+    }
+  };
+
+  if (sent) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-950">
+        <div className="max-w-md w-full bg-gray-900 p-8 rounded-lg border border-gray-800">
+          <div className="text-center">
+            <div className="text-4xl mb-4">✉️</div>
+            <h2 className="text-2xl font-bold text-white mb-2">Check your email</h2>
+            <p className="text-gray-400 mb-4">
+              We sent a magic link to <span className="text-white">{email}</span>
+            </p>
+            <button
+              onClick={() => setSent(false)}
+              className="text-amber-400 hover:text-amber-300 text-sm"
+            >
+              Try a different email
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-950">
+      <div className="max-w-md w-full bg-gray-900 p-8 rounded-lg border border-gray-800">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-white mb-2">Spotlight Trader</h1>
+          <p className="text-gray-400">Sign in to your account</p>
+        </div>
+
+        {sessionExpired && (
+          <div className="mb-4 p-3 bg-amber-950 border border-amber-800 rounded-md">
+            <p className="text-amber-400 text-sm text-center">
+              Your session has expired. Please log in again.
+            </p>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
+              Email address
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-md text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+              placeholder="you@example.com"
+            />
+          </div>
+
+          {error && (
+            <div className="text-red-400 text-sm bg-red-950 border border-red-800 rounded p-3">
+              {error}
+            </div>
+          )}
+
+          {retryStatus && (
+            <div className="text-amber-400 text-sm bg-amber-950 border border-amber-800 rounded p-3">
+              {retryStatus}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-amber-500 hover:bg-amber-600 text-gray-900 font-semibold py-2 px-4 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {loading ? "Sending..." : "Send magic link"}
+          </button>
+        </form>
+
+        <div className="mt-6 pt-6 border-t border-gray-800">
+          <button
+            onClick={handleDemo}
+            disabled={loading}
+            className="w-full bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium py-2 px-4 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Try demo mode
+          </button>
+          <p className="text-xs text-gray-500 text-center mt-2">For development and testing</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+4) Ensure client SSE code uses /stream/market.
+
+- Search the client for:
+  - "/realtime/sse"
+  - "EventSource("
+  - "new EventSource"
+- Update any SSE URL to /stream/market and remove or update any outdated console logs referencing /realtime/sse.
+- No server changes are needed; the server already exposes app.get("/stream/market", sseMarketStream).
+
+5) Verification steps.
+
+- Start the server and client.
+- Click “Try demo mode.”
+  - Expect: setUser logs, then the dashboard renders. If it doesn’t render immediately, the fallback reload should kick in within ~400ms and the dashboard should appear.
+- Confirm no TypeScript errors in AuthGate.
+- Confirm SSE connects without errors and that no code references /realtime/sse.
+
+Notes
+- The fallback reload is intentionally conservative and only triggers if the text content still looks like the sign-in screen. Once you’ve verified the re-render is reliable in your environment, feel free to remove this fallback.
+- Aligning the user object shape everywhere (userId vs id) removes a subtle class of bugs and TypeScript errors during session validation and rehydration.

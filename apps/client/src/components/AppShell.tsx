@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 
+import { startMarketStream } from "../lib/marketStream";
 import { useAuthStore } from "../stores/authStore";
 import App from "../App";
 
@@ -10,9 +11,13 @@ export function AppShell() {
   useEffect(() => {
     if (!authReady || !user) return;
 
-    // TODO: Start market stream when auth is ready
-    // const stop = startMarketStream();
-    // return stop;
+    console.log("[AppShell] Starting market stream");
+    const stopStream = startMarketStream();
+    
+    return () => {
+      console.log("[AppShell] Cleaning up market stream");
+      stopStream();
+    };
   }, [authReady, user]);
 
   return <App />;

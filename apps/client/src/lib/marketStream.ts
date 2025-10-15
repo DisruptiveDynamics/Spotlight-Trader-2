@@ -524,5 +524,33 @@ export async function loadHistoryPreset(
   bars.forEach(onBar);
 }
 
+// Auth-aware market stream starter
+export function startMarketStream() {
+  // Import authStore dynamically to avoid circular deps
+  const { useAuthStore } = require("../stores/authStore");
+  const authReady = useAuthStore.getState().authReady;
+  const user = useAuthStore.getState().user;
+
+  if (!authReady || !user) {
+    console.warn("[marketStream] Not starting - auth not ready");
+    return () => {}; // No-op cleanup
+  }
+
+  console.log("[marketStream] Starting market stream (auth ready)");
+  const stream = connectMarketSSE(["SPY", "QQQ"]);
+
+  // Wire up default handlers
+  stream.onStatus((status) => {
+    if (status === "connected") {
+      window.dispatchEvent(new CustomEvent("sse:connected"));
+    }
+  });
+
+  return () => {
+    console.log("[marketStream] Stopping market stream");
+    stream.close();
+  };
+}
+
 // fetchHistory lives in lib/history to avoid duplicates
 export { fetchHistory } from "./history";

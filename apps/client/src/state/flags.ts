@@ -5,6 +5,8 @@
 
 import { create } from "zustand";
 
+import { toLogError } from "../lib/errors";
+
 export interface Flags {
   enableRiskGovernorV2: boolean;
   enableExplainV2: boolean;
@@ -57,7 +59,7 @@ export const useFlagsStore = create<FlagsStore>((set) => ({
       const flags = await res.json();
       set({ flags, loading: false, lastSync: Date.now() });
     } catch (error) {
-      console.error("Failed to sync flags:", error);
+      console.error("Failed to sync flags:", toLogError(error));
       set({
         error: error instanceof Error ? error.message : "Unknown error",
         loading: false,

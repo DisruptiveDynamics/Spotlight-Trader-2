@@ -2,6 +2,7 @@ import { VOICE_COACH_SYSTEM } from "@spotlight/shared";
 import { useEffect, useRef, useState } from "react";
 
 import { VoiceFallback } from "./VoiceFallback";
+import { toLogError } from "../../lib/errors";
 import { ensureiOSAudioUnlocked } from "../../voice/ios";
 import { RealtimeVoiceClient } from "../../voice/RealtimeVoiceClient";
 
@@ -255,7 +256,7 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
         setCoachState("idle");
       },
       onError: (error) => {
-        console.error("Voice error:", error);
+        console.error("Voice error:", toLogError(error));
         setConnectionState("error");
       },
       onMuteChange: (isMuted) => {
@@ -365,8 +366,7 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
 
           showStatusMessage("Voice coach connected ✅", 2000);
         } catch (error) {
-          console.error("Failed to connect voice coach:", error);
-          console.error("Error details:", error instanceof Error ? error.message : String(error));
+          console.error("Failed to connect voice coach:", toLogError(error));
           showStatusMessage("Connection failed. Please try again.", 3000);
         }
       } else if (connectionState === "connected") {
@@ -376,7 +376,7 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
           const isMuted = client.getMuteState();
           showStatusMessage(isMuted ? "Muted 🔇" : "Unmuted 🔊", 1500);
         } catch (error) {
-          console.error("Failed to toggle mute:", error);
+          console.error("Failed to toggle mute:", toLogError(error));
           showStatusMessage("Failed to toggle mute", 2000);
         }
       }
@@ -409,7 +409,7 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
           const isMuted = voiceClientRef.current.getMuteState();
           showStatusMessage(isMuted ? "Muted 🔇" : "Unmuted 🔊", 1500);
         } catch (error) {
-          console.error("Failed to toggle mute:", error);
+          console.error("Failed to toggle mute:", toLogError(error));
           showStatusMessage("Failed to toggle mute", 2000);
         }
       }

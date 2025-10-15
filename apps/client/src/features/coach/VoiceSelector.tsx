@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import { toLogError } from "../../lib/errors";
+
 interface VoiceSelectorProps {
   isOpen: boolean;
   onClose: () => void;
@@ -80,7 +82,7 @@ export function VoiceSelector({
       onVoiceChange(selectedVoice);
       onClose();
     } catch (error) {
-      console.error("Failed to update voice:", error);
+      console.error("Failed to update voice:", toLogError(error));
       alert("Failed to update voice. Please try again.");
     } finally {
       setIsLoading(false);
@@ -107,7 +109,7 @@ export function VoiceSelector({
 
       audio.play();
     } catch (error) {
-      console.error("Preview error:", error);
+      console.error("Preview error:", toLogError(error));
       setPreviewingVoice(null);
     }
   };

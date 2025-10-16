@@ -33,6 +33,7 @@ import { copilotToolsRouter } from "./routes/copilotTools";
 import copilotActionsRouter from "./routes/copilotActions";
 import triggerTestRouter from "./routes/triggerTest";
 import voicePreviewRouter from "./routes/voicePreview";
+import { voiceDebugRouter } from "./routes/voiceDebug";
 import { requirePin } from "./middleware/requirePin";
 import { initializeMarketSource } from "./market/bootstrap";
 import { errorHandler, notFound } from "./middleware/error";
@@ -112,6 +113,9 @@ app.get("/tools/quote", async (_req, res) => {
     res.status(500).json({ ok: false, error: { code: "INTERNAL_ERROR", message: err.message } });
   }
 });
+
+// Voice debugging routes (public - for diagnostic testing)
+app.use("/debug", voiceDebugRouter);
 
 // PIN auth routes (public - no middleware)
 app.use("/api/auth", pinAuthRouter);

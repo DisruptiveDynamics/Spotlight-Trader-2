@@ -6,6 +6,17 @@ Spotlight Trader is a production-grade, real-time trading coach application desi
 
 ## Recent Changes
 
+**October 16, 2025 - Voice Tool Observability & Health Monitoring (Complete)**
+- ✅ Added `/health/tools` endpoint for quick tool health checks (200 OK if error rate <10%, p95 <1000ms)
+- ✅ Endpoint reports totalCalls, errorRate, microToolP95Avg, and per-tool metrics
+- ✅ Uses existing ToolMetrics infrastructure (rolling 200-sample window)
+- ✅ Fixed ES module imports (changed require() to proper import statements)
+- ✅ Verified all 3 micro-tools working: get_last_price, get_last_vwap, get_last_ema
+- ✅ Adaptive timeouts confirmed: 800ms cache hits, 1200ms indicators, 2000ms+ complex
+- ✅ Legacy inline execution properly disabled (VOICE_INLINE_TOOLS feature flag)
+- ✅ Architect review passed - implementation solid, thresholds appropriate
+- 💡 Public endpoint (no auth) suitable for monitoring systems
+
 **October 16, 2025 - Voice Coach Reliability Improvements (Complete)**
 - ✅ Implemented `get_last_price` voice tool for real-time market data access
 - ✅ Fixed critical bug: bars1m buffer now populated from historical and realtime sources

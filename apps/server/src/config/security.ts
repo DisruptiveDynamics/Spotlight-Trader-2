@@ -9,7 +9,7 @@ const allowedOrigins = new Set([env.APP_ORIGIN, env.ADMIN_ORIGIN].filter(Boolean
 
 export function setupSecurity(app: Express) {
   const isUnifiedDev = process.env.UNIFIED_DEV === "1";
-  const isProd = env.NODE_ENV === "production";
+  const isProd = env.NODE_ENV === "production" && !isUnifiedDev;
   
   // Disable CSP in development to allow Vite HMR/eval/inline during development
   if (isProd) {

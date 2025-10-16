@@ -17,7 +17,12 @@ export function ChartView() {
 
   const [epochId, setEpochId] = useState<string | null>(null);
   const [lastSeq, setLastSeq, resetSeqForTf] = useLastSeq("SPY", "1m", epochId);
-  const [, forceRerender] = useState({});
+  const lastSeqRef = useRef<number | null>(lastSeq);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    lastSeqRef.current = lastSeq;
+  }, [lastSeq]);
 
   const msToUtc = (ms: number): UTCTimestamp => Math.floor(ms / 1000) as UTCTimestamp;
 
@@ -137,7 +142,7 @@ export function ChartView() {
 
       window.addEventListener("resize", handleResize);
 
-      sseConnection = connectMarketSSE(["SPY"], lastSeq ? { sinceSeq: lastSeq } : undefined);
+      sseConnection = connectMarketSSE(["SPY"], lastSeqRef.current ? { sinceSeq: lastSeqRef.current } : undefined);
 
       sseConnection.onEpoch((e: { epochId: string; epochStartMs: number }) => {
         if (!mounted) return;
@@ -184,7 +189,7 @@ export function ChartView() {
     return () => {
       Promise.resolve(cleanupPromise).catch(() => void 0);
     };
-  }, [lastSeq, setLastSeq, epochId, resetSeqForTf]);
+  }, [epochId]);
 
   return <div ref={chartContainerRef} className="w-full h-full" />;
 }

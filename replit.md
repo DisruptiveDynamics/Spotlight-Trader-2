@@ -6,6 +6,26 @@ Spotlight Trader is a production-grade, real-time trading coach application desi
 
 ## Recent Changes
 
+**October 16, 2025 - Voice Assistant Tool Execution Fix (Complete)**
+- ✅ **Fixed critical bug**: Voice tools now execute correctly using SDK-managed approach
+- ✅ Root cause identified: Code was passing raw schemas instead of SDK tool objects
+- ✅ Created `toolsWithExecute.ts`: Converts schemas to SDK tools with execute functions
+- ✅ Removed ~200 lines of manual function call handling - SDK manages lifecycle
+- ✅ All 10 voice tools operational: 3 micro-tools (<1s), 2 chart tools, 5 data tools
+- ✅ Architect review passed: No breaking changes, error handling preserved
+- 🎯 Result: Voice assistant "Nexa" has full tool access with ultra-fast responses
+
+**October 16, 2025 - SSE Duplicate Loop Fix (Complete)**
+- ✅ **Fixed blocking bug**: Eliminated continuous duplicate bar resync loops
+- ✅ Server: Added per-connection `lastSentSeq` watermark to prevent seq regressions
+- ✅ Server: Parse `Last-Event-ID` header for SSE-standard resume support
+- ✅ Server: Filter live bars - only emit if `seq > lastSentSeq`
+- ✅ Server: Backfill strictly emits bars with `seq > sinceSeq` in ascending order
+- ✅ Client: Tightened stale sequence detection (1000 → 10) for faster regression catch
+- ✅ Client: Soft reset on epoch change (clear lastSeq, resync from server)
+- ✅ Verified: Zero duplicate warnings, only normal gap detection for sparse bars
+- 🎯 Result: Charts stream continuously without churn, production-ready
+
 **October 16, 2025 - Auth Credentials Fix (Complete)**
 - ✅ Fixed market status showing "CLOSED" - added credentials to fetch requests
 - ✅ Added `credentials: "include"` to MarketStatus.tsx fetch

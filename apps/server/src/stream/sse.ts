@@ -17,7 +17,18 @@ export async function sseMarketStream(req: Request, res: Response) {
   const symbolsParam = (req.query.symbols as string) || "SPY";
   const symbols = symbolsParam.split(",").map((s) => s.trim().toUpperCase());
   const timeframe = (req.query.timeframe as string) || "1m"; // Allow client to specify timeframe
-  const sinceSeq = req.query.sinceSeq ? parseInt(req.query.sinceSeq as string, 10) : undefined;
+  
+  // Parse sinceSeq from query param OR Last-Event-ID header (SSE standard)
+  const querySeq = req.query.sinceSeq ? parseInt(req.query.sinceSeq as string, 10) : undefined;
+  const lastEventId = req.headers["last-event-id"] ? parseInt(req.headers["last-event-id"] as string, 10) : undefined;
+  const sinceSeq = querySeq ?? lastEventId ?? undefined;
+  
+  // [RESILIENCE] Track per-connection watermark to prevent seq regressions
+  let lastSentSeq = sinceSeq ?? 0;
+  
+  if (sinceSeq !== undefined) {
+    console.log(`[SSE] Client resume: sinceSeq=${sinceSeq}, symbols=${symbols.join(",")}`);
+  }
 
   // [RESILIENCE] Include epoch info in headers for client restart detection
   res.setHeader("Content-Type", "text/event-stream");
@@ -61,7 +72,17 @@ export async function sseMarketStream(req: Request, res: Response) {
       symbols.map(async (symbol) => {
         try {
           const backfill = await getHistory({ symbol, timeframe: timeframe as any, sinceSeq });
-          for (const bar of backfill) {
+          
+          // [RESILIENCE] Emit bars strictly > sinceSeq in ascending order
+          const barsToSend = backfill
+            .filter((bar) => bar.seq > sinceSeq)
+            .sort((a, b) => a.seq - b.seq);
+          
+          if (barsToSend.length > 0) {
+            console.log(`[SSE] Backfilling ${barsToSend.length} bars (seq ${barsToSend[0]!.seq} → ${barsToSend[barsToSend.length - 1]!.seq})`);
+          }
+          
+          for (const bar of barsToSend) {
             bpc.write(
               "bar",
               {
@@ -80,6 +101,7 @@ export async function sseMarketStream(req: Request, res: Response) {
               },
               String(bar.seq),
             );
+            lastSentSeq = Math.max(lastSentSeq, bar.seq);
           }
         } catch (err) {
           console.error(`Failed to fetch backfill for ${symbol}:`, err);
@@ -113,6 +135,7 @@ export async function sseMarketStream(req: Request, res: Response) {
               },
               String(bar.seq),
             );
+            lastSentSeq = Math.max(lastSentSeq, bar.seq);
           }
         } catch (err) {
           console.error(`Failed to fetch seed for ${symbol}:`, err);
@@ -218,6 +241,14 @@ export async function sseMarketStream(req: Request, res: Response) {
     };
 
     const barHandler = (data: BarData) => {
+      // [RESILIENCE] Prevent seq regressions - only emit bars > lastSentSeq
+      if (data.seq <= lastSentSeq) {
+        if (process.env.NODE_ENV === "development") {
+          console.log(`[SSE] Dropped bar seq=${data.seq} (lastSentSeq=${lastSentSeq})`);
+        }
+        return;
+      }
+      
       recordSSEEvent("bar");
       bpc.write(
         "bar",
@@ -231,6 +262,9 @@ export async function sseMarketStream(req: Request, res: Response) {
         },
         String(data.seq),
       );
+      
+      // Update watermark
+      lastSentSeq = Math.max(lastSentSeq, data.seq);
     };
 
     // Tick streaming for real-time "tape" feel

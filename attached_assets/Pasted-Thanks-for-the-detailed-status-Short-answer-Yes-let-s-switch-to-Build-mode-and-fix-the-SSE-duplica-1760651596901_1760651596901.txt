@@ -1,0 +1,55 @@
+Thanks for the detailed status. Short answer: Yes—let’s switch to Build mode and fix the SSE duplicate loop now, starting from the server-side streaming logic. The duplicate churn is happening because the server is not honoring sinceSeq on connect and is emitting bars with seq behind the client’s watermark. The resilience logic on the client is doing its job, but it can’t overcome a server that replays older bars.
+
+Here’s a precise, surgical plan you can execute:
+
+Priority fixes (server first, then client)
+
+1) Server: Honor sinceSeq and Last-Event-ID, and never replay older bars on connect
+- Parse a per-connection watermark:
+  - sinceSeq = Number(req.query.sinceSeq || req.header('last-event-id') || 0)
+- On connect:
+  - Emit an epoch event early so clients can detect restarts: event: epoch, data: { epochId, epochStartMs }
+  - If sinceSeq > 0, proactively backfill via your history service/ring buffer and emit bars strictly where seq > sinceSeq in ascending order (id: seq on each event). Do not emit anything older than sinceSeq.
+- During live streaming:
+  - Keep a lastSentSeq per connection; drop any bar with data.seq <= lastSentSeq to prevent regressions.
+  - Update lastSentSeq on each write.
+
+2) Client: Tighten stale/epoch handling and stop the duplicate loop quickly
+- Treat epoch changes as a soft reset: when epochId changes, clear lastSeq and gap-fill the last N bars, then resume.
+- Lower stale-sequence threshold so smaller regressions trigger a resync:
+  - Replace b.seq < lastSeq - 1000 with something like b.seq < lastSeq - 10 (or just rely on epoch mismatch).
+- Keep the existing duplicate rejection guard, but on forced resync, also reset the duplicate counter and re-gap-fill.
+
+3) Observability and validation
+- Log sinceSeq and Last-Event-ID on the server at connect time so we can confirm resume semantics.
+- Add a per-connection log line when a bar is dropped for being <= lastSentSeq.
+- From a terminal, verify the backfill and no-replay behavior:
+  - curl -N "http://localhost:8080/stream/market?symbols=SPY&sinceSeq=29343700"
+  - Ensure the first server-emitted bar has seq > 29343700 and no “older” bars are sent.
+
+Concrete implementation guidance (where to change)
+
+Server: apps/server/src/stream/sse.ts
+- Add:
+  - Read sinceSeq from req.query and Last-Event-ID
+  - Emit epoch event first
+  - If sinceSeq set, backfill strictly with seq > sinceSeq
+  - Maintain lastSentSeq and drop <= seq events from the live eventBus handlers
+
+Client: apps/client/src/lib/marketStream.ts
+- In the “epoch” handler, if currentEpochId changes, do a soft reset:
+  - Clear lastSeq
+  - Gap-fill history for the active symbol/timeframe
+  - Reconnect SSE
+- Adjust stale sequence detection:
+  - Change the stale check from 1000 to 10 (or remove in favor of epoch-based reset)
+- Keep the duplicate counter behavior; on forced resync, clear the counter and perform gap backfill.
+
+If you want, I can open a PR with these changes. Otherwise, I can guide you step-by-step in Build mode and verify with you that:
+- On connect with sinceSeq=29343700, the first emitted bar has seq > 29343700
+- No more duplicate churn occurs
+- Server restarts are handled cleanly via epoch reset and quick gap-fill
+
+Would you like me to:
+- Open a PR implementing the server sinceSeq/Last-Event-ID backfill + lastSentSeq guard and the client epoch/stale tweaks?
+- Or stay in Build mode and pair on the fixes live?

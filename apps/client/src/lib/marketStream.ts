@@ -294,11 +294,16 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       if (currentEpochId && currentEpochId !== data.epochId) {
         if (import.meta.env?.MODE === "development") {
           console.log(
-            `🔄 Server restarted: epoch ${currentEpochId.slice(0, 8)} → ${data.epochId.slice(0, 8)}, triggering resync`,
+            `🔄 Server restarted: epoch ${currentEpochId.slice(0, 8)} → ${data.epochId.slice(0, 8)}, soft reset`,
           );
         }
         currentEpochId = data.epochId;
         duplicateRejections = []; // Reset duplicate counter
+        
+        // [RESILIENCE] Soft reset on epoch change: clear lastSeq and resync
+        // This ensures we get fresh data after server restart
+        lastSeq = 0;
+        
         // Trigger immediate resync to rebuild state from server
         performResync("epoch change").catch((err) => {
           console.error("Epoch resync failed:", err);
@@ -326,11 +331,13 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       processingPromise = processingPromise.then(async () => {
         const b = JSON.parse((e as MessageEvent).data) as Bar;
 
-        // [RESILIENCE] Detect server restart: seq is much lower than lastSeq
-        const isStaleSequence = lastSeq > 0 && b.seq < lastSeq - 1000;
+        // [RESILIENCE] Detect server restart or seq regression (tightened threshold)
+        // Reduced from 1000 to 10 to catch smaller regressions quickly
+        const isStaleSequence = lastSeq > 0 && b.seq < lastSeq - 10;
 
         if (isStaleSequence) {
           if (import.meta.env?.MODE === "development") console.log(`🔄 Stale sequence detected: seq=${b.seq}, lastSeq=${lastSeq}`);
+          duplicateRejections = []; // Reset counter before resync
           await performResync("stale sequence");
           return;
         }

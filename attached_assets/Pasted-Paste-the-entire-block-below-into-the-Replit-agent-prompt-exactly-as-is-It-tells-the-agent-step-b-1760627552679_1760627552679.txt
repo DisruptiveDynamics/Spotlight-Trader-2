@@ -1,0 +1,282 @@
+Paste the entire block below into the Replit agent prompt (exactly as-is). It tells the agent step-by-step what to change, includes the exact TypeScript helper functions and the replacement snippet to use, and gives test + commit instructions.
+
+---- BEGIN PROMPT ----
+Context:
+The voice tool execution completes but sending the result back to OpenAI fails and OpenAI returns an empty error object {}. Root cause: code uses optional chaining (?.) to call session.response.function_call.output.create(...). That silently no-ops or produces an opaque error when the Agents SDK surface differs. We need robust feature detection, retries, structured error handling, and to ensure we await successful submission before continuing.
+
+Goal:
+Patch RealtimeVoiceClient.ts to:
+- Replace optional-chained create(...) call with a robust helper that detects SDK shapes, retries transient failures, and returns structured errors on permanent failure.
+- Ensure we wait for success before continuing and send a well-formed fallback error to OpenAI if submission ultimately fails.
+- Add unit tests for the behavior.
+- Commit changes to a branch and open a PR.
+
+Actions to perform (copy/paste and execute):
+
+1) Find the file
+- Search the repo for RealtimeVoiceClient.ts and open it. If it lives elsewhere, find the file containing the line similar to:
+  await s.response?.function_call?.output?.create({
+    call_id: ev.id,
+    output: JSON.stringify(result),
+  });
+
+2) Replace the old call with the helper and wrapper below.
+- Insert the helper functions near the top of the file (after imports and before main class/handler) or in a new small helper file and import them. Paste exactly the following TypeScript code into RealtimeVoiceClient.ts (or into an imported helper file and import it):
+
+/* BEGIN helper functions — paste into RealtimeVoiceClient.ts */
+type AnyObject = Record<string, any>;
+
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function safeSerialize(obj: any, maxLen = 2000): string {
+  try {
+    const s = JSON.stringify(obj);
+    if (s.length > maxLen) return s.slice(0, maxLen) + '...<truncated>';
+    return s;
+  } catch (e) {
+    return String(obj);
+  }
+}
+
+/**
+ * Try to submit the tool result using several possible SDK shapes.
+ * - Tries known shapes in sequence.
+ * - Throws an Error when no supported path is available or when submission definitively fails.
+ */
+async function submitToolResult(session: AnyObject, ev: AnyObject, result: any): Promise<void> {
+  const payload = {
+    call_id: ev?.id ?? ev?.callId ?? null,
+    output: typeof result === 'string' ? result : safeSerialize(result, 10000),
+  };
+
+  const candidates: Array<{name: string; fn: (() => Promise<any>) | null}> = [];
+
+  const sfcOutputCreate = session?.response?.function_call?.output?.create;
+  candidates.push({
+    name: 'session.response.function_call.output.create',
+    fn: typeof sfcOutputCreate === 'function' ? () => sfcOutputCreate.call(session.response.function_call.output, payload) : null,
+  });
+
+  const sfcCreate = session?.response?.function_call?.create;
+  candidates.push({
+    name: 'session.response.function_call.create',
+    fn: typeof sfcCreate === 'function' ? () => sfcCreate.call(session.response.function_call, payload) : null,
+  });
+
+  const respCreate = session?.response?.create;
+  candidates.push({
+    name: 'session.response.create(type:function_call_result)',
+    fn:
+      typeof respCreate === 'function'
+        ? () =>
+            respCreate.call(session.response, {
+              type: 'function_call_result',
+              tool: ev?.tool ?? ev?.name ?? 'voice_tool_result',
+              call_id: payload.call_id,
+              output: payload.output,
+            })
+        : null,
+  });
+
+  const sessionCreate = session?.create;
+  candidates.push({
+    name: 'session.create(type:function_call_result)',
+    fn:
+      typeof sessionCreate === 'function'
+        ? () =>
+            sessionCreate.call(session, {
+              type: 'function_call_result',
+              tool: ev?.tool ?? ev?.name ?? 'voice_tool_result',
+              call_id: payload.call_id,
+              output: payload.output,
+            })
+        : null,
+  });
+
+  const supportedCandidates = candidates.filter(c => c.fn !== null);
+  if (supportedCandidates.length === 0) {
+    const sessionShape = Object.keys(session ?? {}).join(', ');
+    throw new Error(
+      `No supported response submission method found on session. Session keys: [${sessionShape}]. Tried candidates: ${candidates
+        .map(c => c.name)
+        .join(', ')}`
+    );
+  }
+
+  let lastErr: any = null;
+  for (const cand of supportedCandidates) {
+    try {
+      await cand.fn!();
+      return;
+    } catch (err) {
+      lastErr = err;
+      // eslint-disable-next-line no-console
+      console.warn(`submitToolResult candidate "${cand.name}" failed:`, err?.message ?? err, '— trying next candidate if available');
+    }
+  }
+
+  const errorPayload = {
+    message: 'All response submission candidates failed',
+    lastErrorMessage: lastErr?.message ?? String(lastErr),
+    lastErrorStack: lastErr?.stack ?? undefined,
+    eventId: ev?.id ?? null,
+    resultPreview: safeSerialize(result, 2000),
+  };
+  throw new Error(safeSerialize(errorPayload, 8000));
+}
+
+/**
+ * Wrapper that retries transient failures with exponential backoff.
+ */
+async function submitToolResultWithRetry(session: AnyObject, ev: AnyObject, result: any, maxRetries = 3, baseDelayMs = 200) {
+  let attempt = 0;
+  let lastErr: any = null;
+
+  while (attempt < maxRetries) {
+    try {
+      attempt++;
+      await submitToolResult(session, ev, result);
+      return;
+    } catch (err) {
+      lastErr = err;
+      const msg = (err && (err.message || String(err))) || '';
+      const permanentIndicators = ['No supported response submission method', 'invalid', 'bad request', 'validation'];
+      const isPermanent = permanentIndicators.some(ind => msg.toLowerCase().includes(ind));
+      // eslint-disable-next-line no-console
+      console.error(`submitToolResult attempt ${attempt} failed: ${msg}`);
+      if (isPermanent) break;
+      if (attempt >= maxRetries) break;
+      const backoff = baseDelayMs * Math.pow(2, attempt - 1);
+      // eslint-disable-next-line no-console
+      console.info(`Retrying submitToolResult in ${backoff}ms (attempt ${attempt + 1}/${maxRetries})`);
+      await sleep(backoff);
+    }
+  }
+
+  const finalErr = new Error(
+    `Failed to submit tool result after ${attempt} attempts. Last error: ${safeSerialize(
+      { message: lastErr?.message ?? String(lastErr), stack: lastErr?.stack },
+      4000
+    )}`
+  );
+  (finalErr as any).original = lastErr;
+  throw finalErr;
+}
+/* END helper functions */
+
+- Now find the place that previously did:
+  await s.response?.function_call?.output?.create({
+    call_id: ev.id,
+    output: JSON.stringify(result),
+  });
+- Replace that snippet with this exact try/catch usage:
+
+try {
+  await submitToolResultWithRetry(s, ev, result, 3, 200);
+} catch (err) {
+  console.error('Tool result submission failed for event', ev?.id, 'error:', err);
+
+  // Send a structured error back to the session so OpenAI does NOT get an opaque {}.
+  try {
+    if (typeof s?.response?.create === 'function') {
+      await s.response.create({
+        type: 'error',
+        error: {
+          message: 'Tool result submission failed',
+          details: err?.message ?? String(err),
+          eventId: ev?.id,
+        },
+      });
+    } else if (typeof s?.create === 'function') {
+      await s.create({
+        type: 'error',
+        error: {
+          message: 'Tool result submission failed',
+          details: err?.message ?? String(err),
+          eventId: ev?.id,
+        },
+      });
+    } else {
+      // Last resort: log. Avoid throwing an opaque error to OpenAI.
+      console.error('No session response.create available to send structured error back to OpenAI.');
+    }
+  } catch (sendErr) {
+    console.error('Failed to send fallback error response to session:', sendErr);
+  }
+
+  // Re-throw to let upper logic decide; or handle locally depending on your flow.
+  throw err;
+}
+
+3) Add tests
+- Create tests/realtime-voice-client.spec.ts (or update your existing test location). Use Jest or your repo test framework. Add at least these tests:
+  - session where response.function_call.output.create exists and resolves -> submitToolResultWithRetry resolves.
+  - session where response.function_call.create exists and resolves -> resolves.
+  - session where response.create exists and resolves -> resolves.
+  - session where none exist -> submitToolResult throws "No supported response submission method".
+  - transient error test: mock the candidate to fail first then succeed, assert retry occurred and final resolves.
+
+Example Jest skeleton (paste into tests/realtime-voice-client.spec.ts):
+
+import { submitToolResult, submitToolResultWithRetry } from '../src/RealtimeVoiceClient'; // adjust path
+
+describe('submitToolResult helpers', () => {
+  test('uses response.function_call.output.create when present', async () => {
+    const calls: any[] = [];
+    const session: any = {
+      response: {
+        function_call: {
+          output: {
+            create: async (p: any) => { calls.push({ name: 'output.create', p }); return true; },
+          },
+        },
+      },
+    };
+    const ev = { id: 'ev1' };
+    await expect(submitToolResultWithRetry(session, ev, { foo: 'bar' }, 2, 10)).resolves.toBeUndefined();
+    expect(calls.length).toBeGreaterThan(0);
+  });
+
+  test('throws when no supported method exists', async () => {
+    const session: any = {};
+    const ev = { id: 'ev2' };
+    await expect(submitToolResult(session, ev, 'x')).rejects.toThrow(/No supported response submission method/);
+  });
+
+  // Add the transient-retry test by mocking a candidate that fails first then succeeds...
+});
+
+4) Run formatting, lint and tests
+- Run:
+  npm install
+  npm run lint
+  npm run build
+  npm test
+- Fix any TypeScript type errors (use AnyObject as needed or add minimal types around s and ev in this file).
+
+5) Commit and PR
+- Create a branch:
+  git checkout -b fix/voice-tool-result
+- Stage changes and commit:
+  git add src/RealtimeVoiceClient.ts tests/realtime-voice-client.spec.ts
+  git commit -m "fix(voice): robustly submit function-call outputs to OpenAI with feature detection, retries, and structured error handling"
+- Push branch and open a PR in your normal flow. In the PR description include:
+  - Root cause (optional chaining + Agents SDK shape change + no error handling)
+  - What changed (added helpers, retries, structured error fallback)
+  - How to test (unit tests added + e2e steps)
+  - Link to failing logs and test case that reproduces the original {} error.
+
+6) Manual validation (after deploy to staging)
+- Trigger the voice tool flow that previously reproduced the empty {}.
+- Confirm you now receive either:
+  - The correct tool result returned to the model, OR
+  - A clearly structured error object in OpenAI with message + details (not {}).
+- Inspect logs - the helper prints which candidate was used or why it failed.
+
+If anything in these steps fails due to types or different file locations, search the repo for the original optional-chained call text and adapt the replacement to that exact location. If you want, after applying the changes run the tests and paste any failing test output here and I'll provide exact fixes for the TypeScript types or mocks.
+
+---- END PROMPT ----
+
+I made the prompt include exact code to paste (helpers + usage), test skeleton, and step-by-step commands to commit and open a PR. Paste the whole block into the Replit agent and run it — it should make the edits, run tests, and create a branch for you.

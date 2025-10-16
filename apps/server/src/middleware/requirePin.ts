@@ -30,7 +30,7 @@ export function requirePin(req: Request, res: Response, next: NextFunction) {
 
     (req as any).userId = decoded.sub;
     next();
-  } catch (err) {
+  } catch (_err) {
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
 }

@@ -3,7 +3,7 @@ import { Router } from "express";
 import type { Request, Response } from "express";
 import OpenAI from "openai";
 
-const router = Router();
+const router: Router = Router();
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });

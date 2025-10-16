@@ -25,7 +25,6 @@ import { rulesRouter } from "./routes/rules";
 import memoryRouter from "./routes/memory";
 import { signalsRouter } from "./routes/signals";
 import { metricsRouter } from "./routes/metrics";
-import authRouter from "./routes/auth";
 import { pinAuthRouter } from "./routes/pinAuth";
 import exportRouter from "./routes/export";
 import importRouter from "./routes/import";

@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export function useLastSeq(symbol: string, timeframe: string, epochId: string | null) {
   const key = epochId ? `lastSeq:${epochId}:${symbol}:${timeframe}` : null;
@@ -9,7 +9,9 @@ export function useLastSeq(symbol: string, timeframe: string, epochId: string | 
     try {
       const raw = localStorage.getItem(key);
       setLastSeqState(raw ? parseInt(raw, 10) : null);
-    } catch {}
+    } catch {
+      // Ignore localStorage errors
+    }
   }, [key]);
 
   const setLastSeq = useCallback(
@@ -18,7 +20,9 @@ export function useLastSeq(symbol: string, timeframe: string, epochId: string | 
       setLastSeqState(seq);
       try {
         localStorage.setItem(key, String(seq));
-      } catch {}
+      } catch {
+        // Ignore localStorage errors
+      }
     },
     [key],
   );
@@ -32,7 +36,9 @@ export function useLastSeq(symbol: string, timeframe: string, epochId: string | 
           localStorage.removeItem(k);
         }
       }
-    } catch {}
+    } catch {
+      // Ignore localStorage errors
+    }
     setLastSeqState(null);
   }, [symbol, timeframe]);
 

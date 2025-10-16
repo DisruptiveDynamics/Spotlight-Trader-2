@@ -161,7 +161,7 @@ export function ChartView() {
         barUpdateQueueRef.current.push(bar);
       });
 
-      sseConnection.onMicrobar((micro: Micro) => {
+      sseConnection.onMicro((micro: Micro) => {
         if (!mounted) return;
         microbarQueueRef.current.push(micro);
       });

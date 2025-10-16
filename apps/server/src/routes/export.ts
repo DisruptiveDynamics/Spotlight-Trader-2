@@ -5,7 +5,7 @@ import { db } from "../db/index.js";
 import { userRules, userRuleVersions, coachMemories, coachProfiles } from "../db/schema.js";
 import { requireUser, AuthRequest } from "../middleware/requireUser.js";
 
-const router = Router();
+const router: Router = Router();
 
 router.get("/all", requireUser, async (req: AuthRequest, res) => {
   try {

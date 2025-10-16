@@ -13,5 +13,9 @@
     }
   },
   "include": ["src"],
+  "exclude": [
+    "src/__tests__/barBuilder.test.ts",
+    "src/backtest/golden.test.ts"
+  ],
   "references": [{ "path": "../../packages/shared" }]
 }

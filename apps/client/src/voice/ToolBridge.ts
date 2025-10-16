@@ -64,7 +64,9 @@ export class ToolBridge {
     if (this.ws) {
       try {
         this.ws.close();
-      } catch {}
+      } catch {
+        // Ignore close errors
+      }
       this.ws = undefined;
     }
   }
@@ -154,13 +156,13 @@ export class ToolBridge {
             return { ok: true, ...json };
           }
           this.recordToolResult(name, false);
-          return { ok: false, error: `${res.status} ${res.statusText}`, corrId };
+          return { ok: false, error: `${res.status} ${res.statusText}`, ...(corrId && { corrId }) };
         } catch (e: any) {
           this.recordToolResult(name, false);
-          return { ok: false, error: e?.message || "fetch_error", corrId };
+          return { ok: false, error: e?.message || "fetch_error", ...(corrId && { corrId }) };
         }
       }
-      return { ok: false, error: "Tool bridge not connected", corrId };
+      return { ok: false, error: "Tool bridge not connected", ...(corrId && { corrId }) };
     }
 
     const id = this.nextId();
@@ -171,7 +173,7 @@ export class ToolBridge {
       const timer = window.setTimeout(() => {
         this.clearInflight(id);
         this.recordToolResult(name, false);
-        resolve({ ok: false, error: "Tool execution timeout", corrId });
+        resolve({ ok: false, error: "Tool execution timeout", ...(corrId && { corrId }) });
       }, timeoutMs);
 
       this.inflightTimers.set(id, timer);
@@ -190,7 +192,7 @@ export class ToolBridge {
       } catch (e: any) {
         this.clearInflight(id);
         this.recordToolResult(name, false);
-        resolve({ ok: false, error: e?.message || "ws_send_failed", corrId });
+        resolve({ ok: false, error: e?.message || "ws_send_failed", ...(corrId && { corrId }) });
       }
     });
   }
@@ -208,8 +210,8 @@ export class ToolBridge {
 
     if (this.isCircuitOpen(name)) {
       const cached = this.cache.get(name);
-      if (cached) return { ok: true, output: cached.output as T, latency_ms: 0, corrId, cached: true };
-      return { ok: false, error: "circuit_open", corrId };
+      if (cached) return { ok: true, output: cached.output as T, latency_ms: 0, ...(corrId && { corrId }), cached: true };
+      return { ok: false, error: "circuit_open", ...(corrId && { corrId }) };
     }
 
     let attempt = 0;
@@ -229,7 +231,7 @@ export class ToolBridge {
 
     // Fallback to last known good
     const cached = this.cache.get(name);
-    if (cached) return { ok: true, output: cached.output as T, latency_ms: lastLatency, corrId, cached: true };
-    return { ok: false, error: lastErr ?? "tool_exec_failed", corrId };
+    if (cached) return { ok: true, output: cached.output as T, ...(lastLatency !== undefined && { latency_ms: lastLatency }), ...(corrId && { corrId }), cached: true };
+    return { ok: false, error: lastErr ?? "tool_exec_failed", ...(corrId && { corrId }) };
   }
 }

@@ -178,7 +178,7 @@ export class BarBuilder {
     state.microbars = [];
 
     // Emit with dynamic timeframe in event name
-    eventBus.emit(`bar:new:${symbol}:${timeframe}` as any, finalizedBar);
+    eventBus.emit(`bar:new:${symbol}:${timeframe}` as any, finalizedBar as any);
   }
 
   private startMicrobarTimer(symbol: string, timeframe: string = "1m") {

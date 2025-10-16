@@ -5,7 +5,7 @@ import { db } from "../db/index.js";
 import { coachProfiles } from "../db/schema.js";
 import { requireUser, AuthRequest } from "../middleware/requireUser.js";
 
-const router = Router();
+const router: Router = Router();
 
 // GET /api/coach/settings - Get coach settings
 router.get("/settings", requireUser, async (req: AuthRequest, res) => {

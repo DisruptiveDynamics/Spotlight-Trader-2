@@ -28,7 +28,7 @@ type AuthState = {
 export const useAuthStore = create<AuthState>()(
   subscribeWithSelector(
     persist(
-      (set, get) => ({
+      (set, _get) => ({
         user: null,
         authReady: false,
         setUser: (u) => {

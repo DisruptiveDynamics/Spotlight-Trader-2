@@ -3,6 +3,8 @@ export async function killServiceWorkers() {
     try {
       const regs = await navigator.serviceWorker.getRegistrations();
       await Promise.all(regs.map((r) => r.unregister()));
-    } catch {}
+    } catch {
+      // Ignore service worker errors
+    }
   }
 }

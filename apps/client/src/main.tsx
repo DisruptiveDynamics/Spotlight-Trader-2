@@ -2,7 +2,6 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import "./index.css";
-import App from "./App";
 import { AuthGate } from "./features/auth/AuthGate";
 import { killServiceWorkers } from "./sw-safety";
 
@@ -17,7 +16,9 @@ try {
   } else if (!last) {
     localStorage.setItem("BUILD_ID", BUILD_ID);
   }
-} catch {}
+} catch {
+  // Ignore localStorage errors
+}
 
 (async () => {
   await killServiceWorkers();

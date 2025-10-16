@@ -23,7 +23,7 @@ export function LatencyHUD() {
     marketStatus: "CLOSED",
   });
 
-  const [toolMetrics, setToolMetrics] = useState<Record<string, ToolMetrics>>({});
+  const [_toolMetrics, setToolMetrics] = useState<Record<string, ToolMetrics>>({});
   const isTest = typeof process !== "undefined" && process.env.NODE_ENV === "test";
 
   useEffect(() => {

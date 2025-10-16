@@ -5,7 +5,6 @@ import { WebSocketServer, WebSocket } from "ws";
 import jwt from "jsonwebtoken";
 import cookie from "cookie";
 
-import { verifyVoiceToken } from "./auth";
 import type { PinAuthPayload } from "../middleware/requirePin";
 
 const APP_AUTH_SECRET = process.env.APP_AUTH_SECRET || "dev_secret_change_me";

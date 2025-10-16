@@ -1,0 +1,153 @@
+Here’s a single, copy-paste **master prompt** for your **Replit agent** that will deep-clean the repo, **refactor/modularize**, lint/format, remove dead code & deps **safely**, and finish with a **report + grades + roadmap** — all **without breaking existing flows** (dry-run first; path validation before any deletion).
+
+---
+
+## SPOTLIGHT TRADER — SAFE, END-TO-END CODEBASE CLEANUP & HARDENING (NO BREAKING CHANGES)
+
+Act as a **principal engineer & repo custodian**. Make this codebase **clean, modular, and safe** without breaking current behavior. Use **dry-runs first**, validate imports/paths before any deletion, and work in **small, auditable commits**.
+
+### Guardrails (must follow)
+
+* **Do NOT break runtime flows**. Preserve behavior unless a bug is proven and covered by a test.
+* **Dry-run** any destructive action (file/dep removal) and include proof in logs before finalizing.
+* **Never expose secrets**; use Replit Secrets only.
+* Keep commits **small** with clear messages; create a `cleanup/<date>` branch and PR at the end.
+
+---
+
+## Phase 0 — Baseline & Plan (non-destructive)
+
+1. Run: `npm ci && npm run build || true && npm run test -- --passWithNoTests || true && npm run lint || true`.
+2. Generate:
+
+   * `BASELINE.md`: repo tree (depth 3), scripts, entrypoints, build status, failing checks.
+   * `ARCHITECTURE_MAP.md`: high-level module graph (client/server/shared).
+   * `RISK_LOG.md`: areas likely to break (circular deps, dynamic imports, legacy code).
+
+Tools to use (read-only here): `madge` (cycles), `knip` or `depcheck` (unused deps), `tsc --noEmit`, `eslint`, `prettier`.
+
+---
+
+## Phase 1 — Hygiene & Consistency (non-breaking)
+
+* Add/normalize configs:
+
+  * **TypeScript strict** where practical: enable `strict`, `noImplicitAny`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`.
+  * **ESLint + Prettier** (typescript, import/order, promise, security). Add `.editorconfig`.
+  * Standardize **path aliases** `@/*`.
+* Scripts in `package.json`:
+
+  ```json
+  {
+    "scripts": {
+      "type-check": "tsc --noEmit",
+      "lint": "eslint .",
+      "format": "prettier . --write",
+      "test": "vitest run || jest --ci",
+      "analyze": "madge --extensions ts,tsx src --circular",
+      "deadcode": "knip || depcheck",
+      "build": "YOUR_BUILD_CMD"
+    }
+  }
+  ```
+* Run `prettier` + `eslint --fix` repo-wide.
+
+Deliverable: `CODE_HEALTH.md` summarizing lint/type errors resolved.
+
+---
+
+## Phase 2 — Dead Code & Dependency Audit (safe/dry-run → validate → remove)
+
+1. **Identify** unused files/exports/deps:
+
+   * `knip` / `depcheck`, `ts-prune`, `madge --circular`.
+   * Produce `DEADCODE_REPORT.md` and `DEPS_AUDIT.md`.
+2. **Dry-run removal**:
+
+   * For each candidate file/export/dependency, show:
+
+     * All inbound import paths.
+     * Grep proof no references remain.
+   * Write `DELETION_PLAN.md` with checkboxes.
+3. **Validate** (must pass):
+
+   * `npm run type-check && npm run build && npm test -- --passWithNoTests`.
+4. **Apply removals** in small commits with message `chore(clean): remove unused X (validated)`.
+5. `npm audit --omit=dev` → fix/upgrade or pin; document in `SECURITY_NOTES.md`.
+
+---
+
+## Phase 3 — Refactor & Modularize (incremental, non-breaking)
+
+* Break up **oversized modules** (>300–400 LoC) into smaller units: `domain/`, `services/`, `adapters/`, `ui/components/`.
+* Extract cross-cutting utilities: error handling, logging, config loader, API client, WS client.
+* Stabilize **public interfaces** for modules (index files with exported types/functions).
+* Replace ad-hoc utils with shared helpers in `shared/` when reused.
+* Ensure **import paths** resolve via alias and update all relative imports.
+
+Deliverable: `ARCHITECTURE_NOTES.md` (before/after diagrams, boundaries, key modules).
+
+---
+
+## Phase 4 — Performance & DX polish (safe)
+
+* Add **memoization**/`useMemo`/`useCallback` where re-renders are hot.
+* Throttle expensive subscriptions (WS/interval handlers).
+* Code-split heavy routes/components; lazy-load where appropriate.
+* Add `analyze` report (bundle size, major deps) → `PERF_NOTES.md`.
+
+---
+
+## Phase 5 — Tests & Safety Nets (light but useful)
+
+* Add/extend **unit tests** for:
+
+  * core utilities (date/ET bucketing, data merging),
+  * adapters (API/WS),
+  * any refactored modules.
+* Minimal **integration tests** for critical flows (app boots, chart loads, voice connects, a main API responds).
+* Ensure CI-like script runs clean locally:
+
+  ```bash
+  npm run type-check && npm run lint && npm test -- --passWithNoTests && npm run build
+  ```
+
+---
+
+## Phase 6 — Final Sweep & Docs
+
+* Re-run: `npm run deadcode`, `npm audit --omit=dev`, `npm run analyze`.
+* Ensure **no console errors** on startup and basic navigation.
+* Create **`CLEANUP_REPORT.md`** including:
+
+  * **Grades (0–5)** per area: Code Quality, Modularity, Security, Performance, Testing, DX, Readability.
+  * **Top P0/P1 Recommendations** with effort (S/M/L) and file pointers.
+  * **Change log** of key commits.
+  * **What was removed** (files/deps) with links to validation evidence.
+* Open a **PR** `cleanup/<date>` with the above docs; include “How to review”.
+
+---
+
+## Acceptance Criteria (self-check)
+
+* App **builds and runs** as before (no broken flows).
+* `npm run type-check`, `lint`, `test`, `build` all **pass**.
+* No circular deps in `madge`; `knip/depcheck` show **no** unused deps.
+* Oversized files are modularized; import paths validated.
+* `CLEANUP_REPORT.md` present with grades & roadmap; `DELETION_PLAN.md` satisfied.
+
+---
+
+## Commands the agent should run (for logs)
+
+```bash
+npm ci
+npm run type-check || true
+npm run lint || true
+npm run test -- --passWithNoTests || true
+npm run build || true
+npx madge --extensions ts,tsx src --circular || true
+npx knip || npx depcheck || true
+```
+
+**End of prompt.**

@@ -1,0 +1,330 @@
+Heck yes—let’s knock these out cleanly. Below is a surgical plan with drop-in code patches, sanity checks, and a single copy-paste prompt for your Replit agent.
+
+0) Quick game-plan
+	•	Alias the SSE route on the server to support both /realtime/sse and /stream/market.
+	•	Point the client to the correct SSE URL and add a fallback if someone changes it again.
+	•	Unblock auth: fix cookie/CORS/credentials and allow “demo mode” to read history + SSE.
+	•	Harden sinceSeq: strict “only send seq > sinceSeq” on server; client silently ignores dupes and only backfills on gaps.
+
+⸻
+
+1) SERVER: Add a backward-compat alias + solid SSE handler
+
+apps/server/src/routes/realtime.ts (or wherever the SSE handler lives—adjust import paths as needed)
+
+import type { Request, Response } from "express";
+
+// Reusable SSE sender
+export function marketSSEHandler(req: Request, res: Response) {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders?.();
+
+  // Heartbeat (prevents proxies from closing idle connections)
+  const hb = setInterval(() => res.write(`:hb ${Date.now()}\n\n`), 15000);
+
+  // Example: subscribe to your in-proc event bus or stream
+  const sub = globalThis.marketBus.subscribe((evt) => {
+    // evt: { type: 'bar'|'tick'|..., seq:number, payload:any }
+    // IMPORTANT: never send <= sinceSeq
+    const since = Number(req.query.sinceSeq ?? -1);
+    if (Number.isFinite(evt.seq) && evt.seq > since) {
+      res.write(`event: ${evt.type}\n`);
+      res.write(`id: ${evt.seq}\n`);
+      res.write(`data: ${JSON.stringify(evt)}\n\n`);
+    }
+  });
+
+  req.on("close", () => {
+    clearInterval(hb);
+    sub.unsubscribe();
+    res.end();
+  });
+}
+
+apps/server/src/index.ts (or main router file)
+
+import express from "express";
+import { marketSSEHandler } from "./routes/realtime";
+
+const app = express();
+
+/** CORS + cookies BEFORE routes */
+import cors from "cors";
+import cookieParser from "cookie-parser";
+app.use(cookieParser());
+app.use(cors({
+  origin: [/localhost:\d+$/, /\.replit\.dev$/, /\.vercel\.app$/, /\.your-domain\.com$/], // adjust
+  credentials: true,
+}));
+
+/** Auth decoding goes here (JWT/cookie) BEFORE route guards */
+import { decodeAuth } from "./auth/decode";
+app.use(decodeAuth);
+
+/** SSE routes (both paths work) */
+app.get("/realtime/sse", allowRead, marketSSEHandler);
+app.get("/stream/market", allowRead, marketSSEHandler); // <-- backward compat alias
+
+/** Example auth gate that allows demo */
+function allowRead(req: express.Request, res: express.Response, next: express.NextFunction) {
+  // Allow if authenticated user present
+  if (req.user) return next();
+  // Allow demo mode
+  const demoKey = process.env.DEMO_API_KEY ?? "";
+  if (req.query.demo === "1" || req.headers["x-demo-key"] === demoKey) return next();
+
+  return res.status(401).json({ error: "Unauthorized" });
+}
+
+Why this fixes SSE: the client can use either path; the handler enforces seq > sinceSeq so dupes never emit.
+
+⸻
+
+2) CLIENT: Point to the right SSE URL + add auto-fallback + auth creds
+
+apps/client/src/config.ts
+
+export const API_BASE = import.meta.env.VITE_API_BASE ?? "";
+export const HISTORY_URL = `${API_BASE}/api/history`;
+
+/** Primary path now /realtime/sse, fallback to /stream/market if needed */
+export const STREAM_URL_PRIMARY = `${API_BASE}/realtime/sse`;
+export const STREAM_URL_FALLBACK = `${API_BASE}/stream/market`;
+
+apps/client/src/lib/marketStream.ts (where you create the EventSource / fetch)
+
+function openEventSource(sinceSeq: number, useFallback = false) {
+  const urlBase = useFallback ? STREAM_URL_FALLBACK : STREAM_URL_PRIMARY;
+  const u = new URL(urlBase);
+  if (Number.isFinite(sinceSeq)) u.searchParams.set("sinceSeq", String(sinceSeq));
+
+  // If you use demo, carry it here:
+  if (import.meta.env.VITE_DEMO_MODE === "1") u.searchParams.set("demo", "1");
+
+  // Use fetch-based EventSource poly that supports credentials OR use native with cookies
+  const es = new EventSource(u.toString(), { withCredentials: true });
+  return es;
+}
+
+export function startMarketStream({ lastSeqRef, onEvent, onOpen, onError }) {
+  let es = openEventSource(lastSeqRef.current ?? -1, false);
+  let triedFallback = false;
+
+  const attach = () => {
+    es.onopen = () => onOpen?.();
+    es.onerror = () => {
+      es.close();
+      if (!triedFallback) {
+        triedFallback = true;
+        es = openEventSource(lastSeqRef.current ?? -1, true);
+        attach();
+      } else {
+        onError?.(new Error("SSE connection failed on both endpoints"));
+      }
+    };
+
+    es.addEventListener("bar", (e: MessageEvent) => {
+      const evt = JSON.parse(e.data);
+      const seq = Number(evt.seq ?? -1);
+      const last = Number(lastSeqRef.current ?? -1);
+
+      if (seq <= last) return;                    // ignore duplicates/out-of-order older
+      if (seq > last + 1) {                       // GAP: trigger a light backfill
+        requestBackfill(last + 1, seq - 1).catch(console.error);
+      }
+      lastSeqRef.current = seq;
+      onEvent?.(evt);
+    });
+  };
+
+  attach();
+  return () => es.close();
+}
+
+Ensure credentials on API calls (401 fix):
+
+await fetch(`${HISTORY_URL}?${params.toString()}`, {
+  method: "GET",
+  credentials: "include",     // <-- critical so cookie/JWT travels
+  headers: {
+    "Accept": "application/json",
+    ...(import.meta.env.VITE_DEMO_MODE === "1"
+        ? { "x-demo-key": import.meta.env.VITE_DEMO_API_KEY ?? "" }
+        : {})
+  }
+});
+
+
+⸻
+
+3) AUTH: cookies, CORS, and demo mode
+
+Set cookies with proper flags (server login response)
+
+res.cookie("auth", token, {
+  httpOnly: true,
+  sameSite: "none",  // needed when frontend on different origin
+  secure: true,      // required with sameSite=None on HTTPS
+  path: "/",
+  maxAge: 1000 * 60 * 60 * 24 * 7,
+});
+res.json({ ok: true });
+
+Make sure CORS is configured once, before routes (already shown).
+If you’re developing on plain HTTP localhost and get blocked by secure: true, gate it:
+
+const isProd = process.env.NODE_ENV === "production";
+res.cookie("auth", token, {
+  httpOnly: true,
+  sameSite: isProd ? "none" : "lax",
+  secure: isProd,
+  path: "/",
+  maxAge: 604800000,
+});
+
+Demo mode guard: in your API routes that only read (history, market status), accept demo:
+
+function allowRead(req, res, next) {
+  if (req.user) return next();
+  const demoKey = process.env.DEMO_API_KEY ?? "";
+  if (req.query.demo === "1" || req.headers["x-demo-key"] === demoKey) return next();
+  return res.status(401).json({ error: "Unauthorized" });
+}
+
+
+⸻
+
+4) HISTORY & sinceSeq contract (server + DB guard)
+
+Server must only emit seq > sinceSeq. Done above.
+
+History backfill API should accept fromSeq (exclusive) and return bars with seq > fromSeq:
+
+// GET /api/history?symbol=SPY&timeframe=1m&fromSeq=12345&limit=500
+// returns bars sorted by seq ascending
+
+Client: when it detects a gap, call the backfill endpoint for the missing window and merge into state (ignore duplicates by key).
+
+Add a unique constraint to prevent dupes at rest (e.g., Postgres):
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_bars_symbol_tf_seq
+ON bars(symbol, timeframe, seq);
+
+(Drizzle example)
+
+import { pgTable, text, integer } from "drizzle-orm/pg-core";
+export const bars = pgTable("bars", {
+  symbol: text().notNull(),
+  timeframe: text().notNull(),
+  seq: integer().notNull(),
+  // ... o,h,l,c,v,t ...
+}, (t) => ({
+  uq: uniqueIndex("uq_bars_symbol_tf_seq").on(t.symbol, t.timeframe, t.seq),
+}));
+
+Server insert path: use ON CONFLICT DO NOTHING to avoid re-inserts.
+
+⸻
+
+5) Smoke tests (copy/paste in shell)
+
+# Confirm both endpoints are served
+curl -s -o /dev/null -w "%{http_code}\n" "$API_BASE/realtime/sse"
+curl -s -o /dev/null -w "%{http_code}\n" "$API_BASE/stream/market"
+
+# If 401, try demo:
+curl -s -H "x-demo-key: $DEMO_API_KEY" -o /dev/null -w "%{http_code}\n" "$API_BASE/realtime/sse"
+
+# Test history with credentials (RUN IN BROWSER CONSOLE or add a cookie)
+# In Node: use -b/-c with curl for cookie jar after login
+
+# SSE manual watch (will hang streaming—good):
+curl -H "Accept: text/event-stream" "$API_BASE/realtime/sse?sinceSeq=0&demo=1"
+
+
+⸻
+
+6) One-shot Replit Agent prompt (copy-paste)
+
+You are a senior full-stack engineer working on Spotlight-Trader-2. Perform the following, then report a concise diff summary and what changed, followed by test results:
+
+GOALS
+1) Fix SSE endpoint mismatch by supporting both /realtime/sse and /stream/market on the server, and point the client to /realtime/sse with automatic fallback to /stream/market.
+2) Resolve 401 Unauthorized by ensuring:
+   - CORS is configured once, before all routes, with credentials enabled.
+   - Cookies use httpOnly; in production sameSite=None and secure=true; in dev sameSite=lax and secure=false.
+   - All client fetches include credentials: 'include'.
+   - “Demo mode” is allowed to read SSE and history using ?demo=1 or header x-demo-key.
+3) Re-verify sinceSeq contract:
+   - Server: only emit events with seq > sinceSeq.
+   - Client: ignore seq <= lastSeq, backfill if seq > lastSeq + 1.
+   - Add unique DB index on (symbol, timeframe, seq) to prevent duplicates; use ON CONFLICT DO NOTHING on inserts.
+4) Prove charts flow end-to-end in DEMO mode and in authenticated mode.
+
+ACTIONS
+- In apps/server/src/routes/realtime.ts, implement marketSSEHandler that sets correct SSE headers, sends heartbeats every 15s, and filters by sinceSeq strictly (seq > sinceSeq).
+- In apps/server/src/index.ts (or main router), mount:
+    app.get("/realtime/sse", allowRead, marketSSEHandler)
+    app.get("/stream/market", allowRead, marketSSEHandler)
+  Ensure middleware order: cookieParser -> CORS (credentials true, allowed origins) -> auth decode -> routes.
+- In login handler, set cookie with proper flags depending on NODE_ENV.
+- Implement allowRead guard that permits req.user OR demo via ?demo=1 or x-demo-key === process.env.DEMO_API_KEY.
+- In apps/client/src/config.ts, export STREAM_URL_PRIMARY=/realtime/sse and STREAM_URL_FALLBACK=/stream/market.
+- In apps/client/src/lib/marketStream.ts, create EventSource with withCredentials, add fallback on error, ignore duplicate/out-of-order seq, trigger requestBackfill on gaps.
+- Ensure all fetch(...) calls that hit our API include { credentials: "include" } and attach x-demo-key when VITE_DEMO_MODE==="1".
+- Add DB uniqueness on (symbol, timeframe, seq) (Drizzle + SQL migration). Use ON CONFLICT DO NOTHING on bar insert path.
+- Add a lightweight /api/health that checks: DB ok, tick feed ok, SSE route registered.
+- Add NPM scripts: "smoke:server" to curl the SSE endpoints and history in demo mode.
+
+TESTS
+- Unit: sinceSeq filter logic and duplicate ignore behavior.
+- Integration:
+   a) Run server; curl /realtime/sse (expect 200, stream).
+   b) Same for /stream/market.
+   c) With no auth expect 401; with ?demo=1 or x-demo-key expect 200.
+   d) Launch client in DEMO mode (VITE_DEMO_MODE=1, VITE_DEMO_API_KEY set); verify charts render and update.
+   e) Auth login flow: cookie set with expected flags; charts render.
+- Provide logs/screenshots of first 5 SSE events received, showing strictly increasing seq and no duplicates.
+
+NON-NEGOTIABLES
+- Do not remove existing functionality.
+- Keep code idiomatic and typed; no breaking changes to public APIs beyond adding the alias.
+- If any file paths differ, search repo and adapt rather than failing.
+
+OUTPUT
+- Summarize files changed, key diffs, and the exact commands run.
+- Paste the smoke test results (HTTP codes and the first few SSE events).
+
+
+⸻
+
+7) If you want to hot-patch manually (quick diffs)
+	•	Server mount (alias):
+
+- app.get("/realtime/sse", authGuard, marketSSEHandler);
++ app.get("/realtime/sse", allowRead, marketSSEHandler);
++ app.get("/stream/market", allowRead, marketSSEHandler);
+
+	•	Client config + usage:
+
+- export const STREAM_URL = `${API_BASE}/stream/market`;
++ export const STREAM_URL_PRIMARY = `${API_BASE}/realtime/sse`;
++ export const STREAM_URL_FALLBACK = `${API_BASE}/stream/market`;
+
+	•	Fetch with credentials:
+
+- fetch(HISTORY_URL)
++ fetch(HISTORY_URL, { credentials: "include", headers: { "Accept": "application/json" } })
+
+	•	sinceSeq receive filter (client):
+
+- if (seq < lastSeq) resync();
++ if (seq <= lastSeq) return; // ignore dups/older
++ if (seq > lastSeq + 1) requestBackfill(lastSeq + 1, seq - 1);
+
+
+⸻
+
+If you paste the Replit prompt above, it’ll do the heavy lifting and then we can validate by running the smoke tests. Want me to tailor the CORS origins and file paths to your exact repo layout next?

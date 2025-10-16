@@ -309,6 +309,18 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       }
     });
 
+    // [RESILIENCE] Listen for ping events to keep connection alive (ignore payload)
+    es.addEventListener("ping", (e) => {
+      // Heartbeat event to prevent proxy idle timeout - no action needed
+      // Optionally could track buffered/dropped stats for observability
+      if (import.meta.env?.MODE === "development") {
+        const data = JSON.parse((e as MessageEvent).data);
+        if (data.buffered > 0 || data.dropped > 0) {
+          console.log(`📡 SSE ping: buffered=${data.buffered}, dropped=${data.dropped}`);
+        }
+      }
+    });
+
     es.addEventListener("bar", (e) => {
       if (import.meta.env?.MODE === "development") console.log(`[SSE] Received bar event`);
       processingPromise = processingPromise.then(async () => {

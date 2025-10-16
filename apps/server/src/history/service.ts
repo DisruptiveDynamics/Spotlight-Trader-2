@@ -231,7 +231,7 @@ async function fetchPolygonHistory(
         low: agg.l,
         close: agg.c,
         volume: agg.v,
-        seq: Math.floor(bar_start / timeframeMs),
+        seq: Math.floor(bar_end / timeframeMs),
         bar_start,
         bar_end,
       };
@@ -312,7 +312,7 @@ function generateRealisticBars(symbol: string, fromMs: number, toMs: number, lim
       low: Math.round(low * 100) / 100,
       close: Math.round(close * 100) / 100,
       volume,
-      seq: Math.floor(bar_start / 60000),
+      seq: Math.floor(bar_end / 60000),
       bar_start,
       bar_end,
     });

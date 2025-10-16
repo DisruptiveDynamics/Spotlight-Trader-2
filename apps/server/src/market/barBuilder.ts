@@ -153,11 +153,11 @@ export class BarBuilder {
   private finalizeBar(symbol: string, timeframe: string, state: SymbolState) {
     if (!state.currentBar) return;
 
-    const stateKey = `${symbol}:${timeframe}`;
-    // Increment seq strictly (initialized to 0 in subscribe)
-    const currentSeq = this.lastSeq.get(stateKey) ?? 0;
-    const seq = currentSeq + 1;
-    this.lastSeq.set(stateKey, seq);
+    // [CRITICAL] Use timestamp-based seq to align with client and REST API
+    // seq = floor(bar_end / 60000) ensures all sources (SSE, REST, client backfill) use same calculation
+    // This prevents the "second of movement then freeze" bug where incremental seq (1,2,3...)
+    // was filtered out after client backfilled with timestamp-based seq (29343375...)
+    const seq = Math.floor(state.bar_end / 60000);
 
     const finalizedBar: MarketBarEvent = {
       symbol,

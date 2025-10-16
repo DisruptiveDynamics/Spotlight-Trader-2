@@ -1,0 +1,161 @@
+You’re exactly right: cookies ≠ JavaScript cache. Blocking cookies kills login/auth, but it does nothing to fix stale JS. Here’s the clean, no-drama fix list so both issues are permanently handled.
+
+What to change (server)
+
+1) Set safe cookie flags (so auth actually works)
+
+// login route
+const isProd = process.env.NODE_ENV === "production";
+res.cookie("auth", token, {
+  httpOnly: true,
+  secure: isProd,           // must be true when SameSite=None
+  sameSite: isProd ? "none" : "lax",
+  path: "/",
+  maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+});
+res.json({ ok: true });
+
+2) CORS before routes, with credentials
+
+app.use(cors({
+  origin: [/localhost:\d+$/, /\.replit\.dev$/, /\.vercel\.app$/, /\.yourdomain\.com$/],
+  credentials: true,
+}));
+
+3) Send ideal caching headers (so JS updates reliably)
+	•	HTML should not be cached.
+	•	Hashed JS/CSS assets can be cached “forever”.
+
+Express example (adapt for your host if using Vercel/NGINX):
+
+// No-cache for entry HTML
+app.get("/", (_, res) => {
+  res.set("Cache-Control", "no-store, max-age=0");
+  res.sendFile(path.join(__dirname, "dist/index.html"));
+});
+
+// Immutable for hashed assets (e.g., assets/*.js)
+app.use("/assets", express.static("dist/assets", {
+  setHeaders: (res) => res.setHeader("Cache-Control", "public, max-age=31536000, immutable")
+}));
+
+4) Expose a tiny version endpoint
+
+app.get("/meta.json", (_, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json({ version: process.env.BUILD_SHA ?? Date.now().toString() });
+});
+
+What to change (client)
+
+5) Always send credentials on API/SSE (fixes 401 when cookies are allowed)
+
+// fetch calls
+await fetch(HISTORY_URL, { credentials: "include", headers: { Accept: "application/json" } });
+
+// EventSource (SSE)
+const es = new EventSource(`${STREAM_URL}?sinceSeq=${last}`, { withCredentials: true });
+
+6) Auto-detect new builds and prompt a reload (fixes stale JS)
+
+// versionCheck.ts
+let currentVersion: string | null = null;
+
+export async function checkForUpdate() {
+  const res = await fetch("/meta.json", { cache: "no-store" });
+  const { version } = await res.json();
+  if (currentVersion && version !== currentVersion) {
+    // show toast -> “New version available — Reload”
+    window.location.reload(); // or prompt user first
+  }
+  currentVersion = version;
+}
+
+// call on app start, then poll every few minutes
+setInterval(checkForUpdate, 60_000 * 3);
+checkForUpdate();
+
+7) Add a “Clear app data” nuke button (fixes stubborn service workers / caches)
+
+export async function clearAppDataAndReload() {
+  try {
+    // Clear SW
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    // Clear storage
+    localStorage.clear();
+    sessionStorage.clear();
+    if (window.indexedDB) {
+      const dbs = await (window.indexedDB as any).databases?.() || [];
+      await Promise.all(dbs.map((d: any) => new Promise<void>((res) => {
+        const req = indexedDB.deleteDatabase(d.name);
+        req.onsuccess = req.onerror = req.onblocked = () => res();
+      })));
+    }
+    // Clear caches
+    if (window.caches) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+  } finally {
+    window.location.reload();
+  }
+}
+
+8) (Optional) Service Worker: update instantly
+If you use a SW, make it upgrade fast:
+
+self.addEventListener("install", (e) => self.skipWaiting());
+self.addEventListener("activate", (e) => self.clients.claim());
+
+What to tell users (support copy)
+	•	“To sign in, please allow cookies for this site. We only use a first-party session cookie for your 6-digit PIN — no trackers.”
+	•	“If the app looks stuck after a deploy, hit Refresh. If needed, use Menu → Clear App Data to force-update.”
+
+One copy-paste prompt for your Replit agent
+
+You are a senior full-stack engineer. Apply the following changes across Spotlight-Trader-2 and then run smoke tests. Report back with files changed, diffs, and test output.
+
+GOALS
+1) Authentication reliability:
+   - Set cookies with: httpOnly=true, path=/, prod: secure=true & sameSite=None; dev: secure=false & sameSite=Lax.
+   - Ensure CORS is configured before routes with credentials:true and whitelisted origins.
+   - Ensure ALL client fetch calls use { credentials: "include" } and EventSource uses { withCredentials: true }.
+
+2) Cache correctness:
+   - Set Cache-Control: no-store on index.html responses.
+   - Serve hashed assets (dist/assets/*) with Cache-Control: public, max-age=31536000, immutable.
+   - Add GET /meta.json returning { version: BUILD_SHA or timestamp }, Cache-Control: no-store.
+
+3) Client update flow:
+   - Add a version checker that fetches /meta.json with cache: "no-store" on startup and every 3 minutes; if version changed, reload or prompt user to reload.
+   - Add a “Clear App Data” action that unregisters service workers, clears caches, localStorage, sessionStorage, and IndexedDB, then reloads.
+
+4) Tests:
+   - After login, verify Set-Cookie flags match environment (prod vs dev).
+   - Verify CORS preflight allows credentials from the dev URL.
+   - Confirm 200 for /meta.json with no-store header.
+   - Confirm index.html returns Cache-Control: no-store.
+   - Build client and verify hashed filenames for assets.
+   - Manual: Open app, login succeeds (no 401), then bump BUILD_SHA and confirm the client auto-reloads on the next poll.
+
+CONSTRAINTS
+- Do not break existing routes or SSE logic.
+- If hosting uses Vercel/NGINX, add the appropriate config (headers) files instead of Express middleware where applicable.
+
+OUTPUT
+- Summary of changes with file paths.
+- Diff snippets for cookie flags, CORS, cache headers, version check, and clearAppData function.
+- Evidence of tests (HTTP codes, headers) and a short note confirming login works with cookies enabled and that a deploy triggers the version reload.
+
+
+⸻
+
+TL;DR
+	•	Enable cookies → fixes PIN login & 401s.
+	•	Set correct cache headers + version polling → fixes stale JS without users manually clearing cache.
+	•	Add a “Clear App Data” nuke for the rare worst-case.
+
+If you want, paste any error headers you’re seeing (from the Network tab), and I’ll pinpoint the exact mis-set flag in seconds.

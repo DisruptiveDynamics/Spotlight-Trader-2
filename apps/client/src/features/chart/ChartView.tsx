@@ -103,11 +103,14 @@ export function ChartView() {
   // Re-runs when symbol or timeframe changes
   useEffect(() => {
     let mounted = true;
-    let sseConnection: ReturnType<typeof connectMarketSSE> | null = null;
+    let cleanupFn: (() => void) | null = null;
 
     const init = async () => {
       if (!chartContainerRef.current) return;
       const { createChart, CrosshairMode } = await import("lightweight-charts");
+
+      // Abort if unmounted during async import
+      if (!mounted) return;
 
       // Clear existing chart if it exists
       if (chartRef.current) {
@@ -154,7 +157,10 @@ export function ChartView() {
       // Load historical data for the selected timeframe
       try {
         const history = await fetchHistory(symbol, timeframe, 300);
-        if (history.length > 0 && mounted) {
+        // Abort if unmounted during fetch
+        if (!mounted) return;
+        
+        if (history.length > 0) {
           // Convert HistoryCandle[] to CandlestickData[]
           const candlestickData = history.map(bar => ({
             time: bar.time as UTCTimestamp,
@@ -172,9 +178,12 @@ export function ChartView() {
         console.error("[ChartView] Failed to load history:", error);
       }
 
+      // Abort if unmounted during history fetch
+      if (!mounted) return;
+
       const handleResize = () => {
-        if (!chartContainerRef.current || !chartRef.current) return;
-        chartRef.current.applyOptions({
+        if (!chartContainerRef.current || !chart) return;
+        chart.applyOptions({
           width: chartContainerRef.current.clientWidth,
           height: chartContainerRef.current.clientHeight,
         });
@@ -187,7 +196,7 @@ export function ChartView() {
       if (lastSeqRef.current) {
         sseOptions.sinceSeq = lastSeqRef.current;
       }
-      sseConnection = connectMarketSSE([symbol], sseOptions);
+      const sseConnection = connectMarketSSE([symbol], sseOptions);
 
       sseConnection.onEpoch((e: { epochId: string; epochStartMs: number }) => {
         if (!mounted) return;
@@ -212,27 +221,39 @@ export function ChartView() {
       });
 
       const tick = () => {
+        if (!mounted) return;
         if (visibleRef.current) {
           flushQueues();
         }
-        rafIdRef.current = requestAnimationFrame(tick);
+        const rafId = requestAnimationFrame(tick);
+        rafIdRef.current = rafId;
       };
-      rafIdRef.current = requestAnimationFrame(tick);
+      const rafId = requestAnimationFrame(tick);
+      rafIdRef.current = rafId;
 
-      return () => {
+      // Create cleanup function for THIS init's resources
+      cleanupFn = () => {
         mounted = false;
         if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
         window.removeEventListener("resize", handleResize);
         sseConnection?.close?.();
-        chartRef.current?.remove?.();
+        chart?.remove?.();
         chartRef.current = null;
         seriesRef.current = null;
+        rafIdRef.current = null;
       };
     };
 
-    const cleanupPromise = init();
+    // Start initialization
+    init();
+
+    // Cleanup runs synchronously when symbol/timeframe changes
     return () => {
-      Promise.resolve(cleanupPromise).catch(() => void 0);
+      mounted = false;
+      // Call the captured cleanup function if it was created
+      if (cleanupFn) {
+        cleanupFn();
+      }
     };
   }, [symbol, timeframe, epochId]); // Re-run when symbol or timeframe changes
 

@@ -6,6 +6,16 @@ Spotlight Trader is a production-grade, real-time trading coach application desi
 
 ## Recent Changes
 
+**October 16, 2025 - Timeframe Selector Fix (Complete)**
+- ✅ **Fixed blocking bug**: Timeframe selector now fully functional across all timeframes
+- ✅ marketStream: Added timeframe parameter to SSE/history requests including window focus
+- ✅ ChartView: Reads active symbol/timeframe from useChartState, reloads on changes
+- ✅ Cleanup: Captures local resources in closure to prevent race conditions with new init
+- ✅ Microbar bucketing: Uses TIMEFRAME_TO_BUCKET_MIN for correct aggregation
+- ✅ Verified: 1m → 2m → 5m → 15m switching works, charts reload with correct bars
+- ✅ Server rollups: 500 1m bars → 76 5m bars, 182 2m bars confirmed
+- 🎯 Result: Users can switch between all timeframes (1m, 2m, 5m, 10m, 15m, 30m, 1h)
+
 **October 16, 2025 - Voice Assistant Tool Execution Fix (Complete)**
 - ✅ **Fixed critical bug**: Voice tools now execute correctly using SDK-managed approach
 - ✅ Root cause identified: Code was passing raw schemas instead of SDK tool objects

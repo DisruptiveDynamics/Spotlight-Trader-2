@@ -485,9 +485,10 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
   const handleFocus = async () => {
     if (lastSeq > 0 && currentState === "live") {
       const symbol = symbols[0] || "SPY";
+      const timeframe = opts?.timeframe || "1m";
       try {
         const res = await fetch(
-          `${HISTORY_URL}?symbol=${encodeURIComponent(symbol)}&timeframe=1m&sinceSeq=${lastSeq}`,
+          `${HISTORY_URL}?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&sinceSeq=${lastSeq}`,
         );
         if (res.ok) {
           const bars = await res.json();

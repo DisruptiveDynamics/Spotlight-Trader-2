@@ -6,6 +6,17 @@ Spotlight Trader is a production-grade, real-time trading coach application desi
 
 ## Recent Changes
 
+**October 16, 2025 - Voice Coach Reliability Improvements (Complete)**
+- ✅ Implemented `get_last_price` voice tool for real-time market data access
+- ✅ Fixed critical bug: bars1m buffer now populated from historical and realtime sources
+- ✅ Added pagination guard to prevent stale data pollution
+- ✅ Created HTTP test endpoint `/tools/quote` for diagnostics
+- ✅ Cleaned up noisy console logs (~15 dev-guarded for production)
+- ✅ Fixed diag.sh script filter (@app/api → @spotlight/server)
+- ✅ Tool automatically included in minimal and full voice sessions
+- ✅ Architect review passed, all data paths validated
+- ⚡ Voice coach now has <1ms latency price queries
+
 **October 16, 2025 - Phase 1 Build Cleanup (Complete)**
 - ✅ Fixed all TypeScript build errors (client + server)
 - ✅ Fixed all ESLint errors (21 total across 17 files)

@@ -65,11 +65,12 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
   const { symbol, timeframe = "1m", limit = env.HISTORY_INIT_LIMIT, before, sinceSeq } = query;
 
   // Priority 1: Check ring buffer for gap backfill
+  // [CRITICAL] Honor sinceSeq contract - return empty if no newer bars exist
+  // Do NOT fall back to getRecent() as that sends stale bars causing duplicate seq loops
   if (sinceSeq !== undefined) {
     const cached = ringBuffer.getSinceSeq(symbol, sinceSeq);
-    if (cached.length > 0) {
-      return cached.map((bar) => toFlatBar(bar, symbol));
-    }
+    // Always return here when sinceSeq is specified - either newer bars or empty array
+    return cached.map((bar) => toFlatBar(bar, symbol));
   }
 
   // Priority 2: Check ring buffer for recent data
@@ -231,7 +232,9 @@ async function fetchPolygonHistory(
         low: agg.l,
         close: agg.c,
         volume: agg.v,
-        seq: Math.floor(bar_end / timeframeMs),
+        // [CRITICAL] Always use 60000 (1m) for seq calculation regardless of timeframe
+        // This keeps seq consistent with client expectation: Math.floor(bar_end / 60000)
+        seq: Math.floor(bar_end / 60000),
         bar_start,
         bar_end,
       };

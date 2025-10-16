@@ -6,6 +6,17 @@ Spotlight Trader is a production-grade, real-time trading coach application desi
 
 ## Recent Changes
 
+**October 16, 2025 - SSE Chart Pipeline Fixes (Complete)**
+- ✅ Fixed CRITICAL "second of movement then freeze" bug via seq alignment
+- ✅ Standardized seq calculation: `Math.floor(bar_end / 60000)` across all sources
+- ✅ Fixed barBuilder.ts: Changed from incremental counter to timestamp-based seq
+- ✅ Fixed history service: Uses bar_end (not bar_start) consistently
+- ✅ Fixed sinceSeq contract: Returns empty array instead of stale bars (root cause)
+- ✅ Added 10s SSE heartbeat with ping events (prevents proxy idle timeout)
+- ✅ Added client ping event listener with backpressure monitoring
+- ✅ Verified: No more duplicate rejection loops, charts update live
+- 🎯 Result: Charts now stream continuously without freezing
+
 **October 16, 2025 - Voice Tool Observability & Health Monitoring (Complete)**
 - ✅ Added `/health/tools` endpoint for quick tool health checks (200 OK if error rate <10%, p95 <1000ms)
 - ✅ Endpoint reports totalCalls, errorRate, microToolP95Avg, and per-tool metrics

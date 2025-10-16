@@ -40,6 +40,7 @@ export type SSEStatus =
 interface MarketSSEOptions {
   sinceSeq?: number;
   maxReconnectDelay?: number;
+  timeframe?: string;
 }
 
 export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
@@ -92,11 +93,12 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       emitStatus("replaying_gap");
 
       const symbol = symbols[0] || "SPY";
+      const timeframe = opts?.timeframe || "1m";
       
       // [PHASE-5] Fetch last 10 bars for reconciliation (reduced from 50)
       const params = new URLSearchParams({
         symbol,
-        timeframe: "1m",
+        timeframe,
         limit: "10", // Fetch 10-bar snapshot for reconciliation
       });
 
@@ -172,11 +174,12 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       emitStatus("replaying_gap");
 
       const symbol = symbols[0] || "SPY";
+      const timeframe = opts?.timeframe || "1m";
       const limit = Math.min(toSeq - fromSeq + 1, 100);
 
       const params = new URLSearchParams({
         symbol,
-        timeframe: "1m",
+        timeframe,
         limit: String(limit),
       });
 
@@ -227,6 +230,9 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     if (lastSeq > 0) {
       params.append("sinceSeq", String(lastSeq));
     }
+    if (opts?.timeframe) {
+      params.append("timeframe", opts.timeframe);
+    }
 
     emitStatus(reconnectAttempts === 0 ? "connecting" : "degraded_ws");
 
@@ -243,9 +249,10 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       // Gap-fill on reconnect if we have a lastSeq
       if (lastSeq > 0) {
         const symbol = symbols[0] || "SPY";
+        const timeframe = opts?.timeframe || "1m";
         try {
           const res = await fetch(
-            `${HISTORY_URL}?symbol=${encodeURIComponent(symbol)}&timeframe=1m&sinceSeq=${lastSeq}`,
+            `${HISTORY_URL}?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&sinceSeq=${lastSeq}`,
           );
           if (res.ok) {
             const bars = await res.json();

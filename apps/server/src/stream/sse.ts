@@ -260,12 +260,18 @@ export async function sseMarketStream(req: Request, res: Response) {
 
   let lastDropped = 0;
 
+  // [RESILIENCE] Send ping event every 10s to prevent proxy idle timeout
+  // Also monitors backpressure stats for observability
   const heartbeat = setInterval(() => {
-    res.write(":\n\n");
     const stats = bpc.getStats();
+    bpc.write("ping", { 
+      ts: Date.now(),
+      buffered: stats.buffered,
+      dropped: stats.dropped 
+    });
     recordSSEBackpressure(stats.buffered, stats.dropped, lastDropped);
     lastDropped = stats.dropped;
-  }, 15000);
+  }, 10000);
 
   req.on("close", () => {
     clearInterval(heartbeat);

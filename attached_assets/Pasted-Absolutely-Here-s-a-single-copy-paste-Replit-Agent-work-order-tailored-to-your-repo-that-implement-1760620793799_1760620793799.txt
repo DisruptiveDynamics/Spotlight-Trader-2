@@ -1,0 +1,338 @@
+Absolutely. Here’s a single, copy-paste Replit Agent work order tailored to your repo that implements a rolling 3–5 day cache (in-memory ring + optional Redis), fixes chart freezes (seq alignment, heartbeat, reconnect/gap-fill), and keeps everything TypeScript-strict. It references your actual files and paths and includes code where helpful.
+
+Replit Agent Work Order: 3–5 Day Rolling Cache + Chart Stability Hardening
+
+Goals
+- Instant cold-start charts (≤100 ms seed) using cache-first history.
+- No freezes: consistent seq alignment between SSE and REST/gap-fill; robust reconnects with epoch handling.
+- Optional Redis backing (REDIS_URL) with in-memory fallback.
+- SSE heartbeat to prevent idle drops on Replit/CDNs.
+- TypeScript strict, no secrets in client, preserve monorepo structure.
+
+1) Install server deps and run locally
+- Why: get a consistent dev baseline and add Redis only if configured.
+- Steps:
+  - corepack enable pnpm || npm i -g pnpm
+  - pnpm install
+  - Add redis client (optional; code guards if REDIS_URL unset):
+    - pnpm --filter @spotlight/server add redis
+  - Start server:
+    - API_PORT=4000 DEBUG="SSE*,History*,Market*" pnpm --filter @spotlight/server dev
+
+2) Add Redis adapter and in-memory ring cache
+- Why: rolling 3–5 day cache backing history and last N bars in memory; Redis optional.
+- Create a Redis helper (no-op if REDIS_URL undefined).
+
+```typescript name=apps/server/src/cache/redis.ts
+import { createClient, RedisClientType } from "redis";
+
+let client: RedisClientType | null = null;
+
+export function hasRedis(): boolean {
+  return !!process.env.REDIS_URL;
+}
+
+export async function getRedis(): Promise<RedisClientType | null> {
+  if (!hasRedis()) return null;
+  if (client) return client;
+  client = createClient({ url: process.env.REDIS_URL! });
+  client.on("error", (e) => console.error("[Redis] error:", e));
+  await client.connect();
+  return client;
+}
+
+export async function redisGet(key: string): Promise<string | null> {
+  const c = await getRedis();
+  if (!c) return null;
+  return c.get(key);
+}
+
+export async function redisSet(key: string, val: string, ttlSec?: number): Promise<void> {
+  const c = await getRedis();
+  if (!c) return;
+  if (ttlSec) await c.set(key, val, { EX: ttlSec });
+  else await c.set(key, val);
+}
+```
+
+- In-memory ring buffer (per symbol/timeframe). Compact bar shape matches your SSE/history.
+
+```typescript name=apps/server/src/cache/ring.ts
+type Ohlcv = { o: number; h: number; l: number; c: number; v: number };
+export type Bar = { symbol: string; timeframe: "1m" | string; seq: number; bar_start: number; bar_end: number; ohlcv: Ohlcv };
+
+const MAX_PER_KEY = Number(process.env.RING_BUFFER_CAP || 5000);
+const rings = new Map<string, Bar[]>();
+
+function key(symbol: string, timeframe: string) {
+  return `${symbol.toUpperCase()}:${timeframe}`;
+}
+
+export function putBars(symbol: string, timeframe: string, bars: Bar[]): void {
+  const k = key(symbol, timeframe);
+  const arr = rings.get(k) || [];
+  // append maintaining order; assume incoming bars are chronological
+  for (const b of bars) arr.push(b);
+  // trim to cap
+  if (arr.length > MAX_PER_KEY) arr.splice(0, arr.length - MAX_PER_KEY);
+  rings.set(k, arr);
+}
+
+export function getRecent(symbol: string, timeframe: string, n: number): Bar[] {
+  const arr = rings.get(key(symbol, timeframe)) || [];
+  return arr.slice(Math.max(0, arr.length - n));
+}
+
+export function getSinceSeq(symbol: string, timeframe: string, sinceSeq: number): Bar[] {
+  const arr = rings.get(key(symbol, timeframe)) || [];
+  return arr.filter((b) => b.seq > sinceSeq);
+}
+
+export function setTail(symbol: string, timeframe: string, bar: Bar): void {
+  const k = key(symbol, timeframe);
+  const arr = rings.get(k) || [];
+  // replace last if same seq; else append
+  const last = arr[arr.length - 1];
+  if (last && last.seq === bar.seq) {
+    arr[arr.length - 1] = bar;
+  } else {
+    arr.push(bar);
+    if (arr.length > MAX_PER_KEY) arr.splice(0, arr.length - MAX_PER_KEY);
+  }
+  rings.set(k, arr);
+}
+```
+
+3) Wire cache into history service and add Redis 3–5 day keys
+- Why: cache-first history for cold-start and sinceSeq backfill.
+- Modify your history service to read/write cache first. getHistory is imported in sse.ts from @server/history/service, so implement there.
+
+```typescript name=apps/server/src/history/service.ts
+import { redisGet, redisSet } from "../cache/redis";
+import { putBars, getSinceSeq, getRecent, Bar } from "../cache/ring";
+import { addMinutes } from "date-fns";
+import { z } from "zod";
+// If you have a Polygon wrapper/service already, import it:
+import { getPolygonBars } from "../providers/polygon"; // implement wrapper if missing
+
+const Params = z.object({
+  symbol: z.string(),
+  timeframe: z.enum(["1m"]).default("1m"),
+  limit: z.number().int().min(1).max(1000).optional(),
+  sinceSeq: z.number().int().optional(),
+});
+
+export async function getHistory(params: unknown): Promise<Bar[]> {
+  const { symbol, timeframe, limit, sinceSeq } = Params.parse(params);
+  const sym = symbol.toUpperCase();
+
+  // 1) in-memory ring fast path
+  if (typeof sinceSeq === "number") {
+    const inMem = getSinceSeq(sym, timeframe, sinceSeq);
+    if (inMem.length > 0) return inMem;
+  } else if (limit) {
+    const inMem = getRecent(sym, timeframe, limit);
+    if (inMem.length >= Math.min(limit, 50)) return inMem; // good enough to seed fast
+  }
+
+  // 2) Redis warm path (keys per day; compact array; kept simple here)
+  const todayKey = `bars:${sym}:${timeframe}:${new Date().toISOString().slice(0,10).replace(/-/g,'')}`;
+  const cached = await redisGet(todayKey);
+  if (cached) {
+    const arr: Bar[] = JSON.parse(cached);
+    // seed ring
+    putBars(sym, timeframe, arr);
+    if (typeof sinceSeq === "number") return arr.filter(b => b.seq > sinceSeq);
+    if (limit) return arr.slice(Math.max(0, arr.length - limit));
+  }
+
+  // 3) Provider cold path (Polygon aggregates)
+  const fetched = await getPolygonBars(sym, timeframe, limit);
+  // EXPECT: fetched is array of { t(ms end), o,h,l,c,v }, convert to Bar
+  const bars: Bar[] = fetched.map((b: any) => {
+    const bar_end = b.t;
+    const bar_start = bar_end - 60_000;
+    const seq = Math.floor(bar_end / 60_000); // CRITICAL: align seq everywhere
+    return { symbol: sym, timeframe, seq, bar_start, bar_end, ohlcv: { o: b.o, h: b.h, l: b.l, c: b.c, v: b.v } };
+  });
+
+  // write-through cache
+  putBars(sym, timeframe, bars);
+  await redisSet(todayKey, JSON.stringify(getRecent(sym, timeframe, 2000)), 24 * 3600); // keep a day; rotate keys by date
+
+  if (typeof sinceSeq === "number") return bars.filter(b => b.seq > sinceSeq);
+  if (limit) return bars.slice(Math.max(0, bars.length - limit));
+  return bars;
+}
+```
+
+4) Add a minimal Polygon wrapper (if you don’t already have one)
+- Why: decouple provider details; easy to test/replace.
+
+```typescript name=apps/server/src/providers/polygon.ts
+import { restClient } from "@polygon.io/client-js";
+
+const pc = () => restClient(process.env.POLYGON_API_KEY as string);
+
+export async function getPolygonBars(symbol: string, timeframe: "1m", limit = 300): Promise<Array<{t:number,o:number,h:number,l:number,c:number,v:number}>> {
+  // fetch recent aggregates; align to last closed minute
+  const now = Date.now();
+  const lastClosed = Math.floor(now / 60000) * 60000 - 1;
+  // For simplicity: 1 day back (tune as needed)
+  const from = lastClosed - limit * 60_000;
+  // polygon client call (replace with proper aggregates endpoint)
+  const res: any = await pc().aggs.aggregates(symbol, 1, "minute", new Date(from).toISOString(), new Date(lastClosed).toISOString(), { limit });
+  // Normalize to expected fields; ensure t = bar_end (ms)
+  return (res?.results || []).map((r: any) => ({
+    t: r.t, o: r.o, h: r.h, l: r.l, c: r.c, v: r.v,
+  }));
+}
+```
+
+5) Harden SSE stream: heartbeat + seq consistency + graceful close
+- Why: avoid idle disconnects and freezes; keep seq identical to history.
+
+Update SSE to:
+- Emit ping every 10–15s.
+- Ensure all bar events use seq = Math.floor(bar_end/60000).
+- Clear heartbeat on close.
+
+```typescript name=apps/server/src/stream/sse.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/server/src/stream/sse.ts
+// After res.flushHeaders();
+const heartbeat = setInterval(() => {
+  try {
+    bpc.write("ping", { ts: Date.now() });
+  } catch {}
+}, 15000);
+
+req.on("close", () => {
+  clearInterval(heartbeat);
+  recordSSEDisconnection(userId);
+});
+```
+
+- When writing bar events (seed/backfill/live), ensure seq calculation mirrors history (if any discrepancy, fix at the source before writing).
+
+6) Client: robust reconnect, epoch handling, and ping ignore
+- Why: prevent freeze after first minute; handle restarts and idle.
+
+Update market stream client to:
+- On “epoch” → reset lastSeq = 0 and trigger a seed fetch (use your existing seed code path).
+- On “ping” → no-op, but consider it a liveness signal.
+- When applying bars, always do lastSeq = Math.max(lastSeq, bar.seq) and only drop bars with seq <= lastSeq.
+
+```typescript name=apps/client/src/lib/marketStream.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/src/lib/marketStream.ts
+// Add event listeners:
+es.addEventListener("ping", () => {
+  // liveness; optionally dispatch a status update
+});
+
+es.addEventListener("epoch", () => {
+  // server restart/source switch; reset and seed
+  lastSeq = 0;
+  // trigger your existing seed/backfill path (e.g., by calling a helper or refetching history)
+});
+
+// When applying a bar:
+if (bar.seq > lastSeq) {
+  lastSeq = bar.seq;
+  listeners.bar.forEach((fn) => fn(bar));
+}
+```
+
+7) Add fast history HTTP route (cache-first) if missing or slow
+- Why: the client uses HISTORY_URL for gap-fill/seed; this must be cache-first now.
+
+```typescript name=apps/server/src/routes/history.ts
+import { Router } from "express";
+import { getHistory } from "../history/service";
+
+export const historyRouter = Router();
+
+historyRouter.get("/history", async (req, res) => {
+  try {
+    const symbol = String(req.query.symbol || "SPY");
+    const timeframe = String(req.query.timeframe || "1m") as any;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const sinceSeq = req.query.sinceSeq ? Number(req.query.sinceSeq) : undefined;
+    const bars = await getHistory({ symbol, timeframe, limit, sinceSeq });
+    res.json(bars);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || "history error" });
+  }
+});
+```
+
+- Mount this router in your server bootstrap (where Express app is created).
+
+8) Health endpoints for confidence
+- Why: quick diagnostics for SSE/Redis readiness.
+
+```typescript name=apps/server/src/routes/health.ts
+import { Router } from "express";
+import { getRedis, hasRedis } from "../cache/redis";
+
+export const healthRouter = Router();
+
+healthRouter.get("/health", (_req, res) => {
+  res.json({ ok: true, ts: Date.now() });
+});
+
+healthRouter.get("/ready", async (_req, res) => {
+  try {
+    if (hasRedis()) {
+      const r = await getRedis();
+      await r?.ping();
+    }
+    res.json({ ok: true, ts: Date.now() });
+  } catch (e: any) {
+    res.status(503).json({ ok: false, error: e?.message || "not ready" });
+  }
+});
+```
+
+- Mount these in the server app.
+
+9) Ensure server mounts new routers and sets keep-alive headers
+- Why: production-like stability in Replit.
+
+```typescript name=apps/server/src/index.ts
+// ... existing imports
+import express from "express";
+import { historyRouter } from "./routes/history";
+import { healthRouter } from "./routes/health";
+// sse route is already present (stream/sse)
+
+const app = express();
+// CORS/security middlewares should already exist; if not, add basic helmet/cors
+
+app.use("/api", historyRouter);
+app.use("/", healthRouter);
+
+// Ensure HTTP server keep-alive/headers timeouts are sufficient (75–80s) if you configure http.createServer separately.
+export default app;
+```
+
+10) Acceptance tests (run and paste results in PR)
+- Health:
+  - curl -fsS http://127.0.0.1:4000/health | jq .
+  - curl -fsS http://127.0.0.1:4000/ready | jq .
+- SSE with heartbeat:
+  - curl -N "http://127.0.0.1:4000/realtime/sse?symbols=SPY" | awk '/^event:/{print strftime(),$0}'
+  - Expect bootstrap/epoch soon after connect, then ping every ~15s, and bar on minute roll.
+- History cache-first:
+  - curl -fsS "http://127.0.0.1:4000/api/history?symbol=SPY&timeframe=1m&limit=2" | jq .
+- Seq consistency check:
+  - Confirm that for any returned bar: seq == Math.floor(bar_end/60000). If not, fix at provider mapping or SSE writer.
+
+Notes and constraints
+- Do not change frameworks or folder structure.
+- TypeScript strict everywhere; keep payloads tiny and numeric where possible.
+- REDIS_URL optional: if unset, the system uses in-memory ring only; Redis becomes a drop-in upgrade for resilience across restarts.
+- Keep secrets server-side; never expose keys in client.
+
+Optional follow-ups (if time allows)
+- Add a last-price cache (shared with voice micro-tools) mirrored from ticks; expose tiny GET /tools/quote for smoke tests.
+- Add an “epoch” event on server restarts explicitly (if not already emitted) and centralize the logic so SSE always sends it on client connect.
+
+If you want me to also include the small changes to your existing files inline (like exact insertion points in sse.ts and marketStream.ts), I can produce small patches for those blocks next.

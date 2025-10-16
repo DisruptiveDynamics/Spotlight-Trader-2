@@ -1,0 +1,269 @@
+Below is a deep-dive plan to make the voice assistant feel truly real‑time: fast, reliable tool calls, zero stalls, and intuitive answers. Then I give you a ready-to-paste Replit Agent prompt to apply the improvements.
+
+Deep dive: what’s good, what to fix, why
+What’s already strong
+- Single realtime session per tab, minimal→full session.update flow, hard barge‑in: implemented in apps/server/src/realtime/voiceProxy.ts and client services; Audio worklet, batching, idle sleep: VOICE_OPTIMIZATIONS.md.
+- Tools Bridge pattern exists: apps/server/src/voice/toolsBridge.ts dispatchTool with snake_case→camelCase mapping, payload caps, correlation IDs, and a 5s server timeout. Client streams function_call arguments and executes tools via ToolBridge in apps/client/src/voice/RealtimeVoiceClient.ts with micro-tool timeouts.
+- Market stream (1m bars) via SSE with bootstrap/epoch headers and backfill: apps/server/src/stream/sse.ts and apps/client/src/lib/marketStream.ts.
+
+Main problems to address for “fast, real-time, no stalls”
+- Mixed tool invocation patterns = unpredictable behavior:
+  - You have both: a) ToolsBridge (intended final design), and b) a legacy inline server-side switch inside voiceProxy.ts that intercepts and executes tools. Choose one. Keep ToolsBridge. Remove or feature-flag the legacy switch so the RealtimeVoiceClient → ToolBridge → server ToolsBridge path is the only path.
+- Micro-tools referenced in policy but not guaranteed in the session tool schema:
+  - packages/shared/src/voicePolicy.ts instructs the model to call get_last_price/get_last_vwap/get_last_ema, but VOICE_COPILOT_TOOLS (apps/server/src/realtime/voiceTools.ts) doesn’t list these micro-tools, so the session may not expose them. They need to be registered in the minimal session update so they’re available immediately after session.created.
+- Quote latency and availability:
+  - There’s no dedicated last-price cache visible. Relying directly on provider REST for micro-answers can exceed the current client timeouts (1200 ms). You need a tiny in-memory quotes cache (tick/last trade) with sub-10ms reads and a fallback to latest bar when provider is down.
+- Timeouts and backpressure:
+  - Client: 1200 ms micro-tool timeout is tight if you must go to the network. Make it adaptive per-tool and cache-first so 99th stays <200 ms. Keep a hard ceiling (e.g., 3–5 s) server-side as today.
+- Observability and health:
+  - Add histograms and counters for tool latency/success/fail. Expose a /health/tools and /health/market with p50/p95 latencies and cache hit rate. This is how you will prove “fast and reliable.”
+
+What to build and adjust
+1) Unify on ToolsBridge; disable legacy inline tool execution
+- Why: single path -> predictable behavior, simpler debugging.
+- How:
+  - In apps/server/src/realtime/voiceProxy.ts, remove or behind a feature flag the switch that manually handles response.function_call_arguments.done. Instead, the server only forwards the function call event to the client, and the client executes via ToolBridge (which you already do in RealtimeVoiceClient.ts). Keep logging but not execution in voiceProxy.
+
+2) Register micro-tools in the minimal session update
+- Why: availability immediately after session.created; this is the “verify-then-speak” protocol’s backbone.
+- How:
+  - In getMinimalSessionUpdate() (server) ensure the tool schemas include:
+    - get_last_price({ symbol })
+    - get_last_vwap({ symbol })
+    - get_last_ema({ symbol, period })
+  - Keep payloads tiny, strict, and stable.
+
+3) Add a quotes cache with provider fallback and a clean API
+- Why: 5–20ms quote answers every time; avoid network variance for micro-tools.
+- How:
+  - Build an in-memory cache that:
+    - Accepts ticks/last trades if you have a streaming feed (preferred), or
+    - Polls provider snapshot every N seconds as a fallback during dev.
+    - TTL ~300–1000ms is fine for “current price”; return cached value immediately; optionally refresh in background.
+  - Include a “source” field: cache|provider|bar_fallback.
+
+4) Implement micro-tools on the server using the cache
+- get_last_price({symbol}) → { symbol, price, ts, source }
+- get_last_vwap({symbol}) → last session VWAP from your bar/indicator cache
+- get_last_ema({symbol, period}) → from precomputed EMA cache or computed on last N bars
+- Validate inputs with zod, hard-cap output size.
+
+5) Tune timeouts and retries
+- Client (RealtimeVoiceClient.ts):
+  - Micro-tools timeout: dynamic. If cache hit: 200–400ms; otherwise 1500–3000ms. Keep “name.startsWith('get_last_')” classification, but add per-tool overrides if needed.
+  - On timeout: reply “Price unavailable, retrying…” only once; then degrade to last bar with disclaimer.
+- Server (toolsBridge):
+  - Keep the 5s guard; implement a per-tool shorter server timeout for micro-tools (e.g., 1500ms) since they read cache.
+  - Add a circuit breaker for provider calls when error rate spikes.
+
+6) Observability and health
+- Record histograms for tool latency and counters for errors in apps/server/src/voice/toolMetrics.ts; expose /health/tools that returns a tiny JSON snapshot: { ok, microToolP95, failures1m, cacheHitRate }.
+- Log with correlation IDs end-to-end (already started in toolsBridge; propagate in client requests).
+
+7) Speech UX polish
+- Keep hard barge-in; ensure “response.cancel” is sent before you start capturing speech on barge-in.
+- Announce short acknowledgements only when a tool is slow (≥700–1000ms): “Checking price…” Keep to one short phrase, then result. No double-speak.
+- Ensure only one TTS stream at a time; flush/cancel pending on new user audio.
+
+8) Security and cost
+- JWT-secure the ToolsBridge WS (already present). No secrets to the client. Enforce schema on every tool input.
+- Idle sleep is done; also add auto-hangup on repeated tool timeouts to save tokens.
+
+Reference pointers in your repo
+- Tool dispatch routing and payload caps: apps/server/src/voice/toolsBridge.ts
+- Tool schemas surfaced to session: apps/server/src/realtime/voiceTools.ts
+- Client execution of tools: apps/client/src/voice/RealtimeVoiceClient.ts
+- Policy requiring micro-tools: packages/shared/src/voicePolicy.ts
+- Legacy inline tool intercept (to remove/flag): apps/server/src/realtime/voiceProxy.ts
+
+Suggested file additions/edits (sketches)
+These show how to wire the quotes cache and micro-tools. You can hand this to the agent to implement.
+
+```typescript name=apps/server/src/market/quoteCache.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/chore/health-setup/apps/server/src/market/quoteCache.ts
+import { setTimeout as sleep } from "timers/promises";
+
+type Quote = { symbol: string; price: number; ts: number; source: "cache"|"provider"|"bar_fallback" };
+const cache = new Map<string, Quote>();
+const TTL_MS = 1000;
+
+export function getCachedQuote(symbol: string): Quote | null {
+  const q = cache.get(symbol.toUpperCase());
+  if (!q) return null;
+  if (Date.now() - q.ts > TTL_MS) return null;
+  return q;
+}
+
+export function setCachedQuote(symbol: string, price: number, source: Quote["source"]) {
+  cache.set(symbol.toUpperCase(), { symbol: symbol.toUpperCase(), price, ts: Date.now(), source });
+}
+
+// Optional polling fallback for dev; replace with real tick stream when ready
+let polling = false;
+export async function startQuotePolling(fetcher: (s: string)=>Promise<number>, symbols: string[]) {
+  if (polling) return;
+  polling = true;
+  (async () => {
+    while (polling) {
+      await Promise.all(symbols.map(async s => {
+        try {
+          const p = await fetcher(s);
+          if (Number.isFinite(p)) setCachedQuote(s, p, "provider");
+        } catch {}
+      }));
+      await sleep(1000);
+    }
+  })();
+}
+```
+
+```typescript name=apps/server/src/voice/tools.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/chore/health-setup/apps/server/src/voice/tools.ts
+import { z } from "zod";
+import { getCachedQuote, setCachedQuote } from "../market/quoteCache";
+// import polygon client or your provider as needed
+
+export const voiceTools = {
+  async get_last_price(input: unknown, _userId: string) {
+    const { symbol } = z.object({ symbol: z.string().min(1) }).parse(input);
+    const sym = symbol.toUpperCase();
+
+    // 1) cache first (fast path)
+    const cached = getCachedQuote(sym);
+    if (cached) return cached;
+
+    // 2) provider snapshot (implement with polygon or your source)
+    try {
+      // const price = await polygonLastTrade(sym)  // implement elsewhere
+      // setCachedQuote(sym, price, "provider");
+      // return { symbol: sym, price, ts: Date.now(), source: "provider" as const };
+    } catch {}
+
+    // 3) fallback to last bar close (provide a helper from your history service)
+    // const lastBar = await getLastBar(sym, "1m");
+    // if (lastBar) {
+    //   const price = lastBar.ohlcv.c;
+    //   setCachedQuote(sym, price, "bar_fallback");
+    //   return { symbol: sym, price, ts: Date.now(), source: "bar_fallback" as const };
+    // }
+
+    throw new Error("price unavailable");
+  },
+
+  // Similarly add get_last_vwap, get_last_ema with strict inputs and tiny outputs
+};
+```
+
+```typescript name=apps/server/src/realtime/voiceTools.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/chore/health-setup/apps/server/src/realtime/voiceTools.ts
+// Add micro-tools to VOICE_COPILOT_TOOLS so the model can call them immediately
+export const VOICE_COPILOT_TOOLS: VoiceTool[] = [
+  // ...existing tools...
+  {
+    type: "function",
+    name: "get_last_price",
+    description: "Get the latest traded price for a symbol (cache-first, tiny payload).",
+    parameters: {
+      type: "object",
+      properties: { symbol: { type: "string", description: "e.g., SPY" } },
+      required: ["symbol"],
+    },
+  },
+  // get_last_vwap, get_last_ema...
+];
+```
+
+```typescript name=apps/client/src/voice/RealtimeVoiceClient.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/chore/health-setup/apps/client/src/voice/RealtimeVoiceClient.ts
+// Tune micro-tool timeout adaptively
+const MICRO_DEFAULT = 1500;
+const MICRO_OVERRIDES: Record<string, number> = {
+  get_last_price: 800, // expects cache hit; adjust if needed
+  get_last_vwap: 1200,
+  get_last_ema: 1200,
+};
+
+const isMicroTool = (name: string) => name.startsWith("get_last_");
+const pickTimeout = (name: string) => isMicroTool(name) ? (MICRO_OVERRIDES[name] ?? MICRO_DEFAULT) : 2000;
+
+// then use:
+const timeoutMs = pickTimeout(call.name);
+```
+
+Replit Agent prompt to fine‑tune for “fast and flawless” voice
+Copy-paste this to your Replit agent. It’s explicit, ordered, and acceptance-driven.
+
+```
+You are working in DisruptiveDynamics/Spotlight-Trader-2. Objective: make the AI voice assistant feel real-time, with fast micro-answers (sub-500ms when cached), zero stalls, and reliable tool calls.
+
+Do ALL of the following, with a single PR, and include a summary of measured latencies and any trade-offs.
+
+1) Unify tool execution path (remove legacy inline execution)
+- In apps/server/src/realtime/voiceProxy.ts:
+  - Find the block that handles "response.function_call_arguments.done" and switch-calls handlers.
+  - Guard it behind a feature flag VOICE_INLINE_TOOLS=false, or remove it.
+  - Keep structured logs of function name and args ONLY (no execution). The client must execute tools via ToolBridge.
+
+2) Ensure micro-tools are exposed in the minimal session update
+- In the minimal session.update builder (same file or helper), ensure the following tool schemas are included:
+  - get_last_price({symbol})
+  - get_last_vwap({symbol})
+  - get_last_ema({symbol, period})
+- Keep descriptions short and parameters strict.
+
+3) Implement cache-first quote path
+- Create apps/server/src/market/quoteCache.ts with:
+  - getCachedQuote, setCachedQuote, optional startQuotePolling(fetcher, symbols)
+  - TTL = 1000 ms
+- Wire a provider fetcher (Polygon or configured provider).
+  - For Replit/dev, a snapshot fetch is acceptable; cache the value and mark source="provider".
+  - Fallback to last bar (source="bar_fallback") when provider fails.
+- Add a tiny HTTP probe:
+  - GET /tools/quote?symbol=SPY → { symbol, price, ts, source }, 200 on success, 503 on unavailable.
+
+4) Add micro-tool handlers (server)
+- In apps/server/src/voice/tools.ts, add:
+  - get_last_price({symbol}) → uses quoteCache cache-first, then provider, then bar fallback; strict zod inputs; tiny outputs.
+  - Stubs for get_last_vwap({symbol}) and get_last_ema({symbol, period}) that use existing indicator state or compute from last N bars.
+- Ensure dispatchTool in apps/server/src/voice/toolsBridge.ts reaches these by name.
+
+5) Register micro-tools in the session tool list
+- In apps/server/src/realtime/voiceTools.ts, append schema definitions for get_last_price, get_last_vwap, get_last_ema.
+
+6) Tune client timeouts and UX (apps/client/src/voice/RealtimeVoiceClient.ts)
+- Timeout policy:
+  - Micro-tools: default 1500ms; override get_last_price to 800–1200ms since it should be cache hits; analysis tools remain 2000ms.
+- On timeout/error, speak a single short message and degrade:
+  - For price: “Price is delayed; latest 1m close is $X.”
+- Ensure only one TTS stream plays; send response.cancel before resuming mic on barge-in (already implemented—verify).
+
+7) Observability and health
+- Add histograms and counters in apps/server/src/voice/toolMetrics.ts:
+  - total, ok, error; latency p50/p95; cache hit rate.
+- Add /health/tools endpoint returning a compact JSON { ok, microP95, failures1m, cacheHitRate }.
+- In toolsBridge logs, include a correlation ID; ensure the client includes that corrId when executing.
+
+8) Cleanup residual console noise in client
+- Remove logging of JSX/components; only log small objects with dev guards.
+- Confirm PresenceBubble no longer dumps large strings.
+
+9) Verification & measurements (paste results in PR):
+- Start server: pnpm --filter @spotlight/server dev
+- Price probe: curl -fsS 'http://127.0.0.1:4000/tools/quote?symbol=SPY' | jq .
+- SSE seed: curl -i 'http://127.0.0.1:4000/realtime/sse?symbols=SPY' | head -n 40
+- Voice WS probe: node -e "const {WebSocket}=require('ws');const ws=new WebSocket('ws://127.0.0.1:4000/ws/realtime');ws.on('open',()=>{console.log('open');ws.close()});ws.on('error',e=>console.error('err',e.message))"
+- Browser test:
+  - Ask: “What is SPY’s current price?”
+  - Expect: Function call → tool.result in <150ms (cache) or <1200ms (provider), audible response with no double-speak.
+  - Capture console logs showing tool latency and source.
+
+10) Non-regression:
+- Ensure get_chart_snapshot still works; no changes to SSE/history routes; TypeScript strict remains clean; ESLint passes.
+
+Deliverables:
+- Code changes described above.
+- A short README section or PR description documenting:
+  - Micro-tool availability in minimal session
+  - Cache policy and TTL
+  - Timeout policy (client/server)
+  - Health metrics exposed
+  - Measured p50/p95 latencies for get_last_price under cache-hit and miss
+```
+
+If you want, I can also generate exact patches (file-by-file) once you confirm whether you prefer removing or feature-flagging the legacy inline tool switch in voiceProxy.ts.

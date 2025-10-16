@@ -1,4 +1,4 @@
-import { getBuffer } from "./buffer.js";
+import { bars1m } from "../chart/bars1m.js";
 
 export interface QuoteResponse {
   symbol: string;
@@ -9,21 +9,20 @@ export interface QuoteResponse {
 
 /**
  * Get the last price for a symbol.
- * Preference: in-process ring buffer (lowest latency)
- * Fallback: latest 1m bar's close price
+ * Uses bars1m buffer for lowest latency access.
  */
 export function getLastPrice(symbol: string): QuoteResponse {
   const upperSymbol = symbol.toUpperCase();
   
-  // Try to get from 1m ring buffer (most recent bar)
-  const buffer = getBuffer(upperSymbol, "1m");
-  const lastBar = buffer.peekLast();
+  // Get the most recent bar from bars1m
+  const bars = bars1m.getRecent(upperSymbol, 1);
   
-  if (lastBar) {
+  if (bars.length > 0 && bars[0]) {
+    const lastBar = bars[0];
     return {
       symbol: upperSymbol,
       price: lastBar.c,
-      ts: lastBar.t,
+      ts: lastBar.bar_end,
       source: "cache" as const,
     };
   }

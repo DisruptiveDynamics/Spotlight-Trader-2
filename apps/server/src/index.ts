@@ -101,11 +101,15 @@ app.get("/api/voice/health", (_req, res) => {
 });
 
 // Quote tool HTTP probe (for testing)
-app.get("/tools/quote", (_req, res) => {
-  const symbol = (_req.query.symbol as string) || "SPY";
-  const { getLastPrice } = require("./market/quote.js");
-  const result = getLastPrice(symbol);
-  res.json(result);
+app.get("/tools/quote", async (_req, res) => {
+  try {
+    const symbol = (_req.query.symbol as string) || "SPY";
+    const { getLastPrice } = await import("./market/quote.js");
+    const result = getLastPrice(symbol);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: { code: "INTERNAL_ERROR", message: err.message } });
+  }
 });
 
 // PIN auth routes (public - no middleware)

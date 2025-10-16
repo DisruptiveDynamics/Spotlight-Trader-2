@@ -1,4 +1,5 @@
 import { ringBuffer } from "@server/cache/ring";
+import { bars1m } from "@server/chart/bars1m";
 import type { Timeframe } from "@server/market/eventBus";
 import { polygonWs } from "@server/market/polygonWs";
 import { validateEnv } from "@shared/env";
@@ -85,6 +86,25 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
     const polygonBars = await fetchPolygonHistory(symbol, timeframe, limit, before);
     if (polygonBars.length > 0) {
       ringBuffer.putBars(symbol, polygonBars);
+      
+      // CRITICAL: Only append to bars1m if fetching LATEST data (no pagination)
+      // Pagination (before parameter) fetches old bars which would pollute the authoritative buffer
+      if (timeframe === "1m" && !before) {
+        for (const bar of polygonBars) {
+          bars1m.append(symbol, {
+            symbol: bar.symbol,
+            seq: bar.seq,
+            bar_start: bar.bar_start,
+            bar_end: bar.bar_end,
+            o: bar.open,
+            h: bar.high,
+            l: bar.low,
+            c: bar.close,
+            v: bar.volume,
+          });
+        }
+      }
+      
       return polygonBars;
     }
   } else {
@@ -105,6 +125,24 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
   console.log(`🎭 Generating ${limit} mock bars for ${symbol} (Polygon unavailable)`);
   const mockBars = generateRealisticBars(symbol, fromMs, toMs, limit);
   ringBuffer.putBars(symbol, mockBars);
+  
+  // CRITICAL: Only append to bars1m if fetching LATEST data (no pagination)
+  if (timeframe === "1m" && !before) {
+    for (const bar of mockBars) {
+      bars1m.append(symbol, {
+        symbol: bar.symbol,
+        seq: bar.seq,
+        bar_start: bar.bar_start,
+        bar_end: bar.bar_end,
+        o: bar.open,
+        h: bar.high,
+        l: bar.low,
+        c: bar.close,
+        v: bar.volume,
+      });
+    }
+  }
+  
   return mockBars;
 }
 

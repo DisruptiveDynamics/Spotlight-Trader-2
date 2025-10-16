@@ -1,5 +1,5 @@
 export function connectCoachStream(onMessage: (m: any) => void) {
-  const es = new EventSource("/api/agent/stream");
+  const es = new EventSource("/api/agent/stream", { withCredentials: true });
   es.addEventListener("coach", (ev) => {
     try {
       onMessage(JSON.parse((ev as MessageEvent).data));

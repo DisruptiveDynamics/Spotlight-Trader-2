@@ -13,7 +13,7 @@ export function AlertsPanel() {
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    const eventSource = new EventSource("/stream/market?symbols=SPY");
+    const eventSource = new EventSource("/realtime/sse?symbols=SPY", { withCredentials: true });
 
     eventSource.addEventListener("alert", (event) => {
       const alert = JSON.parse(event.data) as Alert;

@@ -10,4 +10,4 @@ export const API_BASE =
       : "");
 
 export const HISTORY_URL = `${API_BASE}/api/history`;
-export const STREAM_URL = `${API_BASE}/stream/market`;
+export const STREAM_URL = `${API_BASE}/realtime/sse`;

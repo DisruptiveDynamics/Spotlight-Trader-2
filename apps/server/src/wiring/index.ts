@@ -164,7 +164,7 @@ export function initializeMarketPipeline(app: Express) {
     }
   });
 
-  app.get("/stream/market", requirePin, sseMarketStream);
+  app.get("/realtime/sse", requirePin, sseMarketStream);
 
   // Endpoint to change timeframe for a symbol (replaced with new implementation)
   app.post("/api/chart/timeframe", requirePin, handleChartTimeframe);

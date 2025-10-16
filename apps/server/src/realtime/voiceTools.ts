@@ -14,6 +14,21 @@ export interface VoiceTool {
 export const VOICE_COPILOT_TOOLS: VoiceTool[] = [
   {
     type: "function",
+    name: "get_last_price",
+    description: "Get the latest price for a symbol from the market cache or provider",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: {
+          type: "string",
+          description: "The trading symbol (e.g., SPY, QQQ, NVDA)",
+        },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
+    type: "function",
     name: "get_chart_snapshot",
     description:
       "Get current chart data including OHLCV bars, indicators, session stats, volatility, and market regime for analysis",

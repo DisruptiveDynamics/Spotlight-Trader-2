@@ -100,6 +100,14 @@ app.get("/api/voice/health", (_req, res) => {
   res.json({ ok: true, timestamp: Date.now() });
 });
 
+// Quote tool HTTP probe (for testing)
+app.get("/tools/quote", (_req, res) => {
+  const symbol = (_req.query.symbol as string) || "SPY";
+  const { getLastPrice } = require("./market/quote.js");
+  const result = getLastPrice(symbol);
+  res.json(result);
+});
+
 // PIN auth routes (public - no middleware)
 app.use("/api/auth", pinAuthRouter);
 app.use("/auth", pinAuthRouter);

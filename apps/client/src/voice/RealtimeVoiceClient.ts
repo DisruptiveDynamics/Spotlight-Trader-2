@@ -133,9 +133,31 @@ export class RealtimeVoiceClient {
         try {
           console.log(`[RealtimeVoiceClient] Executing tool via bridge: ${call.name}`, args);
 
-          // Smart timeout: 1200ms for micro-tools, 2000ms for snapshot/analysis
-          const isMicroTool = call.name.startsWith("get_last_");
-          const timeoutMs = isMicroTool ? 1200 : 2000;
+          // Adaptive per-tool timeouts for optimal performance
+          const TOOL_TIMEOUTS: Record<string, number> = {
+            // Micro-tools: Cache hits expected, ultra-fast
+            get_last_price: 800,
+            get_last_vwap: 800,
+            get_last_ema: 1200, // Needs calculation
+            // Chart data: Fast from bars1m buffer
+            get_chart_snapshot: 1500,
+            get_market_regime: 1500,
+            // Complex analysis: Longer timeout
+            propose_entry_exit: 2500,
+            get_recommended_risk_box: 2500,
+            generate_trade_plan: 3000,
+            // Database queries: Medium timeout
+            get_recent_journal: 2000,
+            get_active_rules: 2000,
+            get_recent_signals: 2000,
+            search_playbook: 2000,
+            search_glossary: 2000,
+            // State-changing operations: Longer timeout
+            evaluate_rules: 2500,
+            log_journal_event: 2500,
+          };
+
+          const timeoutMs = TOOL_TIMEOUTS[call.name] ?? 2000;
 
           const bridgeResult = await this.toolBridge.exec(call.name, args, timeoutMs);
 

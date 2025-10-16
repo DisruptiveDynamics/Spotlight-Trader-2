@@ -29,6 +29,41 @@ export const VOICE_COPILOT_TOOLS: VoiceTool[] = [
   },
   {
     type: "function",
+    name: "get_last_vwap",
+    description: "Get the current session VWAP for a symbol (ultra-low latency)",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: {
+          type: "string",
+          description: "The trading symbol (e.g., SPY, QQQ, NVDA)",
+        },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
+    type: "function",
+    name: "get_last_ema",
+    description: "Get the latest EMA value for a symbol at a specific period (ultra-low latency)",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: {
+          type: "string",
+          description: "The trading symbol (e.g., SPY, QQQ, NVDA)",
+        },
+        period: {
+          type: "number",
+          description: "EMA period (e.g., 9, 21, 50, 200)",
+          enum: [9, 21, 50, 200],
+        },
+      },
+      required: ["symbol", "period"],
+    },
+  },
+  {
+    type: "function",
     name: "get_chart_snapshot",
     description:
       "Get current chart data including OHLCV bars, indicators, session stats, volatility, and market regime for analysis",

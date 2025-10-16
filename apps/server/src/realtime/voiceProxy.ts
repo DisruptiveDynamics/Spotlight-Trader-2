@@ -312,164 +312,149 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
           const functionName = message.name;
           const argsString = message.arguments;
 
-          console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-          console.log("[VOICE TOOL] ✅ Tool call intercepted (NO BYPASS - routed through proxy)");
-          console.log(`[VOICE TOOL] Function: ${functionName}`);
-          console.log(`[VOICE TOOL] Call ID: ${callId}`);
-          console.log(`[VOICE TOOL] User: ${userId}`);
-          console.log(`[VOICE TOOL] Raw Args: ${argsString}`);
+          // LEGACY INLINE TOOL EXECUTION - DISABLED
+          // All tools now execute via client ToolBridge for consistent, predictable behavior
+          // This provides better timeout control, circuit breaking, and observability
+          const LEGACY_INLINE_EXECUTION = process.env.VOICE_INLINE_TOOLS === "true";
 
-          try {
-            const args = JSON.parse(argsString);
-            let result: any = null;
+          if (LEGACY_INLINE_EXECUTION) {
+            // Legacy path (deprecated - kept for emergency rollback only)
+            console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            console.warn("[VOICE TOOL] ⚠️  LEGACY INLINE EXECUTION ENABLED");
+            console.log(`[VOICE TOOL] Function: ${functionName}`);
+            console.log(`[VOICE TOOL] Call ID: ${callId}`);
+            console.log(`[VOICE TOOL] User: ${userId}`);
 
-            // Call the appropriate copilot tool handler with userId context
-            switch (functionName) {
-              case "get_chart_snapshot": {
-                console.log(
-                  `[VOICE TOOL] Parsed Params: symbol=${args.symbol}, timeframe=${args.timeframe}, barCount=${args.barCount || args.lookback || 50}`,
-                );
-                console.log(`[VOICE TOOL] Data Source: Ring Buffer (in-memory, fed by BarBuilder)`);
-                result = await toolHandlers.get_chart_snapshot(args);
-                const latestBar = result.bars[result.bars.length - 1];
-                console.log(`[VOICE TOOL] Response: ${result.bars.length} bars retrieved`);
-                console.log(
-                  `[VOICE TOOL] Latest Price: ${latestBar?.close || "N/A"} (symbol: ${result.symbol})`,
-                );
-                console.log(
-                  `[VOICE TOOL] Market State: regime=${result.regime}, volatility=${result.volatility}`,
-                );
-                console.log(`[VOICE TOOL] VWAP: ${result.indicators.vwap?.value || "N/A"}`);
-                break;
-              }
-              case "propose_entry_exit":
-                result = await toolHandlers.propose_entry_exit(args);
-                break;
-              case "get_recommended_risk_box":
-                result = await toolHandlers.get_recommended_risk_box(args);
-                break;
-              case "get_pattern_summary":
-                result = await toolHandlers.get_pattern_summary(args);
-                break;
-              case "evaluate_rules":
-                // Merge userId context with args
-                result = await toolHandlers.evaluate_rules({
-                  context: {
-                    ...args,
-                    userId,
-                  },
-                });
-                break;
-              case "log_journal_event":
-                // Ensure userId is included in journal events
-                result = await toolHandlers.log_journal_event({
-                  type: args.type,
-                  payload: {
-                    ...args,
-                    userId,
-                  },
-                });
+            try {
+              const args = JSON.parse(argsString);
+              let result: any = null;
 
-                // Auto-capture insights to memory
-                if (args.reasoning) {
-                  // Capture setup learnings
-                  if (args.qualityGrade === "A" && args.decision === "accept") {
-                    await voiceMemoryBridge.captureSetupLearning(
+              switch (functionName) {
+                case "get_chart_snapshot":
+                  result = await toolHandlers.get_chart_snapshot(args);
+                  break;
+                case "propose_entry_exit":
+                  result = await toolHandlers.propose_entry_exit(args);
+                  break;
+                case "get_recommended_risk_box":
+                  result = await toolHandlers.get_recommended_risk_box(args);
+                  break;
+                case "get_pattern_summary":
+                  result = await toolHandlers.get_pattern_summary(args);
+                  break;
+                case "evaluate_rules":
+                  result = await toolHandlers.evaluate_rules({
+                    context: { ...args, userId },
+                  });
+                  break;
+                case "log_journal_event":
+                  result = await toolHandlers.log_journal_event({
+                    type: args.type,
+                    payload: { ...args, userId },
+                  });
+
+                  // Auto-capture insights to memory
+                  if (args.reasoning) {
+                    if (args.qualityGrade === "A" && args.decision === "accept") {
+                      await voiceMemoryBridge.captureSetupLearning(
+                        userId,
+                        args.symbol,
+                        args.timeframe,
+                        args.reasoning,
+                      );
+                    }
+
+                    if (
+                      args.decision === "reject" ||
+                      args.reasoning.toLowerCase().includes("mistake")
+                    ) {
+                      await voiceMemoryBridge.captureMistake(
+                        userId,
+                        args.reasoning,
+                        `Avoided on ${args.symbol}`,
+                      );
+                    }
+
+                    const patternWarning = await traderPatternDetector.checkForPattern(
                       userId,
                       args.symbol,
-                      args.timeframe,
+                      args.decision,
                       args.reasoning,
                     );
+
+                    if (patternWarning) {
+                      upstreamWs.send(
+                        JSON.stringify({
+                          type: "conversation.item.create",
+                          item: {
+                            type: "message",
+                            role: "user",
+                            content: [{ type: "input_text", text: patternWarning }],
+                          },
+                        }),
+                      );
+                    }
                   }
+                  break;
+                case "generate_trade_plan":
+                  result = await toolHandlers.generate_trade_plan(args);
+                  break;
+                default:
+                  result = { error: `Unknown function: ${functionName}` };
+              }
 
-                  // Capture mistakes
-                  if (
-                    args.decision === "reject" ||
-                    args.reasoning.toLowerCase().includes("mistake")
-                  ) {
-                    await voiceMemoryBridge.captureMistake(
-                      userId,
-                      args.reasoning,
-                      `Avoided on ${args.symbol}`,
-                    );
-                  }
+              toolTracker.markToolCalled();
 
-                  // Check for trader patterns
-                  const patternWarning = await traderPatternDetector.checkForPattern(
-                    userId,
-                    args.symbol,
-                    args.decision,
-                    args.reasoning,
-                  );
-
-                  if (patternWarning) {
-                    // Inject pattern warning into voice conversation
-                    upstreamWs.send(
-                      JSON.stringify({
-                        type: "conversation.item.create",
-                        item: {
-                          type: "message",
-                          role: "user",
-                          content: [{ type: "input_text", text: patternWarning }],
-                        },
-                      }),
-                    );
-                  }
-                }
-                break;
-              case "generate_trade_plan":
-                result = await toolHandlers.generate_trade_plan(args);
-                break;
-              default:
-                result = { error: `Unknown function: ${functionName}` };
-            }
-
-            // Mark tool as successfully called (anti-hallucination tracking)
-            toolTracker.markToolCalled();
-            console.log(
-              `[VOICE TOOL] 🔒 Tool execution tracked - responses with market numbers now ALLOWED for 3s`,
-            );
-
-            // Send function result back to OpenAI
-            const functionOutput = {
-              type: "conversation.item.create",
-              item: {
-                type: "function_call_output",
-                call_id: callId,
-                output: JSON.stringify(result),
-              },
-            };
-
-            upstreamWs.send(JSON.stringify(functionOutput));
-
-            // Trigger response generation
-            upstreamWs.send(JSON.stringify({ type: "response.create" }));
-
-            console.log(`[VOICE TOOL] ✅ Response sent back to OpenAI (via proxy)`);
-            console.log(`[VOICE TOOL] AI will now speak the result to user`);
-            console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-          } catch (error) {
-            console.error("[VoiceProxy] Function call error:", {
-              userId,
-              functionName,
-              error: error instanceof Error ? error.message : "Unknown error",
-            });
-
-            const errorOutput = {
-              type: "conversation.item.create",
-              item: {
-                type: "function_call_output",
-                call_id: callId,
-                output: JSON.stringify({
-                  error: error instanceof Error ? error.message : "Unknown error",
-                  functionName,
-                  timestamp: Date.now(),
+              upstreamWs.send(
+                JSON.stringify({
+                  type: "conversation.item.create",
+                  item: {
+                    type: "function_call_output",
+                    call_id: callId,
+                    output: JSON.stringify(result),
+                  },
                 }),
-              },
-            };
+              );
 
-            upstreamWs.send(JSON.stringify(errorOutput));
-            upstreamWs.send(JSON.stringify({ type: "response.create" }));
+              upstreamWs.send(JSON.stringify({ type: "response.create" }));
+              console.log(`[VOICE TOOL] ✅ Response sent (legacy path)`);
+              console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            } catch (error) {
+              console.error("[VoiceProxy] Function call error:", {
+                userId,
+                functionName,
+                error: error instanceof Error ? error.message : "Unknown error",
+              });
+
+              upstreamWs.send(
+                JSON.stringify({
+                  type: "conversation.item.create",
+                  item: {
+                    type: "function_call_output",
+                    call_id: callId,
+                    output: JSON.stringify({
+                      error: error instanceof Error ? error.message : "Unknown error",
+                      functionName,
+                      timestamp: Date.now(),
+                    }),
+                  },
+                }),
+              );
+              upstreamWs.send(JSON.stringify({ type: "response.create" }));
+            }
+          } else {
+            // MODERN PATH: Client executes via ToolBridge
+            // Just log the tool call for observability, client will execute
+            console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            console.log("[VOICE TOOL] 📋 Tool call forwarded to client ToolBridge");
+            console.log(`[VOICE TOOL] Function: ${functionName}`);
+            console.log(`[VOICE TOOL] Call ID: ${callId}`);
+            console.log(`[VOICE TOOL] User: ${userId}`);
+            console.log(`[VOICE TOOL] Client will execute via /ws/tools with adaptive timeout`);
+            console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+            // Mark tool as called for anti-hallucination tracking
+            toolTracker.markToolCalled();
           }
         }
       } catch (err) {

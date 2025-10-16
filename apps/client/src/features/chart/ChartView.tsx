@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { IChartApi, ISeriesApi, CandlestickData, UTCTimestamp } from "lightweight-charts";
+import { TIMEFRAME_TO_BUCKET_MIN } from "@shared/types/market";
 import { connectMarketSSE, type Bar, type Micro } from "../../lib/marketStream";
+import { fetchHistory } from "../../lib/history";
+import { useChartState } from "../../state/chartState";
 import { useLastSeq } from "./useLastSeq";
 
 export function ChartView() {
@@ -15,8 +18,12 @@ export function ChartView() {
   const currentCandleRef = useRef<{ time: UTCTimestamp; o: number; h: number; l: number; c: number } | null>(null);
   const visibleRef = useRef(true);
 
+  // Read active symbol and timeframe from global state
+  const { active } = useChartState();
+  const { symbol, timeframe } = active;
+
   const [epochId, setEpochId] = useState<string | null>(null);
-  const [lastSeq, setLastSeq, resetSeqForTf] = useLastSeq("SPY", "1m", epochId);
+  const [lastSeq, setLastSeq, resetSeqForTf] = useLastSeq(symbol, timeframe, epochId);
   const lastSeqRef = useRef<number | null>(lastSeq);
   
   // Keep ref in sync with state
@@ -43,8 +50,11 @@ export function ChartView() {
   });
 
   const applyMicroToCandle = (micro: Micro) => {
-    const minuteStart = Math.floor(micro.ts / 60000) * 60000;
-    const time = msToUtc(minuteStart);
+    // Use dynamic bucket size based on active timeframe
+    const bucketMinutes = TIMEFRAME_TO_BUCKET_MIN[timeframe as keyof typeof TIMEFRAME_TO_BUCKET_MIN] || 1;
+    const bucketMs = bucketMinutes * 60000;
+    const bucketStart = Math.floor(micro.ts / bucketMs) * bucketMs;
+    const time = msToUtc(bucketStart);
     const { o, h, l, c } = micro.ohlcv;
 
     if (!currentCandleRef.current || currentCandleRef.current.time !== time) {
@@ -68,7 +78,7 @@ export function ChartView() {
       seriesRef.current.update(toCandlestickData(candle));
     }
 
-    // 2) Microbars for active minute
+    // 2) Microbars for active bucket
     let nextMicro: Micro | undefined;
     while ((nextMicro = microbarQueueRef.current.shift())) {
       applyMicroToCandle(nextMicro);
@@ -89,6 +99,8 @@ export function ChartView() {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
+  // Main chart initialization and SSE connection
+  // Re-runs when symbol or timeframe changes
   useEffect(() => {
     let mounted = true;
     let sseConnection: ReturnType<typeof connectMarketSSE> | null = null;
@@ -96,6 +108,13 @@ export function ChartView() {
     const init = async () => {
       if (!chartContainerRef.current) return;
       const { createChart, CrosshairMode } = await import("lightweight-charts");
+
+      // Clear existing chart if it exists
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
+        seriesRef.current = null;
+      }
 
       const chart = createChart(chartContainerRef.current, {
         layout: {
@@ -132,6 +151,27 @@ export function ChartView() {
       chartRef.current = chart;
       seriesRef.current = series;
 
+      // Load historical data for the selected timeframe
+      try {
+        const history = await fetchHistory(symbol, timeframe, 300);
+        if (history.length > 0 && mounted) {
+          // Convert HistoryCandle[] to CandlestickData[]
+          const candlestickData = history.map(bar => ({
+            time: bar.time as UTCTimestamp,
+            open: bar.open,
+            high: bar.high,
+            low: bar.low,
+            close: bar.close,
+          }));
+          series.setData(candlestickData);
+          if (import.meta.env?.MODE === "development") {
+            console.log(`📊 Loaded ${history.length} bars for ${symbol} ${timeframe}`);
+          }
+        }
+      } catch (error) {
+        console.error("[ChartView] Failed to load history:", error);
+      }
+
       const handleResize = () => {
         if (!chartContainerRef.current || !chartRef.current) return;
         chartRef.current.applyOptions({
@@ -142,7 +182,12 @@ export function ChartView() {
 
       window.addEventListener("resize", handleResize);
 
-      sseConnection = connectMarketSSE(["SPY"], lastSeqRef.current ? { sinceSeq: lastSeqRef.current } : undefined);
+      // Connect to SSE with active symbol and timeframe
+      const sseOptions: { timeframe: string; sinceSeq?: number } = { timeframe };
+      if (lastSeqRef.current) {
+        sseOptions.sinceSeq = lastSeqRef.current;
+      }
+      sseConnection = connectMarketSSE([symbol], sseOptions);
 
       sseConnection.onEpoch((e: { epochId: string; epochStartMs: number }) => {
         if (!mounted) return;
@@ -189,7 +234,7 @@ export function ChartView() {
     return () => {
       Promise.resolve(cleanupPromise).catch(() => void 0);
     };
-  }, [epochId]);
+  }, [symbol, timeframe, epochId]); // Re-run when symbol or timeframe changes
 
   return <div ref={chartContainerRef} className="w-full h-full" />;
 }

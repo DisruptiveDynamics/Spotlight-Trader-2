@@ -15,7 +15,8 @@ export function ChartView() {
   const currentCandleRef = useRef<{ time: UTCTimestamp; o: number; h: number; l: number; c: number } | null>(null);
   const visibleRef = useRef(true);
 
-  const [lastSeq, setLastSeq] = useLastSeq("SPY", "1m");
+  const [epochId, setEpochId] = useState<string | null>(null);
+  const [lastSeq, setLastSeq, resetSeqForTf] = useLastSeq("SPY", "1m", epochId);
   const [, forceRerender] = useState({});
 
   const msToUtc = (ms: number): UTCTimestamp => Math.floor(ms / 1000) as UTCTimestamp;
@@ -138,6 +139,17 @@ export function ChartView() {
 
       sseConnection = connectMarketSSE(["SPY"], lastSeq ? { sinceSeq: lastSeq } : undefined);
 
+      sseConnection.onEpoch((e: { epochId: string; epochStartMs: number }) => {
+        if (!mounted) return;
+        if (!epochId) {
+          setEpochId(e.epochId);
+        } else if (epochId !== e.epochId) {
+          console.log(`🔄 Epoch changed: ${epochId.slice(0, 8)} → ${e.epochId.slice(0, 8)}, resetting sequence`);
+          resetSeqForTf();
+          setEpochId(e.epochId);
+        }
+      });
+
       sseConnection.onBar((bar: Bar) => {
         if (!mounted) return;
         setLastSeq(bar.seq);
@@ -172,7 +184,7 @@ export function ChartView() {
     return () => {
       Promise.resolve(cleanupPromise).catch(() => void 0);
     };
-  }, [lastSeq, setLastSeq]);
+  }, [lastSeq, setLastSeq, epochId, resetSeqForTf]);
 
   return <div ref={chartContainerRef} className="w-full h-full" />;
 }

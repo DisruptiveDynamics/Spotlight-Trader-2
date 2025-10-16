@@ -66,6 +66,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     tick: [] as ((t: Tick) => void)[],
     status: [] as ((s: SSEStatus) => void)[],
     gap: [] as ((detected: { expected: number; received: number }) => void)[],
+    epoch: [] as ((e: { epochId: string; epochStartMs: number }) => void)[],
   };
 
   const emitStatus = (status: SSEStatus) => {
@@ -285,6 +286,9 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         timeframe: string;
       };
 
+      // Emit epoch to listeners first
+      listeners.epoch.forEach((fn) => fn({ epochId: data.epochId, epochStartMs: data.epochStartMs }));
+
       if (currentEpochId && currentEpochId !== data.epochId) {
         console.log(
           `🔄 Server restarted: epoch ${currentEpochId.slice(0, 8)} → ${data.epochId.slice(0, 8)}, triggering resync`,
@@ -496,6 +500,9 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     },
     onGap(fn: (detected: { expected: number; received: number }) => void) {
       listeners.gap.push(fn);
+    },
+    onEpoch(fn: (e: { epochId: string; epochStartMs: number }) => void) {
+      listeners.epoch.push(fn);
     },
     getLastSeq() {
       return lastSeq;

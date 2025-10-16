@@ -1,21 +1,40 @@
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, useEffect, useState } from "react";
 
-export function useLastSeq(symbol: string, timeframe: string) {
-  const key = `lastSeq:${symbol}:${timeframe}`;
-  const seqRef = useRef<number | undefined>(undefined);
+export function useLastSeq(symbol: string, timeframe: string, epochId: string | null) {
+  const key = epochId ? `lastSeq:${epochId}:${symbol}:${timeframe}` : null;
+  const [lastSeq, setLastSeqState] = useState<number | null>(null);
 
-  if (seqRef.current === undefined) {
-    const saved = localStorage.getItem(key);
-    seqRef.current = saved ? parseInt(saved, 10) : undefined;
-  }
+  useEffect(() => {
+    if (!key) return;
+    try {
+      const raw = localStorage.getItem(key);
+      setLastSeqState(raw ? parseInt(raw, 10) : null);
+    } catch {}
+  }, [key]);
 
   const setLastSeq = useCallback(
     (seq: number) => {
-      localStorage.setItem(key, String(seq));
-      seqRef.current = seq;
+      if (!key) return;
+      setLastSeqState(seq);
+      try {
+        localStorage.setItem(key, String(seq));
+      } catch {}
     },
     [key],
   );
 
-  return [seqRef.current, setLastSeq] as const;
+  const resetAllForSymbolTf = useCallback(() => {
+    try {
+      const prefix = `lastSeq:`;
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(prefix) && k.endsWith(`:${symbol}:${timeframe}`)) {
+          localStorage.removeItem(k);
+        }
+      }
+    } catch {}
+    setLastSeqState(null);
+  }, [symbol, timeframe]);
+
+  return [lastSeq, setLastSeq, resetAllForSymbolTf] as const;
 }

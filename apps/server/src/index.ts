@@ -14,6 +14,7 @@ import { initializeLearningLoop } from "./learning/loop";
 import { rateLimit } from "./middleware/rateLimit";
 import { adminRouter } from "./routes/admin";
 import { backtestRouter } from "./routes/backtest";
+import { epochRouter } from "./routes/epoch";
 import { feedbackRouter } from "./routes/feedback";
 import { flagsRouter } from "./routes/flags";
 import insightRouter from "./routes/insight";
@@ -103,6 +104,9 @@ app.get("/api/voice/health", (_req, res) => {
 // PIN auth routes (public - no middleware)
 app.use("/api/auth", pinAuthRouter);
 app.use("/auth", pinAuthRouter);
+
+// Public epoch endpoint (no auth required - used for client restart detection)
+app.use("/api", epochRouter);
 
 // Protected routes (require PIN authentication)
 app.use("/api/flags", requirePin, flagsRouter);

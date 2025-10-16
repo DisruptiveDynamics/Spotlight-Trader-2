@@ -128,7 +128,12 @@ export class RealtimeVoiceClient {
 
       // Event listener 1: Function call created
       s.on?.("response.function_call.created", (ev: { id: string; name: string }) => {
-        console.log("[RealtimeVoiceClient] Function call created:", ev.name, ev.id);
+        const callId = shortId();
+        console.log(`[VOICE-DIAG-${callId}] 📞 Function call CREATED:`, {
+          eventId: ev.id,
+          toolName: ev.name,
+          timestamp: new Date().toISOString(),
+        });
         pendingCalls[ev.id] = { name: ev.name, argsJson: [] };
       });
 
@@ -139,21 +144,26 @@ export class RealtimeVoiceClient {
 
       // Event listener 3: Arguments complete - execute tool and send result back
       s.on?.("response.function_call.completed", async (ev: { id: string }) => {
+        const diagId = shortId();
         const call = pendingCalls[ev.id];
         if (!call) {
-          console.error("[RealtimeVoiceClient] No pending call for:", ev.id);
+          console.error(`[VOICE-DIAG-${diagId}] ❌ No pending call for:`, ev.id);
           return;
         }
 
-        console.log("[RealtimeVoiceClient] Function call completed:", call.name, ev.id);
+        console.log(`[VOICE-DIAG-${diagId}] ✅ Function call COMPLETED:`, {
+          eventId: ev.id,
+          toolName: call.name,
+          timestamp: new Date().toISOString(),
+        });
 
         // Parse arguments
         let args: any;
         try {
           args = JSON.parse(call.argsJson.join("") || "{}");
-          console.log("[RealtimeVoiceClient] Parsed args:", args);
+          console.log(`[VOICE-DIAG-${diagId}] 📋 Parsed args:`, safeJson(args, 500));
         } catch (e) {
-          console.error("[RealtimeVoiceClient] Bad tool args JSON:", e);
+          console.error(`[VOICE-DIAG-${diagId}] ❌ Bad tool args JSON:`, e);
           // Send error back to Realtime
           await s.response?.function_call?.output?.create({
             call_id: ev.id,
@@ -176,7 +186,11 @@ export class RealtimeVoiceClient {
 
         let result: any;
         try {
-          console.log(`[RealtimeVoiceClient] Executing tool via bridge: ${call.name}`, args);
+          console.log(`[VOICE-DIAG-${diagId}] 🔧 Executing tool via ToolBridge:`, {
+            toolName: call.name,
+            args: safeJson(args, 300),
+            timestamp: new Date().toISOString(),
+          });
 
           // Adaptive per-tool timeouts for optimal performance
           const TOOL_TIMEOUTS: Record<string, number> = {
@@ -208,24 +222,47 @@ export class RealtimeVoiceClient {
 
           if (bridgeResult.ok) {
             result = bridgeResult.output;
-            console.log(
-              `[RealtimeVoiceClient] Tool ${call.name} succeeded in ${bridgeResult.latency_ms}ms:`,
-              result,
-            );
+            console.log(`[VOICE-DIAG-${diagId}] ✅ Tool ${call.name} SUCCEEDED in ${bridgeResult.latency_ms}ms:`, {
+              resultPreview: safeJson(result, 500),
+              latency: bridgeResult.latency_ms,
+            });
           } else {
             result = { error: bridgeResult.error || "Tool execution failed" };
-            console.error(`[RealtimeVoiceClient] Tool ${call.name} failed:`, bridgeResult.error);
+            console.error(`[VOICE-DIAG-${diagId}] ❌ Tool ${call.name} FAILED:`, {
+              error: bridgeResult.error,
+              latency: bridgeResult.latency_ms,
+            });
           }
         } catch (e: any) {
           result = { error: e?.message ?? "Tool execution failed" };
-          console.error(`[RealtimeVoiceClient] Tool execution error:`, e);
+          console.error(`[VOICE-DIAG-${diagId}] ❌ Tool execution ERROR:`, e);
         }
 
-        // Send result back to Realtime
-        await s.response?.function_call?.output?.create({
-          call_id: ev.id,
-          output: JSON.stringify(result),
+        // Send result back to OpenAI with detailed logging
+        const payload = { call_id: ev.id, output: JSON.stringify(result) };
+        console.log(`[VOICE-DIAG-${diagId}] 📤 SUBMITTING result to OpenAI:`, {
+          callId: ev.id,
+          payloadSize: payload.output.length,
+          payloadPreview: safeJson(result, 300),
+          sessionShape: {
+            hasResponse: !!s.response,
+            hasFunctionCall: !!s.response?.function_call,
+            hasOutput: !!s.response?.function_call?.output,
+            hasCreate: typeof s.response?.function_call?.output?.create === 'function',
+          },
         });
+
+        try {
+          await s.response?.function_call?.output?.create(payload);
+          console.log(`[VOICE-DIAG-${diagId}] ✅ Result SUBMITTED successfully`);
+        } catch (submitErr: any) {
+          console.error(`[VOICE-DIAG-${diagId}] ❌ Result submission FAILED:`, {
+            error: submitErr?.message || String(submitErr),
+            errorType: submitErr?.constructor?.name,
+            fullError: safeJson(submitErr, 1000),
+          });
+          throw submitErr;
+        }
 
         // [CONTEXT REFRESH] Inject latest chart data before AI responds
         await this.refreshContext();
@@ -234,12 +271,19 @@ export class RealtimeVoiceClient {
         await s.response?.create({});
 
         delete pendingCalls[ev.id];
-        console.log(`[RealtimeVoiceClient] Sent tool result for ${call.name}`);
+        console.log(`[VOICE-DIAG-${diagId}] 🎉 Tool cycle complete for ${call.name}`);
       });
 
       // Add error listener
       s.on?.("error", (err: any) => {
-        console.error("[RealtimeVoiceClient] Session error:", err);
+        const diagId = shortId();
+        console.error(`[VOICE-DIAG-${diagId}] 🔥 Session ERROR:`, {
+          error: err,
+          errorType: typeof err,
+          errorKeys: err ? Object.keys(err) : [],
+          fullError: safeJson(err, 2000),
+          timestamp: new Date().toISOString(),
+        });
         this.config.onError?.(err);
       });
 

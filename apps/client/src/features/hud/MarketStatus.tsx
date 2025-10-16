@@ -18,7 +18,9 @@ export function MarketStatus() {
     // Fetch market status from dedicated endpoint
     const fetchStatus = async () => {
       try {
-        const response = await fetch("/api/market/status");
+        const response = await fetch("/api/market/status", {
+          credentials: "include",
+        });
 
         if (!response.ok) {
           throw new Error(`Status endpoint failed: ${response.statusText}`);

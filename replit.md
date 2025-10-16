@@ -6,6 +6,14 @@ Spotlight Trader is a production-grade, real-time trading coach application desi
 
 ## Recent Changes
 
+**October 16, 2025 - Auth Credentials Fix (Complete)**
+- ✅ Fixed market status showing "CLOSED" - added credentials to fetch requests
+- ✅ Added `credentials: "include"` to MarketStatus.tsx fetch
+- ✅ Added `credentials: "include"` to flags.ts fetch
+- ✅ Added `withCredentials: true` to all EventSource connections
+- ✅ All authenticated endpoints now properly send cookies
+- 🎯 Result: Market status, flags, and SSE streams work correctly with PIN auth
+
 **October 16, 2025 - SSE Chart Pipeline Fixes (Complete)**
 - ✅ Fixed CRITICAL "second of movement then freeze" bug via seq alignment
 - ✅ Standardized seq calculation: `Math.floor(bar_end / 60000)` across all sources

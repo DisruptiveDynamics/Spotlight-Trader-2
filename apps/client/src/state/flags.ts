@@ -50,7 +50,9 @@ export const useFlagsStore = create<FlagsStore>((set) => ({
     try {
       set({ loading: true, error: null });
 
-      const res = await fetch("/api/flags");
+      const res = await fetch("/api/flags", {
+        credentials: "include",
+      });
 
       if (!res.ok) {
         throw new Error(`Failed to fetch flags: ${res.status}`);

@@ -8,7 +8,7 @@ import { proactiveCoachingEngine } from "./coach/proactiveCoaching";
 import { setupSecurity } from "./config/security";
 import { triggerManager } from "./copilot/triggers/manager";
 import { loadFlags } from "./flags/store";
-import { liveness, readiness, healthz } from "./health";
+import { liveness, readiness, healthz, toolsHealth } from "./health";
 import { startEodScheduler } from "./journals/eod";
 import { initializeLearningLoop } from "./learning/loop";
 import { rateLimit } from "./middleware/rateLimit";
@@ -83,6 +83,7 @@ app.get("/health", (_req, res) => {
 app.get("/api/livez", liveness);
 app.get("/api/readyz", readiness);
 app.get("/api/healthz", healthz);
+app.get("/health/tools", toolsHealth);
 
 // Legacy health endpoints for compatibility
 app.get("/api/health", (_req, res) => {

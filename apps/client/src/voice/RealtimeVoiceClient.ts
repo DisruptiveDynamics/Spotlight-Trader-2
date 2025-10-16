@@ -3,6 +3,51 @@ import { RealtimeAgent, RealtimeSession } from "@openai/agents/realtime";
 import { ToolBridge } from "./ToolBridge";
 import { toolSchemas } from "./toolSchemas";
 
+// ============================================================================
+// DIAGNOSTIC HELPERS - For detailed logging and error handling
+// ============================================================================
+
+type AnyObj = Record<string, any>;
+
+function shortId(): string {
+  return Math.random().toString(36).slice(2, 9);
+}
+
+function safeJson(obj: any, len = 2000): string {
+  try {
+    const s = JSON.stringify(obj);
+    return s.length > len ? s.slice(0, len) + '...<truncated>' : s;
+  } catch (e) {
+    return String(obj);
+  }
+}
+
+async function sendStructuredErrorToSession(s: AnyObj, ev: AnyObj, err: Error): Promise<void> {
+  try {
+    const payload = {
+      type: 'error',
+      error: {
+        message: 'Tool result submission failed',
+        details: err?.message ?? String(err),
+        eventId: ev?.id ?? ev?.callId ?? null,
+      },
+    };
+    if (typeof s?.response?.create === 'function') {
+      await s.response.create(payload);
+      console.info('[diagnostic] Sent structured error via s.response.create', safeJson(payload));
+    } else if (typeof s?.create === 'function') {
+      await s.create(payload);
+      console.info('[diagnostic] Sent structured error via s.create', safeJson(payload));
+    } else {
+      console.warn('[diagnostic] No session.create available to send structured error', Object.keys(s ?? {}));
+    }
+  } catch (sendErr) {
+    console.error('[diagnostic] Failed to send structured error to session:', sendErr);
+  }
+}
+
+// ============================================================================
+
 interface VoiceClientConfig {
   instructions: string;
   voice?: "alloy" | "echo" | "shimmer" | "fable" | "onyx" | "nova";

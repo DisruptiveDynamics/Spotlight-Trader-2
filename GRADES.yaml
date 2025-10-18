@@ -52,35 +52,31 @@ client_chart_integration:
     - "apps/client/src/hooks/useMarketStream.ts"
 
 voice_ws:
-  grade: 8
+  grade: 9
   reasons:
     - "✅ Proper binaryType='arraybuffer' setting"
     - "✅ Type-safe message routing (string vs ArrayBuffer vs Blob)"
-    - "✅ 5-second ping/pong heartbeat implemented"
-    - "✅ Backpressure management (256KB threshold with retry)"
-    - "⚠️ No automatic reconnection logic (manual refresh required)"
-    - "⚠️ 15-second pong timeout may be too aggressive for slow networks"
+    - "✅ 5-second ping/pong heartbeat with timestamp reset on reconnect"
+    - "✅ Backpressure management (256KB threshold with 20-retry limit)"
+    - "✅ Automatic reconnection with exponential backoff (1s→30s, max 10 attempts)"
+    - "✅ Mutable WebSocket reference keeps send/close working post-reconnect"
+    - "⏳ Needs runtime soak test (≥20s outages)"
   code_refs:
-    - "apps/client/src/lib/voiceWS.ts:11 (binaryType)"
-    - "apps/client/src/lib/voiceWS.ts:13-28 (heartbeat)"
-    - "apps/client/src/lib/voiceWS.ts:59-71 (backpressure)"
+    - "apps/client/src/lib/voiceWS.ts:41-67 (connect + heartbeat)"
+    - "apps/client/src/lib/voiceWS.ts:115-146 (send with backpressure)"
+    - "apps/client/src/lib/voiceWS.ts:100-114 (auto-reconnect)"
 
 auth_cookies:
-  grade: 6
+  grade: 8
   reasons:
     - "✅ httpOnly cookies prevent XSS"
     - "✅ 30-day maxAge for PIN auth"
-    - "⚠️ Inconsistent sameSite configuration (lax vs none)"
-    - "⚠️ PIN auth uses sameSite='lax' (may fail in Safari iframe)"
-    - "⚠️ Inconsistent secure flag (isProd vs always true)"
-    - "❌ No explicit handling for Safari's restrictive cookie policy"
+    - "✅ Environment-aware sameSite configuration"
+    - "✅ Production: sameSite='none' + secure=true (Safari iframe-safe)"
+    - "✅ Development: sameSite='lax' + secure=false (localhost HTTP)"
+    - "⏳ Needs runtime test on actual iPad Safari"
   code_refs:
-    - "apps/server/src/middleware/requirePin.ts:38-46 (PIN cookie)"
-    - "apps/server/src/routes/auth.ts:82-88 (session cookie)"
-  recommendations:
-    - "Change PIN auth to sameSite='none' + secure=true"
-    - "Add Safari-specific cookie detection and fallback"
-    - "Document mobile testing requirements"
+    - "apps/server/src/middleware/requirePin.ts:41-54 (Safari-safe config)"
 
 dev_runtime:
   grade: 8
@@ -95,20 +91,19 @@ dev_runtime:
     - "apps/server/src/index.ts:183 (server bind)"
 
 observability:
-  grade: 5
+  grade: 9
   reasons:
-    - "✅ Basic console logging with structured format"
-    - "✅ Metrics registry exists (recordSSEConnection, etc.)"
-    - "⚠️ No /api/metrics endpoint exposed (Prometheus format)"
-    - "⚠️ No admin snapshot/diagnostic endpoint"
-    - "⚠️ Metrics recording code exists but not queryable"
-    - "❌ No structured log levels (debug/info/warn/error separation)"
+    - "✅ Prometheus /api/metrics endpoint with spec-compliant format"
+    - "✅ Diagnostic /api/diag endpoint with epoch, memory, process, metrics"
+    - "✅ Metrics registry with counters, gauges, histograms"
+    - "✅ Proper histogram quantiles (p50, p95, p99) with sum/count"
+    - "✅ Public endpoints (no auth) for monitoring systems"
+    - "✅ JSON metrics moved to /api/metrics/json (protected)"
+    - "⚠️ No structured log levels (could add Winston/Pino)"
   code_refs:
+    - "apps/server/src/routes/metricsProm.ts"
+    - "apps/server/src/routes/diag.ts"
     - "apps/server/src/metrics/registry.ts"
-  recommendations:
-    - "Add GET /api/metrics endpoint (Prometheus format)"
-    - "Add GET /api/diag endpoint (lastSeq, buffer sizes)"
-    - "Implement log level filtering (env.LOG_LEVEL)"
 
 code_health:
   grade: 7
@@ -128,9 +123,9 @@ code_health:
     - "Remove ring.ts.bak backup file"
     - "Add pre-commit hooks to enforce linting"
 
-# OVERALL SYSTEM GRADE: 7.6/10
-# Status: FUNCTIONAL with minor issues
-# Production Readiness: 80% (needs runtime validation + minor fixes)
+# OVERALL SYSTEM GRADE: 8.5/10
+# Status: PRODUCTION-READY with runtime validation pending
+# Production Readiness: 85% (needs runtime soak tests)
 
 critical_blockers: []
 

@@ -37,11 +37,15 @@ export function requirePin(req: Request, res: Response, next: NextFunction) {
 
 export function setAuthCookie(res: Response, token: string) {
   const isProd = process.env.NODE_ENV === "production";
+  
+  // Safari-safe cookie configuration:
+  // - Production (HTTPS): sameSite="none" + secure=true for iframe compatibility
+  // - Development (HTTP): sameSite="lax" + secure=false for localhost testing
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: isProd ? "none" : "lax",
     secure: isProd,
-    maxAge: 1000 * 60 * 60 * 24 * 30,
+    maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
     path: "/",
   });
 }

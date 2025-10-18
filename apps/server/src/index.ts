@@ -35,6 +35,8 @@ import triggerTestRouter from "./routes/triggerTest";
 import voicePreviewRouter from "./routes/voicePreview";
 import { voiceDebugRouter } from "./routes/voiceDebug";
 import replayRouter from "./routes/replay";
+import metricsPromRouter from "./routes/metricsProm";
+import diagRouter from "./routes/diag";
 import { requirePin } from "./middleware/requirePin";
 import { initializeMarketSource } from "./market/bootstrap";
 import { errorHandler, notFound } from "./middleware/error";
@@ -118,6 +120,10 @@ app.get("/tools/quote", async (_req, res) => {
 // Voice debugging routes (public - for diagnostic testing)
 app.use("/debug", voiceDebugRouter);
 
+// Observability endpoints (public - no auth for monitoring)
+app.use("/api/metrics", metricsPromRouter); // Prometheus format
+app.use("/api/diag", diagRouter); // Diagnostic snapshot
+
 // PIN auth routes (public - no middleware)
 app.use("/api/auth", pinAuthRouter);
 app.use("/auth", pinAuthRouter);
@@ -127,7 +133,7 @@ app.use("/api", epochRouter);
 
 // Protected routes (require PIN authentication)
 app.use("/api/flags", requirePin, flagsRouter);
-app.use("/api/metrics", requirePin, metricsRouter);
+app.use("/api/metrics/json", requirePin, metricsRouter); // JSON metrics (protected)
 app.use("/api/admin", requirePin, adminRouter);
 
 initializeMarketPipeline(app);

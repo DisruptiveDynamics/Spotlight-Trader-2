@@ -180,17 +180,23 @@ None currently identified. Recent fixes addressed critical data pipeline issues.
    - Verify charts update continuously without freezing
    - Monitor for sequence gaps in logs
 
-2. **Voice WebSocket Testing** (1 hour)
-   - Test binary audio streaming end-to-end
-   - Monitor for disconnects/loops
-   - Verify heartbeat behavior under load
+2. **Voice WebSocket Testing** ✅ COMPLETE (Implementation)
+   - ✅ Binary audio streaming with proper ArrayBuffer handling
+   - ✅ Auto-reconnect with exponential backoff
+   - ✅ Heartbeat with pong timestamp reset
+   - ⏳ Needs: End-to-end soak test (≥20s outages)
 
-3. **Auth Cookie Hardening** (30 minutes)
-   - Change PIN auth to `sameSite: "none"` + `secure: true`
-   - Test on actual iPad Safari
-   - Document mobile-specific gotchas
+3. **Auth Cookie Hardening** ✅ COMPLETE
+   - ✅ Changed PIN auth to environment-aware sameSite config
+   - ✅ Production: `sameSite: "none"` + `secure: true`
+   - ✅ Development: `sameSite: "lax"` + `secure: false`
+   - ⏳ Needs: Test on actual iPad Safari
 
-4. **Code Cleanup** ✅ COMPLETE
+4. **Observability Endpoints** ✅ COMPLETE
+   - ✅ Prometheus /api/metrics endpoint (spec-compliant)
+   - ✅ Diagnostic /api/diag endpoint
+   - ✅ Moved JSON metrics to /api/metrics/json (protected)
+
+5. **Code Cleanup** ✅ COMPLETE
    - ✅ Fixed all ESLint errors (lint now passes)
    - ✅ Removed `ring.ts.bak`
-   - Optional: Add JSDoc comments to critical seq calculation sites

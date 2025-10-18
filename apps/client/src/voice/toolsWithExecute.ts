@@ -17,14 +17,16 @@ export function createVoiceTools(toolBridge: ToolBridge) {
         symbol: z.string().describe("Stock symbol (e.g., SPY, QQQ)"),
         timeframe: z
           .enum(["1m", "2m", "5m", "10m", "15m", "30m", "1h"])
-          .optional()
+          .nullish()
+          .default("1m")
           .describe("Chart timeframe (default: 1m)"),
         barCount: z
           .number()
           .int()
           .min(1)
           .max(100)
-          .optional()
+          .nullish()
+          .default(20)
           .describe("Number of bars to retrieve (default: 20, max: 100)"),
       }),
       execute: async (input) => {
@@ -43,7 +45,8 @@ export function createVoiceTools(toolBridge: ToolBridge) {
         symbol: z.string().describe("Stock symbol"),
         timeframe: z
           .enum(["1m", "2m", "5m", "10m", "15m", "30m", "1h"])
-          .optional()
+          .nullish()
+          .default("1m")
           .describe("Timeframe for regime detection"),
       }),
       execute: async (input) => {
@@ -59,7 +62,7 @@ export function createVoiceTools(toolBridge: ToolBridge) {
       name: "get_recent_journal",
       description: "Get recent journal entries and trading notes",
       parameters: z.object({
-        limit: z.number().int().min(1).max(50).optional().describe("Max entries to return"),
+        limit: z.number().int().min(1).max(50).nullish().default(10).describe("Max entries to return"),
       }),
       execute: async (input) => {
         const result = await toolBridge.exec("get_recent_journal", input, 3000);
@@ -74,7 +77,7 @@ export function createVoiceTools(toolBridge: ToolBridge) {
       name: "get_active_rules",
       description: "Get active trading rules and alerts",
       parameters: z.object({
-        limit: z.number().int().min(1).max(50).optional().describe("Max rules to return"),
+        limit: z.number().int().min(1).max(50).nullish().default(10).describe("Max rules to return"),
       }),
       execute: async (input) => {
         const result = await toolBridge.exec("get_active_rules", input, 2000);
@@ -89,8 +92,8 @@ export function createVoiceTools(toolBridge: ToolBridge) {
       name: "get_recent_signals",
       description: "Get recent trading signals and alerts",
       parameters: z.object({
-        limit: z.number().int().min(1).max(50).optional().describe("Max signals to return"),
-        symbol: z.string().optional().describe("Filter by symbol"),
+        limit: z.number().int().min(1).max(50).nullish().default(10).describe("Max signals to return"),
+        symbol: z.string().nullish().describe("Filter by symbol"),
       }),
       execute: async (input) => {
         const result = await toolBridge.exec("get_recent_signals", input, 2000);
@@ -106,7 +109,7 @@ export function createVoiceTools(toolBridge: ToolBridge) {
       description: "Search trading playbook for strategies and setups",
       parameters: z.object({
         query: z.string().describe("Search query"),
-        limit: z.number().int().min(1).max(20).optional().describe("Max results"),
+        limit: z.number().int().min(1).max(20).nullish().default(10).describe("Max results"),
       }),
       execute: async (input) => {
         const result = await toolBridge.exec("search_playbook", input, 3000);
@@ -122,7 +125,7 @@ export function createVoiceTools(toolBridge: ToolBridge) {
       description: "Search trading glossary for definitions and terms",
       parameters: z.object({
         query: z.string().describe("Search query"),
-        limit: z.number().int().min(1).max(20).optional().describe("Max results"),
+        limit: z.number().int().min(1).max(20).nullish().default(10).describe("Max results"),
       }),
       execute: async (input) => {
         const result = await toolBridge.exec("search_glossary", input, 3000);

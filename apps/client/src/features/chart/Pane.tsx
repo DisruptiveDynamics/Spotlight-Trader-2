@@ -65,6 +65,8 @@ export function Pane({ className = "" }: PaneProps) {
 
     if (bars.length && seriesRef.current && volumeSeriesRef.current) {
       for (const bar of bars) {
+        if (!bar.ohlcv || typeof bar.ohlcv !== 'object') continue;
+        
         const time = Math.floor(bar.bar_end / 1000) as UTCTimestamp;
         const { o, h, l, c, v } = bar.ohlcv;
 
@@ -100,7 +102,7 @@ export function Pane({ className = "" }: PaneProps) {
 
     // Process only the last microbar for the current bucket
     const micro = micros.at(-1);
-    if (micro && seriesRef.current && currentBarTimeRef.current > 0) {
+    if (micro && micro.ohlcv && typeof micro.ohlcv === 'object' && seriesRef.current && currentBarTimeRef.current > 0) {
       const microMinute = Math.floor(micro.ts / 60000) * 60000;
       if (microMinute === currentMinuteRef.current) {
         const { o, h, l, c } = micro.ohlcv;

@@ -34,6 +34,7 @@ import copilotActionsRouter from "./routes/copilotActions";
 import triggerTestRouter from "./routes/triggerTest";
 import voicePreviewRouter from "./routes/voicePreview";
 import { voiceDebugRouter } from "./routes/voiceDebug";
+import replayRouter from "./routes/replay";
 import { requirePin } from "./middleware/requirePin";
 import { initializeMarketSource } from "./market/bootstrap";
 import { errorHandler, notFound } from "./middleware/error";
@@ -151,6 +152,7 @@ app.use("/api/copilot", requirePin, copilotToolsRouter);
 app.use("/api/copilot", requirePin, copilotActionsRouter);
 app.use("/api/voice", requirePin, voicePreviewRouter);
 app.use("/api/triggers", requirePin, triggerTestRouter);
+app.use("/api/replay", requirePin, replayRouter);
 
 initializeLearningLoop();
 startEodScheduler();

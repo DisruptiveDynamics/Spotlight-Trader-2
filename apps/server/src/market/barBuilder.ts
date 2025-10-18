@@ -153,11 +153,18 @@ export class BarBuilder {
   private finalizeBar(symbol: string, timeframe: string, state: SymbolState) {
     if (!state.currentBar) return;
 
-    // [CRITICAL] Use timestamp-based seq to align with client and REST API
-    // seq = floor(bar_end / 60000) ensures all sources (SSE, REST, client backfill) use same calculation
-    // This prevents the "second of movement then freeze" bug where incremental seq (1,2,3...)
-    // was filtered out after client backfilled with timestamp-based seq (29343375...)
-    const seq = Math.floor(state.bar_end / 60000);
+    const stateKey = `${symbol}:${timeframe}`;
+
+    // [CRITICAL] Authoritative seq = floor(bar_start ms / 60_000)
+    // This ensures seq is deterministic and aligned across all sources:
+    // - Live ticks → barBuilder
+    // - Historical REST API → history service
+    // - SSE backfill → client
+    // Using bar_start (not bar_end) matches industry standard and Polygon API
+    const seqFromTime = Math.floor(state.bar_start / 60000);
+    const currentSeq = this.lastSeq.get(stateKey) ?? 0;
+    const seq = seqFromTime > currentSeq ? seqFromTime : currentSeq + 1;
+    this.lastSeq.set(stateKey, seq);
 
     const finalizedBar: MarketBarEvent = {
       symbol,
@@ -173,6 +180,12 @@ export class BarBuilder {
         v: state.currentBar.volume,
       },
     };
+
+    console.debug(
+      `[barBuilder] finalized symbol=${symbol} tf=${timeframe} seq=${seq} ` +
+      `start=${new Date(state.bar_start).toISOString()} end=${new Date(state.bar_end).toISOString()} ` +
+      `o=${finalizedBar.ohlcv.o} c=${finalizedBar.ohlcv.c} v=${finalizedBar.ohlcv.v}`
+    );
 
     // Clear microbars to prevent memory leak
     state.microbars = [];

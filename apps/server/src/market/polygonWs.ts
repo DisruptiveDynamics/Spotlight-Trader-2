@@ -3,7 +3,6 @@ import { validateEnv } from "@shared/env";
 
 import { eventBus } from "./eventBus";
 import { isExtendedHoursActive } from "./marketHours";
-import { mockTickGenerator } from "./mockTickGenerator";
 
 const env = validateEnv(process.env);
 
@@ -49,12 +48,12 @@ export class PolygonWebSocket {
 
       if (!extendedHoursActive) {
         console.log(
-          `🌙 Outside extended hours (4 AM-8 PM ET) - WebSocket unavailable, using REST API + mock ticks`,
+          `🌙 Outside extended hours (4 AM-8 PM ET) - WebSocket unavailable`,
         );
-        this.useMockData = false; // Don't block REST API - just means we need mock ticks
+        console.log(`💡 Use OnDemand replay (/api/replay/start) to test with historical data`);
+        this.useMockData = false;
         this.useWebSocket = false;
         this.isConnected = true;
-        this.resubscribe(); // Start mock tick generators (bars will use REST API for history)
         return;
       }
 
@@ -75,13 +74,6 @@ export class PolygonWebSocket {
           this.reconnectAttempts = 0;
           this.lastMessageTime = Date.now();
           this.startHeartbeat();
-
-          // Stop mock generators when switching to real WebSocket data
-          if (this.useWebSocket) {
-            this.subscribedSymbols.forEach((symbol) => {
-              mockTickGenerator.stop(symbol);
-            });
-          }
 
           // Manually send auth message (library not doing it automatically)
           ws.send(JSON.stringify({ action: "auth", params: env.POLYGON_API_KEY }));
@@ -133,21 +125,17 @@ export class PolygonWebSocket {
             msg.message.toLowerCase().includes("invalid api key")));
 
       if (authFailed) {
-        console.error("❌ Polygon authentication failed - falling back to mock data");
+        console.error("❌ Polygon authentication failed");
+        console.log(`💡 Use OnDemand replay (/api/replay/start) to test with historical data`);
         this.useMockData = true;
         this.useWebSocket = false;
         this.isConnected = false;
 
-        // Close WebSocket and start mock generators
+        // Close WebSocket
         if (this.ws) {
           (this.ws as any).close();
           this.ws = null;
         }
-
-        // Start mock generators for all subscribed symbols
-        this.subscribedSymbols.forEach((symbol) => {
-          mockTickGenerator.start(symbol);
-        });
       }
       return;
     }
@@ -167,8 +155,8 @@ export class PolygonWebSocket {
     this.subscribedSymbols.add(symbol);
 
     if (this.useMockData || !this.useWebSocket) {
-      // Start mock tick generator for this symbol (auth failed OR outside extended hours)
-      mockTickGenerator.start(symbol);
+      // No live data available (auth failed OR outside extended hours)
+      // Use OnDemand replay instead for testing
       return;
     }
 
@@ -186,8 +174,7 @@ export class PolygonWebSocket {
     this.subscribedSymbols.delete(symbol);
 
     if (this.useMockData || !this.useWebSocket) {
-      // Stop mock tick generator (auth failed OR outside extended hours)
-      mockTickGenerator.stop(symbol);
+      // No live data to unsubscribe from
       return;
     }
 
@@ -203,10 +190,7 @@ export class PolygonWebSocket {
 
   private resubscribe() {
     if (this.useMockData || !this.useWebSocket) {
-      // Start mock generators for all subscribed symbols (auth failed OR outside extended hours)
-      for (const symbol of this.subscribedSymbols) {
-        mockTickGenerator.start(symbol);
-      }
+      // No live data available - use OnDemand replay for testing
       return;
     }
 
@@ -265,10 +249,6 @@ export class PolygonWebSocket {
 
   close() {
     this.stopHeartbeat();
-
-    if (this.useMockData) {
-      mockTickGenerator.stopAll();
-    }
 
     if (this.ws) {
       (this.ws as any).close();

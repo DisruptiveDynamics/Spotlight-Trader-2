@@ -187,16 +187,17 @@ async function fetchPolygonHistory(
   const timeframeMs = timeframeToMs(timeframe);
   const fromMs = toMs - limit * timeframeMs;
 
-  // Format dates for Polygon API (YYYY-MM-DD)
-  const fromDate = new Date(fromMs).toISOString().split("T")[0];
-  const toDate = new Date(toMs).toISOString().split("T")[0];
+  // [CRITICAL] Use precise ISO timestamps for better data accuracy
+  // Full ISO format gives Polygon exact boundaries instead of date-only
+  const fromISO = new Date(fromMs).toISOString();
+  const toISO = new Date(toMs).toISOString();
 
   const multiplier = timeframeToMultiplier(timeframe);
-  const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/minute/${fromDate}/${toDate}`;
+  const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/minute/${fromISO}/${toISO}`;
   const params = new URLSearchParams({
     adjusted: "true",
     sort: "asc",
-    limit: String(limit), // Use actual limit, not 50000
+    limit: String(limit),
     apiKey: env.POLYGON_API_KEY,
   });
 
@@ -206,20 +207,30 @@ async function fetchPolygonHistory(
       signal: AbortSignal.timeout(10000), // 10s timeout
     });
 
+    const status = response.status;
+    const raw = await response.text().catch(() => "");
+
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "Unknown error");
-      console.warn(`Polygon API error (${response.status}): ${errorText}`);
+      console.warn(`[history] Polygon error status=${status} body=${raw}`);
       return [];
     }
 
-    const data = (await response.json()) as PolygonAggResponse;
-
-    if (!data.results || data.results.length === 0) {
-      console.warn(`No historical data from Polygon for ${symbol}`);
+    let data: PolygonAggResponse | null = null;
+    try {
+      data = JSON.parse(raw) as PolygonAggResponse;
+    } catch (e) {
+      console.warn(`[history] Polygon parse error for ${symbol} (${status}):`, e);
       return [];
     }
 
-    const timeframeMs = timeframeToMs(timeframe);
+    if (!data?.results?.length) {
+      console.warn(
+        `[history] Empty Polygon results for ${symbol} ${fromISO}→${toISO} ` +
+        `status=${status} body=${raw}`
+      );
+      return [];
+    }
+
     const bars: Bar[] = data.results.map((agg) => {
       const bar_start = agg.t;
       const bar_end = bar_start + timeframeMs;
@@ -232,9 +243,9 @@ async function fetchPolygonHistory(
         low: agg.l,
         close: agg.c,
         volume: agg.v,
-        // [CRITICAL] Always use 60000 (1m) for seq calculation regardless of timeframe
-        // This keeps seq consistent with client expectation: Math.floor(bar_end / 60000)
-        seq: Math.floor(bar_end / 60000),
+        // [CRITICAL] Use 60000ms base for seq (matches barBuilder exactly)
+        // Always use 1-minute base regardless of timeframe to ensure alignment
+        seq: Math.floor(bar_start / 60000),
         bar_start,
         bar_end,
       };
@@ -243,8 +254,7 @@ async function fetchPolygonHistory(
     console.log(`✅ Fetched ${bars.length} historical bars from Polygon for ${symbol}`);
     return bars;
   } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : "Unknown error";
-    console.warn(`Polygon API request failed: ${errorMsg}`);
+    console.warn(`[history] Polygon request failed:`, err);
     return [];
   }
 }
@@ -315,7 +325,8 @@ function generateRealisticBars(symbol: string, fromMs: number, toMs: number, lim
       low: Math.round(low * 100) / 100,
       close: Math.round(close * 100) / 100,
       volume,
-      seq: Math.floor(bar_end / 60000),
+      // [CRITICAL] Use bar_start for seq (matches barBuilder and fetchPolygonHistory)
+      seq: Math.floor(bar_start / 60000),
       bar_start,
       bar_end,
     });

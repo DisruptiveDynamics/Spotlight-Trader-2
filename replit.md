@@ -6,6 +6,18 @@ Spotlight Trader is a production-grade, real-time trading coach application desi
 
 ## Recent Changes
 
+**October 18, 2025 - OnDemand Replay System (Complete)**
+- ✅ **Replaced mock tick generator** with ThinkorSwim-style OnDemand historical replay
+- ✅ Unified data path: Single pipeline for both live and replay data (eliminates format drift bugs)
+- ✅ Sequence fixes: Changed bar_end → bar_start for seq calculation (industry standard)
+- ✅ Monotonic protection: Added safeguards to prevent sequence number regression
+- ✅ Polygon improvements: Precise ISO timestamps and better error logging in history service
+- ✅ Voice WebSocket wrapper: Robust binary handling, heartbeat, and backpressure management
+- ✅ Replay engine: `/api/replay/start`, `/stop`, `/speed` endpoints with microbar interpolation
+- ✅ ReplayControls UI: Date picker, speed controls (1x-10x), and play/pause functionality
+- ✅ Removed ~300 lines of mock tick generator code from polygonWs.ts
+- 🎯 Result: Test voice features and charts anytime with real historical market data
+
 **October 16, 2025 - Timeframe Selector Fix (Complete)**
 - ✅ **Fixed blocking bug**: Timeframe selector now fully functional across all timeframes
 - ✅ marketStream: Added timeframe parameter to SSE/history requests including window focus

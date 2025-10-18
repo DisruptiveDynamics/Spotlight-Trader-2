@@ -1,0 +1,326 @@
+You are operating in DisruptiveDynamics/Spotlight-Trader-2. Make small, surgical PRs that align with current code. Don’t invent new frameworks or state managers.
+
+Objective
+1) Fix blocking voice tool schema mismatch for OpenAI Realtime
+2) Make logging production-safe and reduce noise in hot paths
+3) Batch SSE updates in Pane to lower render thrash
+4) Lay groundwork for incremental indicators (O(1))
+5) Improve SSE type-safety guards
+6) Remove dead code flagged as unused
+
+Constraints
+- Keep existing architecture: Zustand store, Pane chart, server rollups from 1m.
+- TypeScript strict; runtime validation where inputs cross trust boundaries.
+- No new global state managers.
+- Don’t regress working timeframe switching.
+
+Tasks
+
+A) Voice tool schema — accept nullable optionals
+Problem: Realtime SDK can send null for optional fields (e.g., barCount). Zod schemas using .optional() alone reject null.
+
+1. Update all voice/copilot tool Zod schemas that have optional numeric/string params to use .nullish().default(...)
+- Search for optional numeric or string fields (limit, barCount, lookback, etc.) and switch:
+  - z.number().int().min(...).max(...).nullish().default(DEFAULT)
+  - z.string().nullish().default(DEFAULT)
+- Examples likely in apps/server/src/copilot/tools/handlers (get_chart_snapshot) and apps/server/src/voice/tools.ts.
+
+2. Relax the Realtime JSON schema to allow nulls for optional fields:
+- apps/server/src/realtime/voiceTools.ts → VOICE_COPILOT_TOOLS → get_chart_snapshot.parameters.properties.barCount
+  - type: ["number","null"]
+  - minimum: 1, maximum: 200
+- Keep required: ["symbol", "timeframe"].
+
+3. Coerce defaults in handlers:
+- If barCount is nullish, default to 50.
+- Cap barCount to server-allowed max (e.g., 200).
+
+Acceptance:
+- Realtime get_chart_snapshot executes when barCount=null, barCount omitted, and barCount provided.
+- ensureMarketContext can still call toolHandlers.get_chart_snapshot({ barCount: 50 }) without changes.
+
+B) Production-safe logging
+Create a minimal shared logger and migrate hot-path console.* to it. Logger should no-op debug/info in production.
+
+- Add packages/shared/src/logger.ts
+- Replace console.log/info/debug in:
+  - apps/client/src/lib/marketStream.ts (reconnect/gap-fill logs)
+  - apps/client/src/features/chart/Pane.tsx (SSE/updates)
+  - apps/server/src/stream/sse.ts (optional: keep warn/error)
+  - Any super-hot console spam your search finds
+- Keep warn/error always on; format with ISO timestamp.
+
+C) Pane SSE batching (smooth rendering)
+Pane currently updates chart state every event. Batch per animation frame like ChartView.
+
+- In apps/client/src/features/chart/Pane.tsx:
+  - Add barQueueRef, microQueueRef, rafIdRef.
+  - Push incoming events to queues in onBar/onMicro.
+  - scheduleProcess() if no RAF is pending.
+  - processBatches() applies:
+    - All queued bars in order
+    - Only the last microbar for the current bucket
+  - Validate numeric fields before update to avoid NaN writes.
+
+Acceptance:
+- Under high event rate, FPS remains stable and UI is responsive.
+- Visual parity with prior behavior.
+
+D) Incremental indicators (O(1)) — scaffold only
+- Add a new shared module for incremental updates (EMA, BB via Welford, volume SMA).
+- Wire but don’t fully switch Pane unless trivial; keep batch versions for now.
+
+E) SSE payload guards (client)
+- In marketStream.ts, before enqueue/update, add narrow runtime guards (isBar/isMicro).
+- If invalid, log warn via logger and skip.
+
+F) Dead code removal (safe cleanup)
+Remove unused files (exact list below). Verify no imports break. Remove unused imports elsewhere.
+
+Files to delete (safe):
+- apps/client/src/agent/coachClient.ts
+- apps/client/src/components/BacktestPanel.tsx
+- apps/client/src/features/auth/SignIn.tsx
+- apps/client/src/features/coach/KnowledgeUploadModal.tsx
+- apps/client/src/voice/jitterBuffer.ts
+- apps/client/src/voice/VAD.ts
+- And the additional ~14 flagged unused files in the agent’s report.
+
+G) Optional: Dynamic gap backfill sizing
+- If client gap-fill fetch during reconnect is capped small, scale requested bars based on gap or loop until toSeq reached.
+- Ensure timeframe is correctly included if the history API expects it; otherwise, defer if server streams rolled timeframe post-switch (no regressions).
+
+Code changes
+
+1) Logger
+```typescript name=packages/shared/src/logger.ts
+export type LogLevel = "debug" | "info" | "warn" | "error";
+
+const isBrowser = typeof window !== "undefined";
+const mode =
+  (isBrowser ? (import.meta as any)?.env?.MODE : process.env.NODE_ENV) || "development";
+const isDev = mode !== "production";
+
+function fmt(level: LogLevel, msg: any, ...args: any[]) {
+  const ts = new Date().toISOString();
+  return [`[${ts}] [${level.toUpperCase()}]`, msg, ...args] as const;
+}
+
+export const logger = {
+  debug: (...args: any[]) => {
+    if (isDev) console.debug(...fmt("debug", ...args));
+  },
+  info: (...args: any[]) => {
+    if (isDev) console.info(...fmt("info", ...args));
+  },
+  warn: (...args: any[]) => console.warn(...fmt("warn", ...args)),
+  error: (...args: any[]) => console.error(...fmt("error", ...args)),
+};
+```
+
+2) Realtime voice tool JSON schema: allow null barCount
+```typescript name=apps/server/src/realtime/voiceTools.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/server/src/realtime/voiceTools.ts
+// ...existing imports...
+export const VOICE_COPILOT_TOOLS: VoiceTool[] = [
+  {
+    type: "function",
+    name: "get_chart_snapshot",
+    description:
+      "Get current chart data including OHLCV bars, indicators, session stats, volatility, and market regime for analysis",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "The trading symbol (e.g., SPY, QQQ, NVDA)" },
+        timeframe: {
+          type: "string",
+          description: "The chart timeframe (e.g., 1m, 5m, 15m, 1h)",
+          enum: ["1m", "2m", "5m", "10m", "15m", "30m", "1h"],
+        },
+        barCount: {
+          // Accept null from Realtime; handler will coerce default
+          type: ["number", "null"],
+          description: "Number of bars to return (default 50, max 200)",
+          minimum: 1,
+          maximum: 200,
+        },
+      },
+      required: ["symbol", "timeframe"],
+      additionalProperties: false,
+    },
+  },
+  // ...other tools unchanged...
+];
+```
+
+3) Voice/copilot Zod params: accept nullish optionals + defaults
+Apply this pattern wherever optional numbers/strings exist.
+
+```typescript name=apps/server/src/voice/tools.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/server/src/voice/tools.ts
+// at top
+const symbolSchema = z.string().min(1).max(10);
+const timeframeSchema = z.enum(["1m","2m","5m","10m","15m","30m","1h"]);
+
+// Example fixes for common optional params:
+const zLimit10 = z.number().int().min(1).max(50).nullish().default(10);
+
+// get_recent_journal
+async get_recent_journal(input: unknown, userId: string) {
+  const params = z.object({ limit: zLimit10 }).parse(input);
+  // ...
+}
+
+// get_active_rules
+async get_active_rules(input: unknown, userId: string) {
+  const params = z.object({ limit: zLimit10 }).parse(input);
+  // ...
+}
+
+// get_recent_signals
+async get_recent_signals(input: unknown, userId: string) {
+  const params = z.object({
+    limit: zLimit10,
+    symbol: symbolSchema.nullish(),
+  }).parse(input);
+  // ...
+}
+
+// Add a handler or adjust existing get_chart_snapshot Zod parse to:
+async get_chart_snapshot(input: unknown, userId: string) {
+  const params = z.object({
+    symbol: symbolSchema,
+    timeframe: timeframeSchema,
+    barCount: z.number().int().min(1).max(200).nullish().default(50),
+  }).parse(input);
+
+  const { symbol, timeframe, barCount } = params;
+  return getChartSnapshot({ symbol, timeframe, barCount }, userId);
+}
+```
+
+Note: If get_chart_snapshot Zod parse lives in apps/server/src/copilot/tools/handlers, apply the same .nullish().default(50) fix there.
+
+4) Pane batching (apply rAF queue)
+```typescript name=apps/client/src/features/chart/Pane.tsx url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/src/features/chart/Pane.tsx
+// add near imports
+import { logger } from "@spotlight/shared/logger";
+// add inside component:
+const barQueueRef = useRef<Bar[]>([]);
+const microQueueRef = useRef<Micro[]>([]);
+const rafIdRef = useRef<number | null>(null);
+
+function scheduleProcess() {
+  if (rafIdRef.current != null) return;
+  rafIdRef.current = requestAnimationFrame(processBatches);
+}
+
+function processBatches() {
+  rafIdRef.current = null;
+  const bars = barQueueRef.current;
+  const micros = microQueueRef.current;
+  barQueueRef.current = [];
+  microQueueRef.current = [];
+
+  if (bars.length && seriesRef.current && volumeSeriesRef.current) {
+    for (const bar of bars) {
+      const time = Math.floor(bar.bar_end / 1000) as UTCTimestamp;
+      const { o, h, l, c, v } = bar.ohlcv;
+      if ([o, h, l, c].some((n) => n == null || Number.isNaN(n))) continue;
+
+      if (chartStyle === "line") {
+        seriesRef.current.update({ time, value: c });
+      } else {
+        seriesRef.current.update({ time, open: o, high: h, low: l, close: c });
+      }
+
+      if (v != null && !Number.isNaN(v)) {
+        volumeSeriesRef.current.update({
+          time,
+          value: v,
+          color: c >= o ? "#10b98166" : "#ef444466",
+        });
+      }
+
+      const newCandle: Candle = { t: bar.bar_end, ohlcv: bar.ohlcv };
+      setCandles((prev) => {
+        const last = prev[prev.length - 1];
+        return last && last.t === newCandle.t ? [...prev.slice(0, -1), newCandle] : [...prev, newCandle];
+      });
+
+      currentMinuteRef.current = Math.floor(bar.bar_end / 60000) * 60000;
+      currentBarTimeRef.current = time;
+    }
+  }
+
+  const micro = micros.at(-1);
+  if (micro && seriesRef.current && currentBarTimeRef.current > 0) {
+    const microMinute = Math.floor(micro.ts / 60000) * 60000;
+    if (microMinute === currentMinuteRef.current) {
+      const { o, h, l, c } = micro.ohlcv;
+      if ([o, h, l, c].some((n) => n == null || Number.isNaN(n))) return;
+
+      if (chartStyle === "line") {
+        seriesRef.current.update({ time: currentBarTimeRef.current as UTCTimestamp, value: c });
+      } else {
+        seriesRef.current.update({
+          time: currentBarTimeRef.current as UTCTimestamp,
+          open: o,
+          high: h,
+          low: l,
+          close: c,
+        });
+      }
+    }
+  }
+}
+
+// Hook into SSE:
+useEffect(() => {
+  if (!seriesRef.current || !volumeSeriesRef.current) return;
+  const sse = connectMarketSSE([active.symbol]);
+  sse.onBar((bar) => { barQueueRef.current.push(bar); scheduleProcess(); });
+  sse.onMicro((micro) => { microQueueRef.current.push(micro); scheduleProcess(); });
+  return () => { sse.close(); if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current); };
+}, [active.symbol, chartStyle]);
+```
+
+5) SSE payload guards (client)
+```typescript name=apps/client/src/lib/marketStream.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/src/lib/marketStream.ts
+import { logger } from "@spotlight/shared/logger";
+
+function isFiniteNumber(n: any): n is number { return typeof n === "number" && Number.isFinite(n); }
+
+function isBarPayload(b: any): b is Bar {
+  return b && isFiniteNumber(b.seq) && isFiniteNumber(b.bar_end)
+    && b.ohlcv && ["o","h","l","c"].every(k => isFiniteNumber(b.ohlcv[k]));
+}
+
+function isMicroPayload(m: any): m is Micro {
+  return m && isFiniteNumber(m.ts)
+    && m.ohlcv && ["o","h","l","c"].every(k => isFiniteNumber(m.ohlcv[k]));
+}
+
+// In event listeners, validate before using:
+es.addEventListener("bar", (e) => {
+  const b = JSON.parse((e as MessageEvent).data);
+  if (!isBarPayload(b)) { logger.warn("Invalid bar payload", b); return; }
+  // existing handling...
+});
+
+es.addEventListener("microbar", (e) => {
+  const m = JSON.parse((e as MessageEvent).data);
+  if (!isMicroPayload(m)) { logger.warn("Invalid micro payload", m); return; }
+  // existing handling...
+});
+```
+
+Cleanups
+- Delete unused files listed above and their imports. Run typecheck and build.
+
+Verification
+- Voice coach connects; get_chart_snapshot works with barCount omitted or null.
+- Charts remain smooth under load; no duplicate churn; timeframe switching remains working.
+- Production build shows drastically fewer logs (warn/error only).
+- Type checks pass; no regressions.
+
+Notes
+- If history backfill in marketStream.ts still hardcodes timeframe=1m for the gap, keep it if server streams rolled timeframe post-switch and Pane handles history with the active timeframe. If you later need rolled backfill via SSE connect, pass the current timeframe too (but do not regress working flow now).

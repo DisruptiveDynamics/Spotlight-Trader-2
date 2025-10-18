@@ -9,4 +9,5 @@ export * from "./indicators.js";
 export * from "./indicators.incremental.js";
 export * from "./voicePolicy.js";
 export * from "./utils/time.js";
+export * from "./utils/logger.js";
 export * from "./perf/metrics.js";

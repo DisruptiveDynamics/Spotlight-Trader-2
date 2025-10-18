@@ -44,6 +44,86 @@ export function Pane({ className = "" }: PaneProps) {
 
   const [showExplainButton, setShowExplainButton] = useState(false);
 
+  // RAF batching for smooth rendering
+  const barQueueRef = useRef<Bar[]>([]);
+  const microQueueRef = useRef<Micro[]>([]);
+  const rafIdRef = useRef<number | null>(null);
+
+  // Schedule batch processing on next animation frame
+  const scheduleProcess = () => {
+    if (rafIdRef.current != null) return;
+    rafIdRef.current = requestAnimationFrame(processBatches);
+  };
+
+  // Process queued bars and micros in batches
+  const processBatches = () => {
+    rafIdRef.current = null;
+    const bars = barQueueRef.current;
+    const micros = microQueueRef.current;
+    barQueueRef.current = [];
+    microQueueRef.current = [];
+
+    if (bars.length && seriesRef.current && volumeSeriesRef.current) {
+      for (const bar of bars) {
+        const time = Math.floor(bar.bar_end / 1000) as UTCTimestamp;
+        const { o, h, l, c, v } = bar.ohlcv;
+
+        // Validate numeric fields before update
+        if ([o, h, l, c].some((n) => n == null || Number.isNaN(n))) continue;
+
+        if (chartStyle === "line") {
+          seriesRef.current.update({ time, value: c });
+        } else {
+          seriesRef.current.update({ time, open: o, high: h, low: l, close: c });
+        }
+
+        if (v != null && !Number.isNaN(v)) {
+          volumeSeriesRef.current.update({
+            time,
+            value: v,
+            color: c >= o ? "#10b98166" : "#ef444466",
+          });
+        }
+
+        const newCandle: Candle = { t: bar.bar_end, ohlcv: bar.ohlcv };
+        setCandles((prev) => {
+          const last = prev[prev.length - 1];
+          return last && last.t === newCandle.t
+            ? [...prev.slice(0, -1), newCandle]
+            : [...prev, newCandle];
+        });
+
+        currentMinuteRef.current = Math.floor(bar.bar_end / 60000) * 60000;
+        currentBarTimeRef.current = time;
+      }
+    }
+
+    // Process only the last microbar for the current bucket
+    const micro = micros.at(-1);
+    if (micro && seriesRef.current && currentBarTimeRef.current > 0) {
+      const microMinute = Math.floor(micro.ts / 60000) * 60000;
+      if (microMinute === currentMinuteRef.current) {
+        const { o, h, l, c } = micro.ohlcv;
+        if ([o, h, l, c].some((n) => n == null || Number.isNaN(n))) return;
+
+        if (chartStyle === "line") {
+          seriesRef.current.update({
+            time: currentBarTimeRef.current as UTCTimestamp,
+            value: c,
+          });
+        } else {
+          seriesRef.current.update({
+            time: currentBarTimeRef.current as UTCTimestamp,
+            open: o,
+            high: h,
+            low: l,
+            close: c,
+          });
+        }
+      }
+    }
+  };
+
   // Convert candles for indicators
   const candlesForIndicators = useMemo(() => {
     return candles.map((c) => ({
@@ -301,112 +381,28 @@ export function Pane({ className = "" }: PaneProps) {
     };
   }, [active.symbol, active.timeframe, chartStyle]);
 
-  // Connect to SSE for real-time updates
+  // Connect to SSE for real-time updates with RAF batching
   useEffect(() => {
     if (!seriesRef.current || !volumeSeriesRef.current) return;
 
     const sseConnection = connectMarketSSE([active.symbol]);
 
     sseConnection.onBar((bar: Bar) => {
-      if (!seriesRef.current || !volumeSeriesRef.current) return;
-
-      const time = Math.floor(bar.bar_end / 1000) as UTCTimestamp;
-
-      // Validate OHLC data before updating
-      if (
-        bar.ohlcv.o != null &&
-        bar.ohlcv.h != null &&
-        bar.ohlcv.l != null &&
-        bar.ohlcv.c != null &&
-        !isNaN(bar.ohlcv.o) &&
-        !isNaN(bar.ohlcv.h) &&
-        !isNaN(bar.ohlcv.l) &&
-        !isNaN(bar.ohlcv.c)
-      ) {
-        // Update main series
-        if (chartStyle === "line") {
-          seriesRef.current.update({
-            time,
-            value: bar.ohlcv.c,
-          });
-        } else {
-          seriesRef.current.update({
-            time,
-            open: bar.ohlcv.o,
-            high: bar.ohlcv.h,
-            low: bar.ohlcv.l,
-            close: bar.ohlcv.c,
-          });
-        }
-
-        // Update volume
-        if (bar.ohlcv.v != null && !isNaN(bar.ohlcv.v)) {
-          volumeSeriesRef.current.update({
-            time,
-            value: bar.ohlcv.v,
-            color: bar.ohlcv.c >= bar.ohlcv.o ? "#10b98166" : "#ef444466",
-          });
-        }
-
-        // Update candles state for indicators
-        const newCandle: Candle = {
-          t: bar.bar_end,
-          ohlcv: bar.ohlcv,
-        };
-
-        setCandles((prev) => {
-          const lastCandle = prev[prev.length - 1];
-          if (lastCandle && lastCandle.t === newCandle.t) {
-            // Update existing candle
-            return [...prev.slice(0, -1), newCandle];
-          } else {
-            // Add new candle
-            return [...prev, newCandle];
-          }
-        });
-
-        currentMinuteRef.current = Math.floor(bar.bar_end / 60000) * 60000;
-        currentBarTimeRef.current = time;
-      }
+      barQueueRef.current.push(bar);
+      scheduleProcess();
     });
 
     sseConnection.onMicro((micro: Micro) => {
-      if (!seriesRef.current) return;
-
-      const microMinute = Math.floor(micro.ts / 60000) * 60000;
-
-      // Only update if microbar belongs to current minute
-      if (microMinute === currentMinuteRef.current && currentBarTimeRef.current > 0) {
-        if (
-          micro.ohlcv.o != null &&
-          micro.ohlcv.h != null &&
-          micro.ohlcv.l != null &&
-          micro.ohlcv.c != null &&
-          !isNaN(micro.ohlcv.o) &&
-          !isNaN(micro.ohlcv.h) &&
-          !isNaN(micro.ohlcv.l) &&
-          !isNaN(micro.ohlcv.c)
-        ) {
-          if (chartStyle === "line") {
-            seriesRef.current.update({
-              time: currentBarTimeRef.current as UTCTimestamp,
-              value: micro.ohlcv.c,
-            });
-          } else {
-            seriesRef.current.update({
-              time: currentBarTimeRef.current as UTCTimestamp,
-              open: micro.ohlcv.o,
-              high: micro.ohlcv.h,
-              low: micro.ohlcv.l,
-              close: micro.ohlcv.c,
-            });
-          }
-        }
-      }
+      microQueueRef.current.push(micro);
+      scheduleProcess();
     });
 
     return () => {
       sseConnection.close();
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
     };
   }, [active.symbol, chartStyle]);
 

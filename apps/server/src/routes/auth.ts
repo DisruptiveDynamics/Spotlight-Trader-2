@@ -215,8 +215,66 @@ router.get("/me", async (req, res) => {
   }
 });
 
+router.get("/status", async (req, res) => {
+  try {
+    // Check for PIN auth cookie (st_auth) first
+    const pinToken = req.cookies?.st_auth;
+    if (pinToken) {
+      // Validate PIN JWT token
+      try {
+        const jwt = await import("jsonwebtoken");
+        const APP_AUTH_SECRET = process.env.APP_AUTH_SECRET || "dev_secret_change_me";
+        const decoded = jwt.default.verify(pinToken, APP_AUTH_SECRET) as { sub: string; typ: string };
+        
+        if (decoded && decoded.typ === "pin") {
+          return res.json({ 
+            ok: true, 
+            user: { id: "owner", email: "owner@spotlight.local", name: "Owner" } 
+          });
+        }
+      } catch (err) {
+        console.error("[auth/status] Invalid PIN token:", err);
+        // Fall through to check session cookie
+      }
+    }
+
+    // Check for session cookie (sid) fallback
+    const token = req.cookies?.sid || req.headers.authorization?.replace("Bearer ", "");
+    
+    if (!token) {
+      return res.status(401).json({ ok: false, error: "Not authenticated" });
+    }
+
+    const payload = verifyJwt(token);
+
+    if (!payload) {
+      return res.status(401).json({ ok: false, error: "Invalid session" });
+    }
+
+    const userResults = await db.select().from(users).where(eq(users.id, payload.userId)).limit(1);
+    const user = userResults[0];
+
+    if (!user) {
+      return res.status(401).json({ ok: false, error: "User not found" });
+    }
+
+    res.json({
+      ok: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to get auth status:", error);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
 router.post("/logout", (req, res) => {
   res.clearCookie("sid");
+  res.clearCookie("st_auth");
   res.json({ success: true });
 });
 

@@ -63,12 +63,12 @@ export const voiceTools = {
       .object({
         symbol: symbolSchema,
         timeframe: timeframeSchema.default("1m"),
-        barCount: z.number().int().min(1).max(100).optional().default(20),
+        barCount: z.number().int().min(1).max(200).nullish().default(50),
       })
       .parse(input);
 
-    // Clamp bar count defensively (cap at 100, default 20)
-    const barCount = Math.max(1, Math.min(params.barCount ?? 20, 100));
+    // Clamp bar count defensively (cap at 200, default 50)
+    const barCount = Math.max(1, Math.min(params.barCount ?? 50, 200));
 
     const exec = async () =>
       cache5s(`snap:${params.symbol}:${params.timeframe}:${barCount}`, async () => {
@@ -196,7 +196,7 @@ export const voiceTools = {
   async get_recent_journal(input: unknown, userId: string) {
     const params = z
       .object({
-        limit: z.number().int().min(1).max(50).optional().default(10),
+        limit: z.number().int().min(1).max(50).nullish().default(10),
       })
       .parse(input);
 
@@ -225,7 +225,7 @@ export const voiceTools = {
   async get_active_rules(input: unknown, userId: string) {
     const params = z
       .object({
-        limit: z.number().int().min(1).max(50).optional().default(20),
+        limit: z.number().int().min(1).max(50).nullish().default(20),
       })
       .parse(input);
 
@@ -247,8 +247,8 @@ export const voiceTools = {
   async get_recent_signals(input: unknown, userId: string) {
     const params = z
       .object({
-        limit: z.number().int().min(1).max(50).optional().default(10),
-        symbol: symbolSchema.optional(),
+        limit: z.number().int().min(1).max(50).nullish().default(10),
+        symbol: symbolSchema.nullish(),
       })
       .parse(input);
 
@@ -277,7 +277,7 @@ export const voiceTools = {
     const params = z
       .object({
         query: z.string().min(1),
-        limit: z.number().int().min(1).max(20).optional().default(5),
+        limit: z.number().int().min(1).max(20).nullish().default(5),
       })
       .parse(input);
 
@@ -299,7 +299,7 @@ export const voiceTools = {
     const params = z
       .object({
         query: z.string().min(1),
-        limit: z.number().int().min(1).max(20).optional().default(5),
+        limit: z.number().int().min(1).max(20).nullish().default(5),
       })
       .parse(input);
 

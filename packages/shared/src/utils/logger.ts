@@ -13,18 +13,18 @@ const mode = isBrowser
   : process.env.NODE_ENV || "development";
 const isDev = mode !== "production";
 
-function fmt(level: LogLevel, msg: any, ...args: any[]) {
+function fmt(level: LogLevel): string {
   const ts = new Date().toISOString();
-  return [`[${ts}] [${level.toUpperCase()}]`, msg, ...args] as const;
+  return `[${ts}] [${level.toUpperCase()}]`;
 }
 
 export const logger = {
-  debug: (...args: any[]) => {
-    if (isDev) console.debug(...fmt("debug", ...args));
+  debug: (msg: any, ...args: any[]) => {
+    if (isDev) console.debug(fmt("debug"), msg, ...args);
   },
-  info: (...args: any[]) => {
-    if (isDev) console.info(...fmt("info", ...args));
+  info: (msg: any, ...args: any[]) => {
+    if (isDev) console.info(fmt("info"), msg, ...args);
   },
-  warn: (...args: any[]) => console.warn(...fmt("warn", ...args)),
-  error: (...args: any[]) => console.error(...fmt("error", ...args)),
+  warn: (msg: any, ...args: any[]) => console.warn(fmt("warn"), msg, ...args),
+  error: (msg: any, ...args: any[]) => console.error(fmt("error"), msg, ...args),
 };

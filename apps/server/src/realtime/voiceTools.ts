@@ -79,8 +79,10 @@ export const VOICE_COPILOT_TOOLS: VoiceTool[] = [
           description: "The chart timeframe (e.g., 1m, 5m, 15m, 1h, 1d)",
         },
         barCount: {
-          type: "number",
+          type: ["number", "null"],
           description: "Number of bars to return (default 50, max 200)",
+          minimum: 1,
+          maximum: 200,
         },
       },
       required: ["symbol", "timeframe"],

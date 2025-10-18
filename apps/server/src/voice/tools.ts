@@ -205,7 +205,7 @@ export const voiceTools = {
       .from(journalEvents)
       .where(eq(journalEvents.userId, userId))
       .orderBy(desc(journalEvents.timestamp))
-      .limit(params.limit);
+      .limit(params.limit ?? 10);
 
     return {
       count: events.length,
@@ -233,7 +233,7 @@ export const voiceTools = {
       .select()
       .from(rules)
       .where(eq(rules.ownerUserId, userId))
-      .limit(params.limit);
+      .limit(params.limit ?? 20);
 
     return {
       count: userRulesData.length,
@@ -257,7 +257,7 @@ export const voiceTools = {
       .from(signals)
       .where(eq(signals.userId, userId))
       .orderBy(desc(signals.ts))
-      .limit(params.limit);
+      .limit(params.limit ?? 10);
 
     return {
       count: signalsData.length,
@@ -281,7 +281,7 @@ export const voiceTools = {
       })
       .parse(input);
 
-    const results = await retrieveTopK(userId, params.query, params.limit, 10, 0.1, false);
+    const results = await retrieveTopK(userId, params.query, params.limit ?? 5, 10, 0.1, false);
 
     const playbookEntries = results.filter((r) => r.kind === "playbook");
 
@@ -303,7 +303,7 @@ export const voiceTools = {
       })
       .parse(input);
 
-    const results = await retrieveTopK(userId, params.query, params.limit, 10, 0.1, false);
+    const results = await retrieveTopK(userId, params.query, params.limit ?? 5, 10, 0.1, false);
 
     const glossaryEntries = results.filter((r) => r.kind === "glossary");
 

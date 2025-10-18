@@ -1,5 +1,6 @@
 import { perfMetrics } from "@shared/perf/metrics";
 import { reconcileBars } from "@shared/utils/barHash";
+import { logger } from "@shared/utils/logger";
 
 import { STREAM_URL, HISTORY_URL } from "../config";
 import { useAuthStore } from "../stores/authStore";
@@ -41,6 +42,30 @@ interface MarketSSEOptions {
   sinceSeq?: number;
   maxReconnectDelay?: number;
   timeframe?: string;
+}
+
+// Runtime type guards for SSE payloads
+function isFiniteNumber(n: any): n is number {
+  return typeof n === "number" && Number.isFinite(n);
+}
+
+function isBarPayload(b: any): b is Bar {
+  return (
+    b &&
+    isFiniteNumber(b.seq) &&
+    isFiniteNumber(b.bar_end) &&
+    b.ohlcv &&
+    ["o", "h", "l", "c"].every((k) => isFiniteNumber(b.ohlcv[k]))
+  );
+}
+
+function isMicroPayload(m: any): m is Micro {
+  return (
+    m &&
+    isFiniteNumber(m.ts) &&
+    m.ohlcv &&
+    ["o", "h", "l", "c"].every((k) => isFiniteNumber(m.ohlcv[k]))
+  );
 }
 
 export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
@@ -334,9 +359,13 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     });
 
     es.addEventListener("bar", (e) => {
-      if (import.meta.env?.MODE === "development") console.log(`[SSE] Received bar event`);
+      logger.debug(`[SSE] Received bar event`);
       processingPromise = processingPromise.then(async () => {
-        const b = JSON.parse((e as MessageEvent).data) as Bar;
+        const b = JSON.parse((e as MessageEvent).data);
+        if (!isBarPayload(b)) {
+          logger.warn("Invalid bar payload", b);
+          return;
+        }
 
         // [RESILIENCE] Detect server restart or seq regression (tightened threshold)
         // Reduced from 1000 to 10 to catch smaller regressions quickly
@@ -399,7 +428,11 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
     // [PHASE-5] Handle individual microbar (legacy)
     es.addEventListener("microbar", (e) => {
-      const m = JSON.parse((e as MessageEvent).data) as Micro;
+      const m = JSON.parse((e as MessageEvent).data);
+      if (!isMicroPayload(m)) {
+        logger.warn("Invalid micro payload", m);
+        return;
+      }
       listeners.microbar.forEach((fn) => fn(m));
     });
 
@@ -430,6 +463,10 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
             v: mb.volume,
           },
         };
+        if (!isMicroPayload(m)) {
+          logger.warn("Invalid micro from batch", m);
+          return;
+        }
         listeners.microbar.forEach((fn) => fn(m));
       });
     });

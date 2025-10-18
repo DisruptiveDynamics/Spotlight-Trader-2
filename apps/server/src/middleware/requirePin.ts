@@ -36,15 +36,16 @@ export function requirePin(req: Request, res: Response, next: NextFunction) {
 }
 
 export function setAuthCookie(res: Response, token: string) {
-  const isProd = process.env.NODE_ENV === "production";
+  // Check if we're actually on HTTPS (Replit prod vs local dev)
+  const isHttps = process.env.REPL_ID !== undefined || process.env.REPLIT_DEPLOYMENT === "1";
   
   // Safari-safe cookie configuration:
-  // - Production (HTTPS): sameSite="none" + secure=true for iframe compatibility
-  // - Development (HTTP): sameSite="lax" + secure=false for localhost testing
+  // - HTTPS (Replit): sameSite="none" + secure=true for iframe compatibility
+  // - HTTP (local dev): sameSite="lax" + secure=false for localhost testing
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: isProd ? "none" : "lax",
-    secure: isProd,
+    sameSite: isHttps ? "none" : "lax",
+    secure: isHttps,
     maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
     path: "/",
   });

@@ -48,7 +48,7 @@ export const useAuthStore = create<AuthState>()(
           authStorage.clear();
           set({ user: null, authReady: true });
           try {
-            await fetch("/api/auth/logout", {
+            await fetch("/api/pin/logout", {
               method: "POST",
               credentials: "include",
             });
@@ -59,7 +59,7 @@ export const useAuthStore = create<AuthState>()(
         verifyAuth: async () => {
           console.log("[authStore] Verifying server auth status");
           try {
-            const res = await fetch("/api/auth/status", {
+            const res = await fetch("/api/pin/status", {
               credentials: "include",
             });
             

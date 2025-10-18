@@ -1,5 +1,4 @@
 import { getHistory } from "../history/service";
-import { eventBus } from "../market/eventBus";
 
 type WatcherOpts = {
   symbols: string[];

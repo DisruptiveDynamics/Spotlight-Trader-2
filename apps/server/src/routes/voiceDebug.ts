@@ -11,7 +11,7 @@ function safeJson(obj: any, len = 2000): string {
   try {
     const s = JSON.stringify(obj);
     return s.length > len ? s.slice(0, len) + "...<truncated>" : s;
-  } catch (e) {
+  } catch {
     return String(obj);
   }
 }

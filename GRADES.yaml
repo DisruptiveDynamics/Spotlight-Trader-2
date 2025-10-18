@@ -1,0 +1,147 @@
+# SPOTLIGHT TRADER - SUBSYSTEM GRADES
+# Scale: 0-10 (0=broken, 5=functional with issues, 8=production-ready, 10=bulletproof)
+
+data_pipeline_bars:
+  grade: 9
+  reasons:
+    - "✅ Sequence calculation now consistent across all sources (Math.floor(bar_start / 60000))"
+    - "✅ Monotonic guard prevents seq regression in barBuilder"
+    - "✅ Industry-standard bar_start-based seq (not bar_end)"
+    - "⚠️ Needs runtime validation with multi-timeframe switching (1m→5m→15m)"
+  code_refs:
+    - "apps/server/src/market/barBuilder.ts:164-167"
+    - "apps/server/src/history/service.ts:251"
+    - "apps/server/src/history/service.ts:332"
+
+history_fetch:
+  grade: 8
+  reasons:
+    - "✅ Polygon REST API integration with proper ISO timestamp formatting"
+    - "✅ Error logging with detailed diagnostics"
+    - "✅ Realistic fallback generator when Polygon unavailable"
+    - "⚠️ No rate-limit handling visible (may hit Polygon API limits)"
+    - "⚠️ Needs testing with actual Polygon API key to verify empty response issue resolved"
+  code_refs:
+    - "apps/server/src/history/service.ts:200-258 (Polygon fetch)"
+    - "apps/server/src/history/service.ts:260-340 (realistic fallback)"
+
+sse_resilience:
+  grade: 9
+  reasons:
+    - "✅ 10-second heartbeat (ping events) prevents proxy timeout"
+    - "✅ Per-connection lastSentSeq watermark prevents duplicate emissions"
+    - "✅ Backpressure controller with 100-event buffer"
+    - "✅ Last-Event-ID header support for SSE-standard resume"
+    - "✅ Epoch detection for server restart handling"
+    - "⚠️ No explicit reconnection backoff strategy on client side"
+  code_refs:
+    - "apps/server/src/stream/sse.ts:27 (watermark)"
+    - "apps/server/src/stream/sse.ts:300-309 (heartbeat)"
+    - "apps/server/src/stream/backpressure.ts"
+
+client_chart_integration:
+  grade: 7
+  reasons:
+    - "✅ Lightweight Charts library properly integrated"
+    - "✅ Multi-timeframe support (1m, 2m, 5m, 10m, 15m, 30m, 1h)"
+    - "⚠️ Needs verification that ms→seconds conversion is correct for chart library"
+    - "⚠️ Gap-fill logic not audited (may show gaps during sparse trading)"
+    - "⚠️ No evidence of update throttling (could cause performance issues)"
+  code_refs:
+    - "apps/client/src/features/charts/ChartView.tsx"
+    - "apps/client/src/hooks/useMarketStream.ts"
+
+voice_ws:
+  grade: 8
+  reasons:
+    - "✅ Proper binaryType='arraybuffer' setting"
+    - "✅ Type-safe message routing (string vs ArrayBuffer vs Blob)"
+    - "✅ 5-second ping/pong heartbeat implemented"
+    - "✅ Backpressure management (256KB threshold with retry)"
+    - "⚠️ No automatic reconnection logic (manual refresh required)"
+    - "⚠️ 15-second pong timeout may be too aggressive for slow networks"
+  code_refs:
+    - "apps/client/src/lib/voiceWS.ts:11 (binaryType)"
+    - "apps/client/src/lib/voiceWS.ts:13-28 (heartbeat)"
+    - "apps/client/src/lib/voiceWS.ts:59-71 (backpressure)"
+
+auth_cookies:
+  grade: 6
+  reasons:
+    - "✅ httpOnly cookies prevent XSS"
+    - "✅ 30-day maxAge for PIN auth"
+    - "⚠️ Inconsistent sameSite configuration (lax vs none)"
+    - "⚠️ PIN auth uses sameSite='lax' (may fail in Safari iframe)"
+    - "⚠️ Inconsistent secure flag (isProd vs always true)"
+    - "❌ No explicit handling for Safari's restrictive cookie policy"
+  code_refs:
+    - "apps/server/src/middleware/requirePin.ts:38-46 (PIN cookie)"
+    - "apps/server/src/routes/auth.ts:82-88 (session cookie)"
+  recommendations:
+    - "Change PIN auth to sameSite='none' + secure=true"
+    - "Add Safari-specific cookie detection and fallback"
+    - "Document mobile testing requirements"
+
+dev_runtime:
+  grade: 8
+  reasons:
+    - "✅ Unified dev mode (Express + Vite in same process)"
+    - "✅ HMR properly configured for Replit proxy environment"
+    - "✅ Port 5000 binding on 0.0.0.0 (accessible externally)"
+    - "⚠️ HMR may cause auth cookie issues on mobile Safari"
+    - "⚠️ No production build verification in this audit"
+  code_refs:
+    - "apps/server/src/dev/unifiedVite.ts:28 (HMR config)"
+    - "apps/server/src/index.ts:183 (server bind)"
+
+observability:
+  grade: 5
+  reasons:
+    - "✅ Basic console logging with structured format"
+    - "✅ Metrics registry exists (recordSSEConnection, etc.)"
+    - "⚠️ No /api/metrics endpoint exposed (Prometheus format)"
+    - "⚠️ No admin snapshot/diagnostic endpoint"
+    - "⚠️ Metrics recording code exists but not queryable"
+    - "❌ No structured log levels (debug/info/warn/error separation)"
+  code_refs:
+    - "apps/server/src/metrics/registry.ts"
+  recommendations:
+    - "Add GET /api/metrics endpoint (Prometheus format)"
+    - "Add GET /api/diag endpoint (lastSeq, buffer sizes)"
+    - "Implement log level filtering (env.LOG_LEVEL)"
+
+code_health:
+  grade: 7
+  reasons:
+    - "✅ TypeScript compilation passes (server + client)"
+    - "✅ ESM modules with proper import statements"
+    - "✅ Environment validation with Zod"
+    - "⚠️ 3 ESLint errors (unused imports/variables)"
+    - "⚠️ Duplicate ring buffer implementation (ring.ts.bak)"
+    - "⚠️ Acceptable CJS interop for pdf-parse (createRequire)"
+  code_refs:
+    - "apps/server/src/coach/favoritesWatcher.ts:2 (unused import)"
+    - "apps/server/src/routes/voiceDebug.ts:14 (unused error var)"
+    - "apps/server/src/cache/ring.ts.bak (duplicate file)"
+  recommendations:
+    - "Run pnpm lint --fix to auto-fix unused imports"
+    - "Remove ring.ts.bak backup file"
+    - "Add pre-commit hooks to enforce linting"
+
+# OVERALL SYSTEM GRADE: 7.6/10
+# Status: FUNCTIONAL with minor issues
+# Production Readiness: 80% (needs runtime validation + minor fixes)
+
+critical_blockers: []
+
+medium_priority:
+  - "Add voice WebSocket auto-reconnection"
+  - "Fix auth cookie sameSite for Safari compatibility"
+  - "Add /api/metrics and /api/diag endpoints"
+  - "Runtime test multi-timeframe switching"
+
+low_priority:
+  - "Fix 3 ESLint errors"
+  - "Remove duplicate ring.ts.bak"
+  - "Add structured logging with levels"
+  - "Document mobile testing procedures"

@@ -1,0 +1,93 @@
+===================================
+SPOTLIGHT TRADER - BASELINE AUDIT
+===================================
+
+Node: v20.19.3
+pnpm: 10.18.1
+Branch: meta/refactor-foundation
+Commit: 5b5ea5bf1315806f1c860a301df7b488bd9443d1
+
+SERVER CONFIGURATION
+--------------------
+Bind: 0.0.0.0:5000
+Port: 5000 (unified dev mode - Express + Vite in same process)
+Mode: UNIFIED_DEV=1 (Vite middleware attached to Express)
+HMR: Enabled (connects via proxy domain in Replit environment)
+
+ENDPOINTS
+---------
+SSE: /realtime/sse (Server-Sent Events for market data stream)
+WebSocket (Market): /ws/realtime  
+WebSocket (Voice): /ws/realtime (same endpoint, different usage)
+WebSocket (Tools): /ws/tools (for voice tool interactions)
+History: GET /api/history?symbol={SYM}&timeframe={TF}&limit={N}
+Replay: POST /api/replay/start, /api/replay/stop, /api/replay/speed
+Health: GET /health
+
+FEATURE FLAGS & DATA PATH
+--------------------------
+process.env.SIMULATED_DATA: Controls fallback to mock data (not currently set)
+process.env.FALLBACK_SIM: Set to "true" when Polygon auth fails
+flags.timeframeRollups: Enables new rollup system for multi-timeframe
+process.env.UNIFIED_DEV: "1" (Vite HMR in unified mode)
+
+MOCK TICK GENERATOR STATUS
+---------------------------
+REMOVED - System now directs users to OnDemand replay for testing
+Messages in logs:
+  "🌙 Outside extended hours (4 AM-8 PM ET) - WebSocket unavailable"
+  "💡 Use OnDemand replay (/api/replay/start) to test with historical data"
+
+CURRENT DATA SOURCES
+--------------------
+1. Polygon WebSocket (live): 4 AM - 8 PM ET (extended hours)
+2. OnDemand Replay: Historical data playback via /api/replay/start
+3. Realistic fallback generator: Used when Polygon unavailable
+
+VITE HMR STATUS
+---------------
+Enabled: Yes (in unified dev mode)
+Config: Connects via proxy domain in Replit environment
+Behavior: HMR client injected, env vars transformed
+Potential issue: HMR may cause auth cookie issues on iPad/mobile Safari
+
+TYPE DEFINITIONS (packages/shared/src/types.ts)
+------------------------------------------------
+Tick:       { symbol, ts, price, size, side }
+Bar:        { symbol, timestamp, open, high, low, close, volume, seq, bar_start, bar_end }
+Microbar:   extends Bar { timeframe: "250ms" }
+MinuteBar:  extends Bar { timeframe: "1m" }
+
+SEQ CALCULATION POLICY
+----------------------
+Standard: Math.floor(bar_start / 60000)
+Locations:
+  - apps/server/src/market/barBuilder.ts:164 (with monotonic guard)
+  - apps/server/src/history/service.ts:248 (Polygon fetch)
+  - apps/server/src/history/service.ts:329 (realistic fallback)
+
+DUPLICATE IMPLEMENTATIONS FOUND
+--------------------------------
+Ring buffers:
+  - apps/server/src/cache/ring.ts (active)
+  - apps/server/src/cache/ring.ts.bak (backup file, should be removed)
+
+ESM/CJS MIXING
+--------------
+apps/server/src/knowledge/pdf.ts: Uses createRequire() to load pdf-parse (CJS module)
+  - This is acceptable pattern for CJS interop in ESM context
+  - No blocking issues identified
+
+BUILD STATUS
+------------
+Server typecheck: ✅ PASS
+Client typecheck: ✅ PASS
+Server lint: ❌ FAIL (3 errors)
+  - favoritesWatcher.ts: unused 'eventBus' import
+  - voiceDebug.ts: unused error variable 'e'
+
+HEALTH CHECK
+------------
+GET /health: 200 OK
+Auth required: Yes (PIN-based JWT)
+Response: {"ok":false,"error":"Not authenticated"} (when not auth'd)

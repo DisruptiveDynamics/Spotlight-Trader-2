@@ -107,7 +107,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
   // [RESILIENCE] Soft reset and resync when server restarts or sequence is stale
   const performResync = async (reason: string) => {
     try {
-      if (import.meta.env?.MODE === "development") console.log(`🔄 Performing resync (${reason})`);
+      logger.info(`🔄 Performing resync (${reason})`);
 
       // [PHASE-5] Track reconnect event
       perfMetrics.recordReconnectEvent();
@@ -155,7 +155,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         const minSeq = Math.min(...[...toUpdate, ...toAdd].map((b) => b.seq));
         const maxSeq = Math.max(...[...toUpdate, ...toAdd].map((b) => b.seq));
         
-        if (import.meta.env?.MODE === "development") console.log(`✅ Recovered ${reconciled} bars (seq ${minSeq}→${maxSeq})`);
+        logger.info(`✅ Recovered ${reconciled} bars (seq ${minSeq}→${maxSeq})`);
         
         // Emit only reconciled bars (diffs)
         [...toUpdate, ...toAdd].forEach((bar) => {
@@ -172,7 +172,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       // Update lastSeq to highest from snapshot
       if (serverBars.length > 0) {
         lastSeq = serverBars[serverBars.length - 1]!.seq;
-        if (import.meta.env?.MODE === "development") console.log(`✅ Resynced ${serverBars.length} bars, lastSeq now: ${lastSeq}`);
+        logger.info(`✅ Resynced ${serverBars.length} bars, lastSeq now: ${lastSeq}`);
 
         // If no reconciliation needed, emit all bars
         if (reconciled === 0) {
@@ -195,7 +195,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
   const backfillGap = async (fromSeq: number, toSeq: number, previousLastSeq: number) => {
     try {
-      if (import.meta.env?.MODE === "development") console.log(`📊 Backfilling gap: seq ${fromSeq} → ${toSeq}`);
+      logger.info(`📊 Backfilling gap: seq ${fromSeq} → ${toSeq}`);
       emitStatus("replaying_gap");
 
       const symbol = symbols[0] || "SPY";
@@ -229,7 +229,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         .filter((bar) => bar.seq > previousLastSeq && bar.seq <= toSeq)
         .sort((a, b) => a.seq - b.seq);
 
-      if (import.meta.env?.MODE === "development") console.log(`✅ Filled ${filledBars.length} bars in gap`);
+      logger.info(`✅ Filled ${filledBars.length} bars in gap`);
 
       filledBars.forEach((bar) => {
         lastSeq = bar.seq;
@@ -262,11 +262,11 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     emitStatus(reconnectAttempts === 0 ? "connecting" : "degraded_ws");
 
     const url = `${STREAM_URL}?${params.toString()}`;
-    if (import.meta.env?.MODE === "development") console.log(`[SSE] Creating EventSource connection to: ${url}`);
+    logger.debug(`[SSE] Creating EventSource connection to: ${url}`);
     es = new EventSource(url, { withCredentials: true });
 
     es.addEventListener("open", async () => {
-      if (import.meta.env?.MODE === "development") console.log(`[SSE] Connection OPENED successfully`);
+      logger.debug(`[SSE] Connection OPENED successfully`);
       reconnectAttempts = 0;
       emitStatus("connected");
       window.dispatchEvent(new CustomEvent("sse:connected"));
@@ -303,16 +303,13 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
     // [BOOTSTRAP] Listen for immediate bootstrap event
     es.addEventListener("bootstrap", (e) => {
-      if (import.meta.env?.MODE === "development") {
-        console.log(`[SSE] Received bootstrap event:`, e);
-        console.log(`[SSE] Bootstrap data:`, JSON.parse((e as MessageEvent).data));
-      }
       const data = JSON.parse((e as MessageEvent).data);
+      logger.debug(`[SSE] Received bootstrap event:`, data);
     });
 
     // [RESILIENCE] Listen for epoch events to detect server restarts
     es.addEventListener("epoch", (e) => {
-      if (import.meta.env?.MODE === "development") console.log(`[SSE] Received epoch event`);
+      logger.debug(`[SSE] Received epoch event`);
       const data = JSON.parse((e as MessageEvent).data) as {
         epochId: string;
         epochStartMs: number;
@@ -324,11 +321,9 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       listeners.epoch.forEach((fn) => fn({ epochId: data.epochId, epochStartMs: data.epochStartMs }));
 
       if (currentEpochId && currentEpochId !== data.epochId) {
-        if (import.meta.env?.MODE === "development") {
-          console.log(
-            `🔄 Server restarted: epoch ${currentEpochId.slice(0, 8)} → ${data.epochId.slice(0, 8)}, soft reset`,
-          );
-        }
+        logger.info(
+          `🔄 Server restarted: epoch ${currentEpochId.slice(0, 8)} → ${data.epochId.slice(0, 8)}, soft reset`,
+        );
         currentEpochId = data.epochId;
         duplicateRejections = []; // Reset duplicate counter
         
@@ -342,7 +337,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         });
       } else {
         currentEpochId = data.epochId;
-        if (import.meta.env?.MODE === "development") console.log(`✅ Epoch established: ${data.epochId.slice(0, 8)}`);
+        logger.info(`✅ Epoch established: ${data.epochId.slice(0, 8)}`);
       }
     });
 
@@ -350,11 +345,9 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     es.addEventListener("ping", (e) => {
       // Heartbeat event to prevent proxy idle timeout - no action needed
       // Optionally could track buffered/dropped stats for observability
-      if (import.meta.env?.MODE === "development") {
-        const data = JSON.parse((e as MessageEvent).data);
-        if (data.buffered > 0 || data.dropped > 0) {
-          console.log(`📡 SSE ping: buffered=${data.buffered}, dropped=${data.dropped}`);
-        }
+      const data = JSON.parse((e as MessageEvent).data);
+      if (data.buffered > 0 || data.dropped > 0) {
+        logger.debug(`📡 SSE ping: buffered=${data.buffered}, dropped=${data.dropped}`);
       }
     });
 
@@ -372,7 +365,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         const isStaleSequence = lastSeq > 0 && b.seq < lastSeq - 10;
 
         if (isStaleSequence) {
-          if (import.meta.env?.MODE === "development") console.log(`🔄 Stale sequence detected: seq=${b.seq}, lastSeq=${lastSeq}`);
+          logger.info(`🔄 Stale sequence detected: seq=${b.seq}, lastSeq=${lastSeq}`);
           duplicateRejections = []; // Reset counter before resync
           await performResync("stale sequence");
           return;
@@ -477,7 +470,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     });
 
     es.addEventListener("message", (e) => {
-      if (import.meta.env?.MODE === "development") console.log(`[SSE] Generic message event:`, e.type, e.data?.slice(0, 100));
+      logger.debug(`[SSE] Generic message event:`, e.type, e.data?.slice(0, 100));
     });
 
     es.onerror = (event) => {
@@ -627,11 +620,11 @@ export function startMarketStream() {
   const user = useAuthStore.getState().user;
 
   if (!authReady || !user) {
-    console.warn("[marketStream] Not starting - auth not ready");
+    logger.warn("[marketStream] Not starting - auth not ready");
     return () => {}; // No-op cleanup
   }
 
-  if (import.meta.env?.MODE === "development") console.log("[marketStream] Starting market stream (auth ready)");
+  logger.info("[marketStream] Starting market stream (auth ready)");
   const stream = connectMarketSSE(["SPY", "QQQ"]);
 
   // Wire up default handlers
@@ -642,7 +635,7 @@ export function startMarketStream() {
   });
 
   return () => {
-    if (import.meta.env?.MODE === "development") console.log("[marketStream] Stopping market stream");
+    logger.info("[marketStream] Stopping market stream");
     stream.close();
   };
 }

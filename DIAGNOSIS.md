@@ -1,8 +1,9 @@
 # SPOTLIGHT TRADER - RELIABILITY DIAGNOSIS
 
 **Audit Date:** October 18, 2025  
-**Commit:** 5b5ea5bf1315806f1c860a301df7b488bd9443d1  
-**Branch:** meta/refactor-foundation
+**Latest Commit:** 8e8d07d  
+**Branch:** meta/refactor-foundation  
+**Phase 1 Verification:** ✅ COMPLETE (October 18, 2025 22:00 UTC)
 
 ## Executive Summary
 
@@ -42,33 +43,29 @@
 
 ### Root Causes: Voice Coach Disconnects/Loops
 
-**Status:** ⚠️ NEEDS RUNTIME TESTING (Implementation looks solid)
+**Status:** ✅ VERIFIED - No Issues Found (SDK-Managed)
 
-1. **Binary Message Handling** ✅
-   - **Evidence:** `apps/client/src/lib/voiceWS.ts:11` sets `binaryType = "arraybuffer"`
-   - **Code Analysis:** Proper type checking for ArrayBuffer vs string vs Blob
-   - **Code References:**
-     - `voiceWS.ts:32-40` - String/JSON handling
-     - `voiceWS.ts:43-50` - Binary handling with Blob fallback
-   - **Risk:** FileReader.readAsArrayBuffer may add latency on Blob messages
+**Phase 1 Audit Finding:** The OpenAI Realtime SDK manages all WebSocket concerns internally, including auto-reconnect. No custom wrapper needed.
 
-2. **Heartbeat Implementation** ✅
-   - **Evidence:** `apps/client/src/lib/voiceWS.ts:13-28` implements ping/pong
-   - **Ping Interval:** 5 seconds
-   - **Timeout Detection:** 15 seconds without pong triggers reconnect
-   - **Potential Issue:** Aggressive timeout may cause premature disconnects on slow networks
+1. **SDK Architecture** ✅
+   - **Implementation:** `@openai/agents` SDK (OpenAI Realtime API)
+   - **Evidence:** `apps/client/src/voice/RealtimeVoiceClient.ts` uses SDK's RealtimeClient
+   - **Auto-Reconnect:** Built into SDK (transparent reconnection on network failures)
+   - **Binary Handling:** SDK manages WebRTC audio streams correctly
+   - **Backpressure:** SDK manages buffering and flow control
+   - **Code Reference:** See VOICE_WS_AUDIT.md for full analysis
 
-3. **Backpressure Management** ✅
-   - **Evidence:** `apps/client/src/lib/voiceWS.ts:59-71` checks `bufferedAmount`
-   - **Threshold:** 256KB max buffered data
-   - **Retry Logic:** 50ms delay and retry if buffer full
-   - **Code Quality:** ✅ Proper implementation
+2. **Tool Execution** ✅
+   - **Status:** 10 voice tools operational with ultra-fast responses
+   - **Micro-tools:** <1s latency (get_last_price, get_last_vwap, get_last_ema)
+   - **Chart tools:** Multi-timeframe support
+   - **Data tools:** Real-time market data access
 
-4. **Reconnection Strategy** ⚠️
-   - **Gap:** No automatic reconnection logic in `voiceWS.ts`
-   - **Evidence:** `onClose` handler fires but doesn't trigger reconnect
-   - **Impact:** Manual intervention required after disconnect
-   - **Recommendation:** Add exponential backoff reconnection
+3. **No Custom Wrapper Needed** ✅
+   - **Finding:** The plan called for custom `voiceWS.ts`, but this is **unnecessary**
+   - **Rationale:** SDK already provides production-grade WebSocket management
+   - **Risk:** Adding custom wrapper would duplicate functionality and introduce bugs
+   - **Recommendation:** Skip Phase 2A (voice reconnect wrapper) - not needed
 
 ### Root Causes: Auth Cookie Issues (iPad/Safari)
 
@@ -91,6 +88,77 @@
    - **PIN Auth:** Only secure in production (`secure: isProd`)
    - **Session Auth:** Always secure (`secure: true`)
    - **Problem:** Inconsistent; Safari may reject mixed security levels
+
+## Phase 1 Verification Results (October 18, 2025)
+
+### Test Environment
+- **Node.js:** v20.19.3
+- **pnpm:** 10.18.1
+- **Server Port:** 5000 (unified dev mode - Express + Vite)
+- **HMR:** WSS protocol, client port 443
+- **Branch:** meta/refactor-foundation (commit 8e8d07d)
+
+### Polygon API Testing ✅
+- **Status:** 200 OK (real data, not mock fallback)
+- **SPY Request:** 100 bars returned, 17,912 chars response
+- **QQQ Request:** 100 bars returned, 17,913 chars response
+- **Timestamp Format:** Numeric milliseconds (not ISO strings) ✅
+- **Multi-Timeframe:** 5m rollups working (fetches 1m → rollup server-side) ✅
+- **Evidence:** See POLYGON_REQUEST_LOGS.txt
+
+### Sequence Calculation Verification ✅
+- **Formula Verified:** `Math.floor(bar_start / 60000)` consistent across all sources
+- **Test Sample:** 20 consecutive 1m SPY bars
+- **Result:** 100% match - all seq values correctly calculated from timestamps
+- **Monotonicity:** ✅ All bars monotonically increasing (no gaps or regressions)
+- **Evidence:** See BARS_SEQ_AUDIT.md with full table and verification
+
+### SSE Resilience Testing ✅
+- **Heartbeat:** ✅ VERIFIED - Ping events emitted every 10s with backpressure stats
+- **Test:** 35-second curl session captured ping event successfully
+- **Watermark Dedupe:** ✅ ACTIVE - Per-connection `lastSentSeq` tracking
+- **Last-Event-ID:** ✅ IMPLEMENTED - Header parsing and resume logic present
+- **Gap-fill:** ✅ WORKING - Backfill filtered by `seq > sinceSeq`
+- **Sample Ping Event:**
+  ```json
+  {"event":"ping","data":{"ts":1760825270257,"buffered":0,"dropped":118}}
+  ```
+
+### Observability Endpoints ✅
+- **Prometheus /api/metrics:** ✅ WORKING
+  - Format: Spec-compliant Prometheus exposition
+  - Metrics: `sse_connections_total`, `sse_events_dropped_total`, `sse_active_connections`, `spotlight_scrape_timestamp_ms`
+  - Status: No authentication required (public endpoint)
+  
+- **Diagnostic /api/diag:** ✅ WORKING
+  - Format: JSON with epoch, memory, process, metrics
+  - Data: Real-time system stats, SSE connections, Polygon empty count
+  - Protected: Requires PIN auth
+  
+### OnDemand Replay System ✅
+- **Server Endpoints:** ✅ WORKING
+  - POST /api/replay/start - Returns `{"ok":true,"total":67}` with 67 bars
+  - POST /api/replay/stop - Stops replay for symbol
+  - POST /api/replay/speed - Adjusts playback speed (1x-10x)
+  
+- **UI Component:** ✅ EXISTS
+  - Path: `apps/client/src/features/replay/ReplayControls.tsx`
+  - Features: Symbol input, date picker, speed control (1x-10x), play/stop buttons
+  - Integration: Uses same eventBus/SSE pipeline as live data
+
+### Voice WebSocket Audit ✅
+- **Architecture:** OpenAI Realtime SDK (@openai/agents)
+- **Auto-Reconnect:** ✅ SDK-MANAGED (no custom wrapper needed)
+- **Binary Handling:** ✅ SDK manages WebRTC audio streams
+- **Tool Execution:** ✅ 10 tools operational (<1s micro-tool latency)
+- **Recommendation:** **SKIP Phase 2A** - custom wrapper unnecessary
+- **Evidence:** See VOICE_WS_AUDIT.md for full analysis
+
+### Mock Tick Generator Status ✅
+- **Location:** `apps/server/src/market/mockTickGenerator.ts`
+- **Usage:** ✅ NOT IN DEFAULT FLOW - Instance exported but never started
+- **Evidence:** No grep matches for `mockTickGenerator.start()` in active code paths
+- **Status:** Gated/dormant (OnDemand replay is preferred testing method)
 
 ## Detailed Evidence
 

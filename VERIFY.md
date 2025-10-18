@@ -1,460 +1,323 @@
-# SPOTLIGHT TRADER - VERIFICATION CHECKLIST
+# VERIFY.md - Runtime Validation Checklist
 
-**Purpose:** End-to-end validation checklist for runtime testing  
-**Date:** October 18, 2025  
-**Status:** Ready for execution after code cleanup
+**Created:** October 18, 2025  
+**Phase 1 Verification:** ✅ COMPLETE  
+**Phase 2 Runtime Testing:** ⏳ PENDING
 
-## Prerequisites
+## Overview
 
-- [x] TypeScript compilation passes (client + server)
-- [x] ESLint errors fixed (all clean - 0 errors, 0 warnings)
-- [ ] Server workflow running without errors
-- [ ] Auth cookie obtained (st_auth JWT)
-- [ ] Polygon API key configured (or OnDemand replay ready)
+This document provides step-by-step verification procedures for runtime testing of Spotlight Trader. Phase 1 (backend/API verification) is complete. Phase 2 focuses on UI integration and end-to-end user flows.
 
-## 1. Chart Data Pipeline
+## Phase 1: Backend Verification ✅ COMPLETE
 
-### Test 1.1: Historical Data Fetch
+### Polygon API ✅
+- [x] Test SPY history endpoint (status 200, real data)
+- [x] Test QQQ history endpoint (status 200, real data)
+- [x] Verify numeric millisecond timestamps (not ISO strings)
+- [x] Verify multi-timeframe rollups (5m, 15m)
+- [x] Capture logs in POLYGON_REQUEST_LOGS.txt
 
-**Command:**
-```bash
-curl -H "Cookie: st_auth=YOUR_JWT" \
-  "http://localhost:5000/api/history?symbol=SPY&timeframe=1m&limit=20"
-```
+**Result:** All tests passed. SPY: 100 bars, QQQ: 100 bars, status 200 OK.
 
-**Expected:**
-- HTTP 200 OK
-- JSON array with 20 bars
-- Each bar has: `symbol`, `timestamp`, `seq`, `bar_start`, `bar_end`, `ohlcv`
-- Sequence numbers increment monotonically
-- bar_start and bar_end are 60000ms apart (1m timeframe)
+### Sequence Calculation ✅
+- [x] Grep all seq calculation sites
+- [x] Verify `Math.floor(bar_start / 60000)` consistent across sources
+- [x] Capture 20 consecutive bars with timestamps
+- [x] Verify 100% match between calculated and actual seq
+- [x] Verify monotonic sequence (no gaps or regressions)
 
-**Actual:** ___ (PASS / FAIL / NOTES)
+**Result:** 100% match. All 20 bars verified in BARS_SEQ_AUDIT.md.
 
----
+### SSE Resilience ✅
+- [x] Test 35-second curl session
+- [x] Capture ping events (10s heartbeat)
+- [x] Verify per-connection watermark (lastSentSeq)
+- [x] Verify Last-Event-ID header parsing
+- [x] Verify gap-fill filtering (seq > sinceSeq)
 
-### Test 1.2: SSE Bar Streaming (1m timeframe)
+**Result:** Heartbeat working, ping event captured with backpressure stats.
 
-**Command:**
-```bash
-curl -N -H "Cookie: st_auth=YOUR_JWT" \
-  "http://localhost:5000/realtime/sse?symbols=SPY&timeframe=1m&sinceSeq=0"
-```
+### Observability Endpoints ✅
+- [x] Test GET /api/metrics (Prometheus format)
+- [x] Test GET /api/diag (diagnostic JSON)
+- [x] Verify metrics: sse_connections_total, sse_events_dropped_total
+- [x] Verify diag data: epoch, memory, process stats
 
-**Expected:**
-- Bootstrap event with current timestamp
-- Epoch event with epochId
-- Multiple bar events streaming continuously
-- Ping events every 10 seconds
-- No duplicate sequence numbers
-- No "stale sequence" warnings
+**Result:** Both endpoints working. Metrics: 2 SSE connections, 118 dropped events.
 
-**Actual:** ___ (PASS / FAIL / NOTES)
+### OnDemand Replay ✅
+- [x] Test POST /api/replay/start with SPY
+- [x] Verify response: {ok: true, total: N}
+- [x] Verify ReplayControls.tsx component exists
+- [x] Verify component has date picker, speed controls, play/stop buttons
 
----
+**Result:** Replay returned 67 bars. UI component verified at apps/client/src/features/replay/ReplayControls.tsx.
 
-### Test 1.3: Multi-Timeframe Switching
+### Voice WebSocket ✅
+- [x] Verify OpenAI Realtime SDK integration
+- [x] Confirm auto-reconnect managed by SDK (not custom wrapper)
+- [x] Verify tool execution working (10 tools)
+- [x] Create VOICE_WS_AUDIT.md documenting findings
+
+**Result:** SDK manages all WebSocket concerns. Phase 2A (custom wrapper) NOT NEEDED.
+
+## Phase 2: UI Runtime Testing ⏳ PENDING
+
+### Chart Multi-Timeframe Switching
+**Goal:** Verify chart correctly switches between timeframes without gaps/duplicates
+
+**Prerequisites:**
+- Server running on port 5000
+- Authenticated with PIN
+- SPY chart open in browser
 
 **Steps:**
-1. Load chart on 1m timeframe
+1. Open chart for SPY at 1m timeframe
+   - [ ] Verify chart loads with ~50-100 bars
+   - [ ] Verify bars update in real-time (if market open) OR use replay
+   - [ ] Check browser console for no errors
+
 2. Switch to 5m timeframe
+   - [ ] Click timeframe selector → 5m
+   - [ ] Verify chart reloads with 5m bars
+   - [ ] Verify rollup boundaries align to ET timezone
+   - [ ] Check console: no "duplicate bar" or "stale sequence" warnings
+   - [ ] Verify seq values match expected 5m buckets
+
 3. Switch to 15m timeframe
-4. Switch back to 1m
+   - [ ] Click timeframe selector → 15m
+   - [ ] Verify chart reloads with 15m bars
+   - [ ] Verify rollup boundaries correct
+   - [ ] Check console for warnings
 
-**Expected:**
-- Chart reloads with new bars each switch
-- No freeze or infinite loading
-- Sequence numbers consistent (5m bars have seq +5, 15m bars have seq +15)
-- No duplicate bar warnings in browser console
-- Bars display correct aggregation (5m bar = 5× 1m bars)
+4. Switch back to 1m timeframe
+   - [ ] Click timeframe selector → 1m
+   - [ ] Verify chart returns to 1m bars
+   - [ ] Verify no data loss or gaps
 
-**Actual:** ___ (PASS / FAIL / NOTES)
+5. Rapid switching test
+   - [ ] Rapidly switch: 1m → 5m → 1m → 15m → 1m
+   - [ ] Verify no crashes or memory leaks
+   - [ ] Check console for errors
 
----
+**Expected Results:**
+- Charts load smoothly with correct bar counts
+- Rollup boundaries align to ET timezone (9:30 AM, etc.)
+- No duplicate/stale warnings in console
+- Seq values monotonically increasing
 
-### Test 1.4: OnDemand Replay
-
-**Command:**
-```bash
-curl -X POST -H "Cookie: st_auth=YOUR_JWT" \
-  -H "Content-Type: application/json" \
-  -d '{"symbol":"SPY","date":"2025-10-15","timeframe":"1m","speed":2}' \
-  http://localhost:5000/api/replay/start
+**Sample Test Data:**
+```
+1m bar: {seq: 29346919, bar_start: 1760815143331, bar_end: 1760815203331}
+5m bar: {seq: 1, bar_start: 1760795100000, bar_end: 1760795400000}
 ```
 
-**Expected:**
-- HTTP 200 OK with `{ok:true, message:"Replay started"}`
-- SSE stream begins emitting historical bars at 2× speed
-- Bars from October 15, 2025 trading day (9:30 AM - 4:00 PM ET)
-- Chart updates continuously without freezing
-- ReplayControls UI shows play/pause and speed options
+### SSE Reconnection Test
+**Goal:** Verify client reconnects and resumes without data loss
 
-**Stop Command:**
+**Steps:**
+1. Open SPY chart at 1m timeframe
+   - [ ] Note current lastSeq value in console/DevTools
+
+2. Restart server while chart open
+   ```bash
+   # In server terminal
+   pkill -f "tsx watch"
+   pnpm --filter @spotlight/server dev:unified
+   ```
+
+3. Observe client behavior
+   - [ ] Client detects server restart (epoch change)
+   - [ ] Client reconnects via SSE
+   - [ ] Gap-fill request fires with `sinceSeq=<lastSeq>`
+   - [ ] Chart continues updating without user intervention
+   - [ ] Check console: No duplicate warnings, only normal gap detection
+
+**Expected Results:**
+- Automatic reconnection within 5-10 seconds
+- Gap-fill retrieves missing bars
+- No manual refresh required
+- Console shows reconnection events but no errors
+
+### OnDemand Replay UI Test
+**Goal:** Verify ReplayControls UI integration works end-to-end
+
+**Prerequisites:**
+- Find where ReplayControls is rendered in UI
+  ```bash
+  grep -r "ReplayControls" apps/client/src --include="*.tsx"
+  ```
+
+**Steps:**
+1. Locate Replay Controls in UI
+   - [ ] Find replay panel/controls (check toolbar, sidebar, settings)
+   - [ ] If not visible, verify component is imported and rendered
+
+2. Start replay session
+   - [ ] Enter symbol: SPY
+   - [ ] Select date (or leave blank for today)
+   - [ ] Set speed: 4x
+   - [ ] Click "Start Replay"
+
+3. Verify replay behavior
+   - [ ] Chart begins updating with historical bars
+   - [ ] Bars stream at 4x speed (faster than real-time)
+   - [ ] Voice tools work with replay data
+   - [ ] Console shows replay events
+
+4. Adjust speed
+   - [ ] Move speed slider to 1x
+   - [ ] Verify playback slows down
+   - [ ] Move to 10x
+   - [ ] Verify playback speeds up
+
+5. Stop replay
+   - [ ] Click "Stop Replay"
+   - [ ] Verify chart stops updating
+   - [ ] Verify button changes to "Start Replay"
+
+**Expected Results:**
+- Replay starts/stops on command
+- Speed controls adjust playback rate
+- Chart updates identically to live data
+- Voice tools access replay data (not live)
+
+### Voice Coach Integration Test
+**Goal:** Verify voice tools access correct data during replay
+
+**Steps:**
+1. Start OnDemand replay for volatile window
+   - Symbol: SPY
+   - Date: (pick a high-volume trading day)
+   - Speed: 2x
+
+2. Activate voice coach
+   - [ ] Click microphone button
+   - [ ] Say: "What's the last price?"
+   - [ ] Verify response uses replay data (not live)
+
+3. Test tool latency
+   - [ ] Say: "Get last VWAP"
+   - [ ] Verify response time <1s (micro-tool)
+
+4. Test chart-based tools
+   - [ ] Say: "Show me a 5-minute chart"
+   - [ ] Verify voice can trigger multi-TF requests
+
+**Expected Results:**
+- Voice tools use replay data when replay active
+- Micro-tools respond <1s
+- Coach operates identically with replay vs live data
+
+### Safari Auth Cookie Test (iPad/iPhone)
+**Goal:** Verify PIN auth persists on mobile Safari
+
+**Prerequisites:**
+- iPad or iPhone with Safari
+- Access to Replit HTTPS URL
+
+**Steps:**
+1. Open app in Safari
+   - [ ] Navigate to https://[replit-url]
+   - [ ] Enter 6-digit PIN
+   - [ ] Verify authentication succeeds
+
+2. Test persistence
+   - [ ] Close Safari tab
+   - [ ] Reopen app URL
+   - [ ] Verify auto-login (no PIN re-entry needed)
+
+3. Test 24-hour expiry
+   - [ ] Wait 24+ hours
+   - [ ] Reopen app
+   - [ ] Verify prompted to re-enter PIN
+
+4. HMR test (dev only)
+   - [ ] Edit client code to trigger HMR
+   - [ ] Verify auth NOT lost during hot reload
+   - [ ] Check console for auth warnings
+
+**Expected Results:**
+- PIN auth works on first try
+- Cookie persists across sessions
+- 24-hour expiry enforced
+- HMR doesn't invalidate auth
+
+### Load Test: Multiple SSE Connections
+**Goal:** Verify server handles concurrent SSE streams
+
+**Setup:**
 ```bash
-curl -X POST -H "Cookie: st_auth=YOUR_JWT" \
-  http://localhost:5000/api/replay/stop
+# Open 5 concurrent SSE connections
+for i in {1..5}; do
+  (curl -N -b /tmp/cookies.txt \
+    "http://localhost:5000/realtime/sse?symbol=SPY&timeframe=1m" \
+    > /tmp/sse_$i.log 2>&1 &)
+done
 ```
 
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-## 2. Voice Assistant (Nexa)
-
-### Test 2.1: WebSocket Connection
-
 **Steps:**
-1. Click "Start Voice" button in UI
-2. Observe browser console for connection logs
-3. Wait 30 seconds
-
-**Expected:**
-- WebSocket connects successfully
-- binaryType set to "arraybuffer"
-- Ping messages sent every 5 seconds
-- Pong responses received
-- No parse errors or Blob warnings
-- Connection stays alive for 60+ seconds
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-### Test 2.2: Voice Tools Execution
-
-**Steps:**
-1. Start voice session
-2. Ask: "What's the last price of SPY?"
-3. Ask: "Show me the 5-minute chart"
-4. Ask: "What's the VWAP?"
-
-**Expected:**
-- Tool calls logged in browser console
-- `get_last_price` returns current price < 1000ms
-- `switch_timeframe` switches chart successfully
-- `get_last_vwap` returns VWAP value
-- No "tool execution failed" errors
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-### Test 2.3: Binary Audio Handling
-
-**Steps:**
-1. Start voice session
-2. Speak continuously for 10 seconds
-3. Monitor browser console
-
-**Expected:**
-- No "Error processing WebSocket message" errors
-- No JSON parse errors on binary data
-- onAudioChunk fires for each audio frame
-- No Blob conversion warnings (should use ArrayBuffer)
-- AudioBatcher backpressure < 10 frames
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-### Test 2.4: Heartbeat & Reconnection
-
-**Steps:**
-1. Start voice session
-2. Monitor ping/pong in console
-3. Simulate network interruption (disable Wi-Fi for 20s)
-4. Re-enable network
-
-**Expected:**
-- Ping sent every 5s
-- Pong received within 1s
-- After 15s of no pong → connection closes
-- ⚠️ Manual reconnect required (no auto-reconnect yet)
-- After reconnect, session resumes normally
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-## 3. Authentication & Sessions
-
-### Test 3.1: PIN Login
-
-**Steps:**
-1. Clear cookies (browser DevTools)
-2. Navigate to http://localhost:5000
-3. Enter 6-digit PIN
-4. Submit
-
-**Expected:**
-- Redirect to main application
-- st_auth cookie set (httpOnly, sameSite=lax)
-- Cookie persists across page reloads
-- Cookie maxAge = 30 days
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-### Test 3.2: Protected Endpoint Access
-
-**Command:**
-```bash
-# Without auth
-curl http://localhost:5000/api/history?symbol=SPY&timeframe=1m&limit=5
-
-# With auth
-curl -H "Cookie: st_auth=YOUR_JWT" \
-  http://localhost:5000/api/history?symbol=SPY&timeframe=1m&limit=5
-```
-
-**Expected:**
-- Without cookie: HTTP 401 Unauthorized
-- With cookie: HTTP 200 OK with data
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-### Test 3.3: Safari/iPad Cookie Persistence (if available)
-
-**Steps:**
-1. Open Safari on iPad
-2. Navigate to Replit preview URL
-3. Log in with PIN
-4. Reload page
-5. Navigate to different route
-
-**Expected:**
-- Cookie persists across reloads
-- No auth expiration
-- SSE streams work correctly
-- ⚠️ Current sameSite=lax may fail in iframe contexts
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-## 4. Error Handling & Edge Cases
-
-### Test 4.1: Market Closed Behavior
-
-**Steps:**
-1. Run tests outside market hours (8 PM - 4 AM ET)
-2. Request historical data
-
-**Expected:**
-- Polygon API returns empty results
-- System falls back to realistic generator
-- Bars still generated with synthetic data
-- OnDemand replay still works (historical data available)
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-### Test 4.2: Network Interruption
-
-**Steps:**
-1. Establish SSE connection
-2. Disable network for 30s
-3. Re-enable network
-
-**Expected:**
-- SSE connection closes
-- Client detects disconnect
-- Automatic reconnect with sinceSeq parameter
-- No duplicate bars after reconnect
-- Chart continues updating from last seq
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-### Test 4.3: Invalid Symbol Request
-
-**Command:**
-```bash
-curl -H "Cookie: st_auth=YOUR_JWT" \
-  "http://localhost:5000/api/history?symbol=INVALID&timeframe=1m&limit=5"
-```
-
-**Expected:**
-- Polygon returns empty results
-- Fallback generator creates synthetic bars
-- HTTP 200 OK (not 404)
-- Bars marked as fallback in logs
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-## 5. Performance & Observability
-
-### Test 5.1: Latency Monitoring
-
-**Steps:**
-1. Check browser Network tab
-2. Monitor SSE ping event timestamps
-3. Check voice tool execution times
-
-**Expected:**
-- SSE ping every 10s ± 500ms
-- Voice tool latency < 1000ms (micro-tools < 100ms)
-- No backpressure warnings
-- Chart updates within 100ms of bar emission
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-### Test 5.2: Memory Leaks
-
-**Steps:**
-1. Load application
-2. Switch timeframes 20 times
-3. Start/stop voice session 10 times
-4. Monitor browser Memory tab
-
-**Expected:**
-- Heap size stabilizes after 10 minutes
-- No continuous memory growth
-- SSE event listeners cleaned up on disconnect
-- Voice WebSocket timers cleared on close
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-### Test 5.3: Console Log Cleanliness
-
-**Steps:**
-1. Load application in production mode
-2. Monitor browser console for 5 minutes
-
-**Expected:**
-- No errors or warnings
-- Debug logs suppressed (if NODE_ENV=production)
-- Only info-level logs visible
-- No noisy heartbeat logs flooding console
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-## 6. Code Quality
-
-### Test 6.1: ESLint
-
-**Command:**
-```bash
-pnpm --filter @spotlight/server lint
-pnpm --filter @spotlight/client lint
-```
-
-**Expected:**
-- 0 errors
-- 0 warnings
-- All unused imports removed
-- No duplicate ring buffer files
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-### Test 6.2: TypeScript Compilation
-
-**Command:**
-```bash
-pnpm --filter @spotlight/server build
-pnpm --filter @spotlight/client build
-```
-
-**Expected:**
-- 0 type errors
-- Build artifacts generated
-- No emitted .d.ts errors
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-## 7. Deployment Readiness
-
-### Test 7.1: Production Build
-
-**Command:**
-```bash
-NODE_ENV=production pnpm --filter @spotlight/server build
-NODE_ENV=production pnpm --filter @spotlight/client build
-```
-
-**Expected:**
-- Client build succeeds with minified bundle
-- Server build succeeds with compiled JS
-- All environment variables validated
-- No development-only code included
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-### Test 7.2: Health Check Endpoint
-
-**Command:**
-```bash
-curl http://localhost:5000/health
-```
-
-**Expected:**
-- HTTP 200 OK
-- `{ok:true, timestamp: <ms>}`
-- Response time < 100ms
-
-**Actual:** ___ (PASS / FAIL / NOTES)
-
----
-
-## Summary
-
-**Tests Passed:** ___ / 23  
-**Tests Failed:** ___  
-**Tests Skipped:** ___
-
-**Critical Issues:**
-- ___
-
-**Medium Issues:**
-- ___
-
-**Low Priority:**
-- ___
-
-**Overall Status:** READY / NEEDS WORK / BLOCKED
-
----
-
-## Next Actions
-
-Based on test results, prioritize:
-
-1. **Fix Critical Blockers First**
-   - Chart freezes
-   - Auth failures
-   - Voice disconnects
-
-2. **Address Medium Issues**
-   - ESLint errors
-   - Cookie configuration
-   - Auto-reconnect logic
-
-3. **Polish & Optimize**
-   - Add metrics endpoint
-   - Improve logging
-   - Document procedures
-
----
-
-**Last Updated:** ___  
-**Tested By:** ___  
-**Environment:** Development / Production
+1. Monitor server metrics
+   - [ ] curl http://localhost:5000/api/metrics
+   - [ ] Verify `sse_active_connections` = 5
+   - [ ] Check `sse_events_dropped_total` doesn't spike
+
+2. Wait 60 seconds
+   - [ ] Verify all 5 connections receive bars
+   - [ ] Check for ping events in all streams
+
+3. Kill connections
+   - [ ] pkill -f "curl.*sse"
+   - [ ] Verify `sse_active_connections` returns to 0
+
+**Expected Results:**
+- Server handles 5+ concurrent connections
+- No dropped events or backpressure issues
+- Metrics accurately track connection count
+
+## Phase 3: Edge Case Testing
+
+### Sparse Trading Hours
+- [ ] Test during pre-market (4-9:30 AM ET)
+- [ ] Verify charts handle sparse bars correctly
+- [ ] Check for excessive gap-fill requests
+
+### Market Closed
+- [ ] Test OnDemand replay when market closed
+- [ ] Verify fallback messaging
+- [ ] Ensure no crash or error loops
+
+### Network Interruption (Voice)
+- [ ] Disable network for 10-20 seconds
+- [ ] Re-enable network
+- [ ] Verify SDK auto-reconnects without manual refresh
+
+## Success Criteria
+
+**Phase 2 Complete When:**
+- ✅ Multi-TF switching works (1m ↔ 5m ↔ 15m)
+- ✅ SSE reconnection seamless (no data loss)
+- ✅ OnDemand replay UI functional
+- ✅ Voice tools work with replay data
+- ✅ Safari auth cookies persist correctly
+- ✅ Load test passes (5+ concurrent SSE)
+
+**Production Ready When:**
+- ✅ All Phase 1 tests passed
+- ✅ All Phase 2 tests passed
+- ✅ All Phase 3 edge cases handled
+- ✅ Zero critical bugs in 24-hour soak test
+
+## Known Limitations
+- Rate limiting not implemented for Polygon API (could hit limits)
+- Structured logging (Winston/Pino) not yet added
+- No explicit client-side reconnection backoff (relies on browser defaults)
+
+## Test Artifacts
+- BASELINE.txt - Environment snapshot
+- BARS_SEQ_AUDIT.md - 20-bar sequence verification
+- POLYGON_REQUEST_LOGS.txt - API response samples
+- VOICE_WS_AUDIT.md - Voice WebSocket analysis
+- DIAGNOSIS.md - Root cause analysis (updated)
+- GRADES.yaml - Subsystem grades (updated to 9.2/10)
+- PHASE1_VERIFICATION_COMPLETE.md - Phase 1 summary

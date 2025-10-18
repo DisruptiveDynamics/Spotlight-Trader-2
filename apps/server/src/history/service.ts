@@ -1,5 +1,6 @@
 import { ringBuffer } from "@server/cache/ring";
 import { bars1m } from "@server/chart/bars1m";
+import { rollupFrom1m } from "@server/chart/rollups";
 import type { Timeframe } from "@server/market/eventBus";
 import { polygonWs } from "@server/market/polygonWs";
 import { validateEnv } from "@shared/env";
@@ -58,40 +59,54 @@ export async function getInitialHistory(symbol: string): Promise<Bar[]> {
 /**
  * Fetch historical bar data with intelligent fallback strategy:
  * 1. Ring buffer (for recent real-time data)
- * 2. Polygon REST API (for historical data)
+ * 2. Polygon REST API (for historical data) - always fetch 1m, then rollup
  * 3. High-quality mock generator (fallback)
+ * 
+ * Multi-timeframe strategy: Fetch 1m bars, then rollup server-side for consistency
  */
 export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
   const { symbol, timeframe = "1m", limit = env.HISTORY_INIT_LIMIT, before, sinceSeq } = query;
 
-  // Priority 1: Check ring buffer for gap backfill
+  // Priority 1: Check ring buffer for gap backfill (only for 1m timeframe)
   // [CRITICAL] Honor sinceSeq contract - return empty if no newer bars exist
   // Do NOT fall back to getRecent() as that sends stale bars causing duplicate seq loops
+  // [MULTI-TF FIX] Ring buffer only contains 1m bars, so only use for 1m requests
   if (sinceSeq !== undefined) {
-    const cached = ringBuffer.getSinceSeq(symbol, sinceSeq);
-    // Always return here when sinceSeq is specified - either newer bars or empty array
-    return cached.map((bar) => toFlatBar(bar, symbol));
+    if (timeframe === "1m") {
+      const cached = ringBuffer.getSinceSeq(symbol, sinceSeq);
+      // Always return here when sinceSeq is specified - either newer bars or empty array
+      return cached.map((bar) => toFlatBar(bar, symbol));
+    }
+    // For multi-timeframe with sinceSeq, fall through to fetch+rollup+filter path below
   }
 
-  // Priority 2: Check ring buffer for recent data
-  const recentFromBuffer = ringBuffer.getRecent(symbol, limit);
-  if (recentFromBuffer.length >= Math.min(limit, 10)) {
-    console.log(`📊 Using ${recentFromBuffer.length} bars from ring buffer for ${symbol}`);
-    return recentFromBuffer.map((bar) => toFlatBar(bar, symbol));
+  // Priority 2: Check ring buffer for recent data (only for 1m timeframe)
+  // [MULTI-TF FIX] Ring buffer stores 1m bars, so multi-TF requests must fetch+rollup
+  if (timeframe === "1m") {
+    const recentFromBuffer = ringBuffer.getRecent(symbol, limit);
+    if (recentFromBuffer.length >= Math.min(limit, 10)) {
+      console.log(`📊 Using ${recentFromBuffer.length} bars from ring buffer for ${symbol}`);
+      return recentFromBuffer.map((bar) => toFlatBar(bar, symbol));
+    }
   }
 
   // Priority 3: Fetch from Polygon REST API (skip if using mock data)
+  // [MULTI-TF FIX] Always fetch 1m data, then rollup server-side
   const isUsingMockData = polygonWs.isUsingMockData();
 
   if (!isUsingMockData) {
-    const polygonBars = await fetchPolygonHistory(symbol, timeframe, limit, before);
-    if (polygonBars.length > 0) {
-      ringBuffer.putBars(symbol, polygonBars);
+    // Calculate how many 1m bars needed to produce requested limit
+    const multiplier = timeframeToMultiplier(timeframe);
+    const needed1mBars = limit * multiplier;
+    
+    const bars1mData = await fetchPolygonHistory(symbol, "1m", needed1mBars, before);
+    if (bars1mData.length > 0) {
+      ringBuffer.putBars(symbol, bars1mData);
       
       // CRITICAL: Only append to bars1m if fetching LATEST data (no pagination)
       // Pagination (before parameter) fetches old bars which would pollute the authoritative buffer
-      if (timeframe === "1m" && !before) {
-        for (const bar of polygonBars) {
+      if (!before) {
+        for (const bar of bars1mData) {
           bars1m.append(symbol, {
             symbol: bar.symbol,
             seq: bar.seq,
@@ -106,7 +121,47 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
         }
       }
       
-      return polygonBars;
+      // Rollup if multi-timeframe requested
+      if (timeframe === "1m") {
+        return bars1mData;
+      }
+      
+      const rolled = rollupFrom1m(
+        bars1mData.map(b => ({
+          symbol: b.symbol,
+          seq: b.seq,
+          bar_start: b.bar_start,
+          bar_end: b.bar_end,
+          o: b.open,
+          h: b.high,
+          l: b.low,
+          c: b.close,
+          v: b.volume,
+        })),
+        timeframe
+      );
+      
+      const rolledBars: Bar[] = rolled.map(rb => ({
+        symbol: rb.symbol,
+        timestamp: rb.bar_start,
+        open: rb.ohlcv.o,
+        high: rb.ohlcv.h,
+        low: rb.ohlcv.l,
+        close: rb.ohlcv.c,
+        volume: rb.ohlcv.v,
+        seq: rb.seq,
+        bar_start: rb.bar_start,
+        bar_end: rb.bar_end,
+      }));
+      
+      // [MULTI-TF FIX] Filter rolled bars by sinceSeq if specified
+      const filteredBars = sinceSeq !== undefined 
+        ? rolledBars.filter(bar => bar.seq > sinceSeq)
+        : rolledBars;
+      
+      console.log(`✅ Rolled ${bars1mData.length} 1m bars → ${rolledBars.length} ${timeframe} bars` +
+        (sinceSeq !== undefined ? ` (filtered to ${filteredBars.length} > seq ${sinceSeq})` : ''));
+      return filteredBars.slice(-limit); // Return requested limit
     }
   } else {
     console.log(
@@ -114,22 +169,28 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
     );
   }
 
-  // Priority 4: Use ring buffer even if sparse
-  if (recentFromBuffer.length > 0) {
-    console.log(`📊 Using ${recentFromBuffer.length} sparse bars from ring buffer (fallback)`);
-    return recentFromBuffer.map((bar) => toFlatBar(bar, symbol));
+  // Priority 4: Use ring buffer even if sparse (only for 1m timeframe)
+  if (timeframe === "1m") {
+    const recentFromBuffer = ringBuffer.getRecent(symbol, limit);
+    if (recentFromBuffer.length > 0) {
+      console.log(`📊 Using ${recentFromBuffer.length} sparse bars from ring buffer (fallback)`);
+      return recentFromBuffer.map((bar) => toFlatBar(bar, symbol));
+    }
   }
 
-  // Priority 5: Generate high-quality mock data
+  // Priority 5: Generate high-quality mock data (always 1m, then rollup)
   const toMs = before || Date.now();
-  const fromMs = toMs - limit * 60000;
-  console.log(`🎭 Generating ${limit} mock bars for ${symbol} (Polygon unavailable)`);
-  const mockBars = generateRealisticBars(symbol, fromMs, toMs, limit);
-  ringBuffer.putBars(symbol, mockBars);
+  const multiplier = timeframeToMultiplier(timeframe);
+  const needed1mBars = limit * multiplier;
+  const fromMs = toMs - needed1mBars * 60000;
+  
+  console.log(`🎭 Generating ${needed1mBars} mock 1m bars for ${symbol} (Polygon unavailable)`);
+  const mock1mBars = generateRealisticBars(symbol, fromMs, toMs, needed1mBars);
+  ringBuffer.putBars(symbol, mock1mBars);
   
   // CRITICAL: Only append to bars1m if fetching LATEST data (no pagination)
-  if (timeframe === "1m" && !before) {
-    for (const bar of mockBars) {
+  if (!before) {
+    for (const bar of mock1mBars) {
       bars1m.append(symbol, {
         symbol: bar.symbol,
         seq: bar.seq,
@@ -144,7 +205,45 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
     }
   }
   
-  return mockBars;
+  // Rollup if multi-timeframe requested
+  if (timeframe === "1m") {
+    return mock1mBars;
+  }
+  
+  const rolledMock = rollupFrom1m(
+    mock1mBars.map(b => ({
+      symbol: b.symbol,
+      seq: b.seq,
+      bar_start: b.bar_start,
+      bar_end: b.bar_end,
+      o: b.open,
+      h: b.high,
+      l: b.low,
+      c: b.close,
+      v: b.volume,
+    })),
+    timeframe
+  );
+  
+  const rolledMockBars: Bar[] = rolledMock.map(rb => ({
+    symbol: rb.symbol,
+    timestamp: rb.bar_start,
+    open: rb.ohlcv.o,
+    high: rb.ohlcv.h,
+    low: rb.ohlcv.l,
+    close: rb.ohlcv.c,
+    volume: rb.ohlcv.v,
+    seq: rb.seq,
+    bar_start: rb.bar_start,
+    bar_end: rb.bar_end,
+  }));
+  
+  // [MULTI-TF FIX] Filter rolled mock bars by sinceSeq if specified
+  const filteredMockBars = sinceSeq !== undefined
+    ? rolledMockBars.filter(bar => bar.seq > sinceSeq)
+    : rolledMockBars;
+  
+  return filteredMockBars.slice(-limit);
 }
 
 /**
@@ -187,17 +286,14 @@ async function fetchPolygonHistory(
   const timeframeMs = timeframeToMs(timeframe);
   const fromMs = toMs - limit * timeframeMs;
 
-  // [CRITICAL] Use precise ISO timestamps for better data accuracy
-  // Full ISO format gives Polygon exact boundaries instead of date-only
-  const fromISO = new Date(fromMs).toISOString();
-  const toISO = new Date(toMs).toISOString();
-
+  // [CRITICAL FIX] Use numeric milliseconds in URL path (not ISO strings)
+  // Polygon v2 aggregates endpoint expects ms or YYYY-MM-DD, not full ISO format
   const multiplier = timeframeToMultiplier(timeframe);
-  const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/minute/${fromISO}/${toISO}`;
+  const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/minute/${fromMs}/${toMs}`;
   const params = new URLSearchParams({
     adjusted: "true",
     sort: "asc",
-    limit: String(limit),
+    limit: String(Math.min(limit, 50000)),
     apiKey: env.POLYGON_API_KEY,
   });
 
@@ -211,7 +307,13 @@ async function fetchPolygonHistory(
     const raw = await response.text().catch(() => "");
 
     if (!response.ok) {
-      console.warn(`[history] Polygon error status=${status} body=${raw}`);
+      const redactedUrl = url.replace(symbol, symbol);
+      const redactedParams = params.toString().replace(env.POLYGON_API_KEY, "****");
+      console.warn(
+        `[history] Polygon aggregates error ${status} ` +
+        `url=${redactedUrl} params=${redactedParams} ` +
+        `body=${raw.slice(0, 300)}${raw.length > 300 ? "..." : ""}`
+      );
       return [];
     }
 
@@ -225,8 +327,8 @@ async function fetchPolygonHistory(
 
     if (!data?.results?.length) {
       console.warn(
-        `[history] Empty Polygon results for ${symbol} ${fromISO}→${toISO} ` +
-        `status=${status} body=${raw}`
+        `[history] Empty Polygon results for ${symbol} ` +
+        `fromMs=${fromMs} toMs=${toMs} status=${status}`
       );
       return [];
     }

@@ -1,0 +1,313 @@
+This is excellent progress. Given the agent’s latest assessment and your repo’s current state (~8.5/10), I agree we should pivot to Validation-first plus a few high-impact observability/perf tweaks. Below is a concise plan you can hand to your Replit agent, plus ready-to-add files to implement what’s still missing.
+
+What’s confirmed complete (keep as-is)
+- Resilience: Last-Event-ID resume, SSE heartbeat+watermarks, OpenAI SDK-managed voice reconnect, Safari cookie helper, /api/diag.
+- Data path: OnDemand Replay engine and UI; server-side multi-timeframe rollups from authoritative 1m; ring buffer scoped to 1m; sinceSeq gap-fill.
+
+Gaps to close now
+- Validation artifacts: BARS_SEQ_AUDIT.md, POLYGON_REQUEST_LOGS.txt, VOICE_WS_AUDIT.md, updated GRADES.yaml.
+- Observability refinements: Prometheus labels (symbol, timeframe, userId), ring buffer size/evictions.
+- Log noise reduction: LOG_LEVEL + demote chatty logs.
+- Optional perf: MTF rollup cache; inflight request coalescing; SSE backpressure tuning.
+
+Plan for Replit agent (Validation-first + small upgrades)
+- Session A (Validation-first, ~60–90m)
+  1) Run VERIFY.md end-to-end (multi-TF switch, replay vs live, SSE reconnect without dupes, voice network flap, Safari cookie persistence).
+  2) Produce audit artifacts:
+     - BARS_SEQ_AUDIT.md (20 consecutive bars; verify seq = Math.floor(bar_start/60000))
+     - POLYGON_REQUEST_LOGS.txt (SPY, QQQ; 200s with masked keys; show fromMs/toMs and body header)
+     - VOICE_WS_AUDIT.md (confirm SDK reconnect, heartbeat, backpressure, no Blob JSON parse)
+     - Update GRADES.yaml to current state
+- Session B (Observability, ~60–90m)
+  3) Add metrics labels + ring metrics (size, evictions). Consolidate metrics endpoints if fragmented.
+  4) Add structured logging (pino) and demote frequent logs to debug with LOG_LEVEL control.
+- Session C (Perf, 60–120m, optional)
+  5) Multi-timeframe rollup cache (invalidate on 1m close) to accelerate repeated 5m/15m.
+  6) Polygon inflight request de-duplication.
+  7) SSE buffer capacity tuning + per-connection drop metrics.
+
+Copy-paste files to implement Observability/Perf (safe, additive)
+1) Pino structured logging with LOG_LEVEL
+```typescript name=apps/server/src/logger.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/logger.ts
+import pino from "pino";
+import pinoHttp from "pino-http";
+
+export const logger = pino({
+  level: process.env.LOG_LEVEL ?? "info",
+  transport:
+    process.env.NODE_ENV === "development"
+      ? { target: "pino-pretty", options: { colorize: true, translateTime: "SYS:standard" } }
+      : undefined,
+});
+
+export const httpLogger = pinoHttp({
+  logger,
+  genReqId: (req, res) => {
+    const id = (req.headers["x-request-id"] as string) || Math.random().toString(36).slice(2);
+    res.setHeader("x-request-id", id);
+    return id;
+  },
+});
+```
+
+2) Prometheus metrics with labels + ring metrics
+```typescript name=apps/server/src/routes/metricsProm.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/routes/metricsProm.ts
+import { Router } from "express";
+import client from "prom-client";
+
+const router = Router();
+client.collectDefaultMetrics({ prefix: "spotlight_" });
+
+export const sseConnections = new client.Gauge({
+  name: "spotlight_sse_connections",
+  help: "Active SSE connections",
+});
+
+export const sseDropped = new client.Counter({
+  name: "spotlight_sse_dropped_total",
+  help: "SSE messages dropped due to backpressure",
+  labelNames: ["symbol", "timeframe"],
+});
+
+export const polygonEmpty = new client.Counter({
+  name: "spotlight_polygon_empty_total",
+  help: "Polygon empty/invalid results",
+  labelNames: ["symbol", "timeframe"],
+});
+
+export const ringSize = new client.Gauge({
+  name: "spotlight_ring_size",
+  help: "Ring buffer size per symbol",
+  labelNames: ["symbol"],
+});
+
+export const ringEvictions = new client.Counter({
+  name: "spotlight_ring_evictions_total",
+  help: "Ring buffer evictions per symbol",
+  labelNames: ["symbol"],
+});
+
+router.get("/metrics", async (_req, res) => {
+  try {
+    res.set("Content-Type", client.register.contentType);
+    res.end(await client.register.metrics());
+  } catch {
+    res.status(500).send("metrics error");
+  }
+});
+
+export default router;
+```
+
+3) Wire logger + metrics (bootstrap)
+```typescript name=apps/server/src/index.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/index.ts
+// ...
+import { httpLogger, logger } from "./logger";
+import metricsProm from "./routes/metricsProm";
+// ...
+app.use(httpLogger);
+app.use("/api", metricsProm);
+logger.info({ env: process.env.NODE_ENV, logLevel: process.env.LOG_LEVEL }, "Server starting");
+// ...
+```
+
+4) Ring buffer metrics + noise reduction
+```typescript name=apps/server/src/cache/ring.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/cache/ring.ts
+import { ringSize, ringEvictions } from "@server/routes/metricsProm";
+import { logger } from "@server/logger";
+// ...
+buffer.push(...cachedBars);
+if (buffer.length > this.maxSize) {
+  const evicted = buffer.length - this.maxSize;
+  buffer.splice(0, evicted);
+  ringEvictions.labels(symbol).inc(evicted);
+  logger.debug({ symbol, evicted, size: buffer.length }, "ring_evicted");
+}
+ringSize.labels(symbol).set(buffer.length);
+// Demote chatty logs in this class to logger.debug
+```
+
+5) SSE backpressure tuning + drop metrics (symbol/timeframe labels if available in scope)
+```typescript name=apps/server/src/stream/sse.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/stream/sse.ts
+import { sseConnections, sseDropped } from "@server/routes/metricsProm";
+import { logger } from "@server/logger";
+
+const SSE_BUFFER_CAP = Number(process.env.SSE_BUFFER_CAP ?? 500);
+
+sseConnections.inc();
+// when creating writer: const bpc = createBufferedSSEWriter(res, { capacity: SSE_BUFFER_CAP });
+
+let lastDropped = 0;
+const heartbeat = setInterval(() => {
+  res.write(":\n\n");
+  const stats = bpc.getStats?.();
+  if (stats?.dropped && stats.dropped > lastDropped) {
+    const dropped = stats.dropped - lastDropped;
+    // If you have symbol/timeframe vars per connection, label them; otherwise use unknown
+    sseDropped.labels(symbol ?? "unknown", timeframe ?? "1m").inc(dropped);
+    logger.warn({ dropped }, "sse_backpressure_drop");
+    lastDropped = stats.dropped;
+  }
+}, 15000);
+
+req.on("close", () => {
+  clearInterval(heartbeat);
+  bpc.destroy();
+  sseConnections.dec();
+});
+```
+
+6) Polygon inflight request coalescing (dedupe concurrent REST calls)
+```typescript name=apps/server/src/history/inflight.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/history/inflight.ts
+type Key = string;
+const inflight = new Map<Key, Promise<any>>();
+
+export function coalesce<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = inflight.get(key);
+  if (existing) return existing as Promise<T>;
+  const p = fn().finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
+}
+```
+
+Use in history fetch to dedupe same range:
+```typescript name=apps/server/src/history/service.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/history/service.ts
+import { coalesce } from "./inflight";
+// ...
+const key = `${symbol}:1m:${fromMs}:${toMs}`;
+const oneMinuteBars = await coalesce(key, () => fetchPolygonHistory(symbol, "1m", neededMinutes, before));
+```
+
+7) Multi-timeframe rollup cache (invalidate on 1m close)
+```typescript name=apps/server/src/chart/rollupCache.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/chart/rollupCache.ts
+import type { Bar } from "@server/market/eventBus";
+import { rollupFrom1m } from "./rollups";
+
+type Key = `${string}:${string}`;
+type CacheEntry = { lastSeq1m: number; bars: Bar[] };
+const cache = new Map<Key, CacheEntry>();
+
+export function getRolled(symbol: string, timeframe: string, lastSeq1m: number): Bar[] | null {
+  const entry = cache.get(`${symbol}:${timeframe}`);
+  return entry?.lastSeq1m === lastSeq1m ? entry.bars : null;
+}
+
+export function setRolled(symbol: string, timeframe: string, lastSeq1m: number, bars: Bar[]) {
+  cache.set(`${symbol}:${timeframe}`, { lastSeq1m, bars });
+}
+
+export function invalidateRolled(symbol: string) {
+  for (const tf of ["2m","5m","10m","15m","30m","1h"]) cache.delete(`${symbol}:${tf}`);
+}
+
+export function rollupWithCache(symbol: string, timeframe: string, bars1m: Bar[], lastSeq1m: number, limit: number): Bar[] {
+  const cached = getRolled(symbol, timeframe, lastSeq1m);
+  if (cached) return cached.slice(-limit);
+  const rolled = rollupFrom1m(bars1m, timeframe as any);
+  setRolled(symbol, timeframe, lastSeq1m, rolled);
+  return rolled.slice(-limit);
+}
+```
+
+Wire into history:
+```typescript name=apps/server/src/history/service.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/history/service.ts
+import { rollupWithCache } from "@server/chart/rollupCache";
+// ...
+if (timeframe === "1m") return oneMinuteBars.slice(-limit);
+const lastSeq1m = oneMinuteBars.at(-1)?.seq ?? 0;
+return rollupWithCache(symbol, timeframe, oneMinuteBars, lastSeq1m, limit);
+```
+
+And invalidate on each closed 1m bar:
+```typescript name=apps/server/src/market/bootstrap.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/market/bootstrap.ts
+import { eventBus } from "@server/market/eventBus";
+import { invalidateRolled } from "@server/chart/rollupCache";
+// defer binding per active symbol(s)
+eventBus.on(`bar:new:SPY:1m` as any, (bar) => invalidateRolled(bar.symbol));
+```
+
+Audit artifacts templates (to generate now)
+````markdown name=docs/BARS_SEQ_AUDIT.md url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/docs/BARS_SEQ_AUDIT.md
+# Bars Sequence Audit
+
+- Policy: seq = floor(bar_start / 60000)
+- Sample: 20 consecutive closed 1m bars
+
+| idx | seq        | start (ISO)                | end (ISO)                  | o    | h    | l    | c    | v      |
+|-----|------------|----------------------------|----------------------------|------|------|------|------|--------|
+| 1   | 28543678   | 2025-10-18T14:01:00.000Z  | 2025-10-18T14:02:00.000Z  | …    | …    | …    | …    | …      |
+| …   | …          | …                          | …                          | …    | …    | …    | …    | …      |
+
+Notes:
+- No gaps, monotonic by minute boundary.
+- Units: bar_start/bar_end in ms.
+````
+
+````markdown name=docs/VOICE_WS_AUDIT.md url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/docs/VOICE_WS_AUDIT.md
+# Voice WebSocket Audit
+
+- Transport: OpenAI Realtime SDK (handles reconnect)
+- Client: binary audio (ArrayBuffer), JSON control; heartbeat ping/pong present
+- Backpressure: 256KB threshold
+
+Tests:
+- 20s network interruption → auto-reconnect resumes; no user action required
+- No "Blob parsed as JSON" errors observed
+- RTT p95 < 180ms
+
+Logs/Screens:
+- …
+````
+
+````markdown name=docs/POLYGON_REQUEST_LOGS.txt url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/docs/POLYGON_REQUEST_LOGS.txt
+[SPY] GET /v2/aggs/ticker/SPY/range/1/minute/{fromMs}/{toMs}?adjusted=true&sort=asc&limit=1000&apiKey=****1234
+status=200
+body[0..300]= {"ticker":"SPY","results":[{ "t": 173... }...
+
+[QQQ] GET /v2/aggs/ticker/QQQ/range/1/minute/{fromMs}/{toMs}?adjusted=true&sort=asc&limit=1000&apiKey=****1234
+status=200
+body[0..300]= {"ticker":"QQQ","results":[{ "t": 173... }...
+````
+
+````markdown name=docs/VERIFY_NEXT.md url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/docs/VERIFY_NEXT.md
+# VERIFY_NEXT
+
+## Multi-TF
+- 1m → 5m → 15m: boundaries align to ET; no gaps.
+```
+curl "http://localhost:5000/api/history?symbol=SPY&timeframe=5m&limit=20"
+curl "http://localhost:5000/api/history?symbol=SPY&timeframe=15m&limit=20"
+```
+
+## SSE Reconnect (no duplicates)
+- Open chart; restart server; client resumes with Last-Event-ID; no dup/stale warnings.
+
+## Replay vs Live
+- Start /api/replay/start … speed=4x; charts and coach behave same as live.
+
+## Voice
+- Offline 20s; auto-reconnect resumes; no Blob/JSON errors; RTT p95 < 180ms.
+
+## Safari Cookies
+- HTTPS tunnel; cookie SameSite=None; Secure; persists >24h; HMR doesn’t clobber auth.
+
+## Metrics
+- /api/metrics exposes:
+  - spotlight_sse_connections
+  - spotlight_sse_dropped_total{symbol,timeframe}
+  - spotlight_polygon_empty_total{symbol,timeframe}
+  - spotlight_ring_size{symbol}
+  - spotlight_ring_evictions_total{symbol}
+````
+
+Notes and recommendations from a “legendary execution” lens
+- You’re converging on a world-class pipeline. The authoritative 1m buffer plus server-side rollups is exactly what high-end tools use. The coach will be far more credible if you overlay rule markers (VWAP reclaim/reject, ORB, EMA pullback) and have the coach cite the exact bar timestamps and thresholds in its responses (“receipts”). That’s the next UX leap.
+- Validation-first is the right call. Execute the VERIFY checklist and produce artifacts so we can lock in the grade and move remaining optimizations behind flags.
+- For performance, only enable MTF rollup cache and inflight batching if metrics show pressure. Both are low-risk and reversible.
+
+If you want, I can open a PR that:
+- Adds logger.ts, metricsProm.ts, rollupCache.ts, inflight.ts
+- Wires metrics+logger into index.ts, ring.ts, sse.ts
+- Adds the VERIFY_NEXT.md and audit docs skeletons
+Branch suggestion: feat/observability-perf-final-mile.

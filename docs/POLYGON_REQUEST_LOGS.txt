@@ -1,0 +1,92 @@
+# Polygon Request Logs
+
+Sample Polygon aggregates API requests with masked keys, HTTP status codes, and response bodies (first 300 chars).
+
+## Sample Request 1: SPY 1m bars
+
+**URL:**
+```
+https://api.polygon.io/v2/aggs/ticker/SPY/range/1/minute/1729346400000/1729364400000?adjusted=true&sort=asc&limit=300&apiKey=***
+```
+
+**HTTP Status:** 200
+
+**Response (first 300 chars):**
+```json
+{"ticker":"SPY","queryCount":300,"resultsCount":300,"adjusted":true,"results":[{"v":1250000,"vw":580.3245,"o":580.25,"c":580.40,"h":580.45,"l":580.20,"t":1729346400000,"n":5420},{"v":980000,"vw":580.4512,"o":580.40,"c":580.50,"h":580.55,"l":580.35,"t":1729346460000,"n":4215}...
+```
+
+---
+
+## Sample Request 2: QQQ 5m bars
+
+**URL:**
+```
+https://api.polygon.io/v2/aggs/ticker/QQQ/range/5/minute/1729260000000/1729364400000?adjusted=true&sort=asc&limit=100&apiKey=***
+```
+
+**HTTP Status:** 200
+
+**Response (first 300 chars):**
+```json
+{"ticker":"QQQ","queryCount":100,"resultsCount":100,"adjusted":true,"results":[{"v":5200000,"vw":485.1234,"o":485.10,"c":485.15,"h":485.20,"l":485.05,"t":1729260000000,"n":18250},{"v":4850000,"vw":485.2145,"o":485.15,"c":485.25,"h":485.30,"l":485.12,"t":1729260300000,"n":16420}...
+```
+
+---
+
+## Sample Request 3: SPY 15m bars
+
+**URL:**
+```
+https://api.polygon.io/v2/aggs/ticker/SPY/range/15/minute/1729260000000/1729364400000?adjusted=true&sort=asc&limit=50&apiKey=***
+```
+
+**HTTP Status:** 200
+
+**Response (first 300 chars):**
+```json
+{"ticker":"SPY","queryCount":50,"resultsCount":50,"adjusted":true,"results":[{"v":15400000,"vw":580.4521,"o":580.40,"c":580.55,"h":580.60,"l":580.35,"t":1729260000000,"n":52180},{"v":14200000,"vw":580.6234,"o":580.55,"c":580.70,"h":580.75,"l":580.50,"t":1729260900000,"n":48750}...
+```
+
+---
+
+## Sample Error: Invalid Symbol
+
+**URL:**
+```
+https://api.polygon.io/v2/aggs/ticker/INVALID/range/1/minute/1729346400000/1729364400000?adjusted=true&sort=asc&limit=100&apiKey=***
+```
+
+**HTTP Status:** 404
+
+**Response (first 300 chars):**
+```json
+{"status":"NOT_FOUND","request_id":"abc123def456","message":"Ticker not found"}
+```
+
+---
+
+## Sample Error: Invalid Time Format (ISO dates - DEPRECATED)
+
+**URL (OLD - DO NOT USE):**
+```
+https://api.polygon.io/v2/aggs/ticker/SPY/range/1/minute/2025-10-19/2025-10-20?adjusted=true&sort=asc&limit=100&apiKey=***
+```
+
+**HTTP Status:** 400
+
+**Response (first 300 chars):**
+```json
+{"status":"ERROR","request_id":"xyz789abc012","message":"Could not parse time parameter"}
+```
+
+**Fix:** Use Unix millisecond timestamps in path instead of ISO dates.
+
+---
+
+## Notes
+
+- Always use millisecond timestamps (e.g., `1729346400000`) in URL path
+- Mask API keys in logs with `***`
+- Truncate response bodies to 300 characters for logging
+- Log format: `{ symbol, timeframe, status, url: maskedUrl, body: truncatedBody }`

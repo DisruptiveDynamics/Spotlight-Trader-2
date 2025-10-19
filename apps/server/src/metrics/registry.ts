@@ -127,6 +127,7 @@ export function recordSSEConnection(userId: string) {
 
   const total = Array.from(activeSSEByUser.values()).reduce((a, b) => a + b, 0);
   metrics.gauge("sse_active_connections_total", total);
+  setSSEConnectionsGauge(total);
 }
 
 export function recordSSEDisconnection(userId: string) {
@@ -141,6 +142,7 @@ export function recordSSEDisconnection(userId: string) {
 
   const total = Array.from(activeSSEByUser.values()).reduce((a, b) => a + b, 0);
   metrics.gauge("sse_active_connections_total", total);
+  setSSEConnectionsGauge(total);
 }
 
 export function recordSSEEvent(eventType: string) {
@@ -191,4 +193,28 @@ export function recordWebVital(name: string, value: number, rating: string) {
 
 export function recordFPS(fps: number) {
   metrics.histogram("client_fps", fps);
+}
+
+// [OBS] Ring buffer metrics
+export function recordRingSize(symbol: string, size: number) {
+  metrics.gauge("spotlight_ring_size", size, { symbol });
+}
+
+export function recordRingEviction(symbol: string) {
+  metrics.counter("spotlight_ring_evictions_total", { symbol });
+}
+
+// [OBS] SSE dropped events with labels
+export function recordSSEDropped(symbol: string, timeframe: string, count: number = 1) {
+  metrics.incrementCounter("spotlight_sse_dropped_total", count, { symbol, timeframe });
+}
+
+// [OBS] Polygon empty results
+export function recordPolygonEmpty(symbol: string, timeframe: string) {
+  metrics.counter("spotlight_polygon_empty_total", { symbol, timeframe });
+}
+
+// [OBS] SSE connections gauge (unified metric name)
+export function setSSEConnectionsGauge(count: number) {
+  metrics.gauge("spotlight_sse_connections", count);
 }

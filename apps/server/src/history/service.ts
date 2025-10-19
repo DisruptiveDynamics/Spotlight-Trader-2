@@ -2,6 +2,8 @@ import { validateEnv } from "@shared/env";
 import { ringBuffer } from "@server/cache/ring";
 import type { Bar, Timeframe } from "@server/market/eventBus";
 import { polygonWs } from "@server/market/polygonWs";
+import { recordPolygonEmpty } from "@server/metrics/registry";
+import { logger } from "@server/logger";
 
 const env = validateEnv(process.env);
 
@@ -70,7 +72,7 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
   // Priority 2: Check ring buffer for recent data
   const recentFromBuffer = ringBuffer.getRecent(symbol, limit);
   if (recentFromBuffer.length >= Math.min(limit, 10)) {
-    console.log(`📊 Using ${recentFromBuffer.length} bars from ring buffer for ${symbol}`);
+    logger.debug({ symbol, count: recentFromBuffer.length }, "Using bars from ring buffer");
     return recentFromBuffer.map((bar) => ({
       symbol,
       timeframe,
@@ -97,12 +99,12 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
       return polygonBars;
     }
   } else {
-    console.log(`🎭 Skipping Polygon API (mock mode active) - generating realistic bars for ${symbol}`);
+    logger.debug({ symbol }, "Skipping Polygon API (mock mode active)");
   }
 
   // Priority 4: Use ring buffer even if sparse
   if (recentFromBuffer.length > 0) {
-    console.log(`📊 Using ${recentFromBuffer.length} sparse bars from ring buffer (fallback)`);
+    logger.debug({ symbol, count: recentFromBuffer.length }, "Using sparse bars from ring buffer (fallback)");
     return recentFromBuffer.map((bar) => ({
       symbol,
       timeframe,
@@ -122,7 +124,7 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
   // Priority 5: Generate high-quality mock data
   const toMs = before || Date.now();
   const fromMs = toMs - limit * 60000;
-  console.log(`🎭 Generating ${limit} mock bars for ${symbol} (Polygon unavailable)`);
+  logger.info({ symbol, limit }, "Generating mock bars (Polygon unavailable)");
   const mockBars = generateRealisticBars(symbol, fromMs, toMs, limit);
   ringBuffer.putBars(symbol, mockBars);
   return mockBars;
@@ -153,7 +155,7 @@ function timeframeToMs(timeframe: Timeframe): number {
 
 /**
  * Fetch historical bars from Polygon REST API using direct fetch
- * Uses limit-based fetch (not time-based) for efficient cold starts
+ * Uses millisecond timestamps in URL path (not ISO dates) to avoid parsing errors
  */
 async function fetchPolygonHistory(
   symbol: string,
@@ -168,12 +170,10 @@ async function fetchPolygonHistory(
   const timeframeMs = timeframeToMs(timeframe);
   const fromMs = toMs - limit * timeframeMs;
 
-  // Format dates for Polygon API (YYYY-MM-DD)
-  const fromDate = new Date(fromMs).toISOString().split("T")[0];
-  const toDate = new Date(toMs).toISOString().split("T")[0];
-
   const multiplier = timeframeToMultiplier(timeframe);
-  const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/minute/${fromDate}/${toDate}`;
+  
+  // [RELIABILITY] Use milliseconds in path (not ISO dates) to avoid 400 parsing errors
+  const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/minute/${fromMs}/${toMs}`;
   const params = new URLSearchParams({
     adjusted: "true",
     sort: "asc",
@@ -189,26 +189,38 @@ async function fetchPolygonHistory(
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "Unknown error");
-      console.warn(`Polygon API error (${response.status}): ${errorText}`);
+      // [RELIABILITY] Log non-200 with masked apiKey and first 300 chars of body
+      const maskedUrl = url.replace(env.POLYGON_API_KEY, "***");
+      const truncatedBody = errorText.substring(0, 300);
+      logger.warn({
+        symbol,
+        timeframe,
+        status: response.status,
+        url: maskedUrl,
+        body: truncatedBody,
+      }, "Polygon API error");
       return [];
     }
 
     const data = (await response.json()) as PolygonAggResponse;
 
     if (!data.results || data.results.length === 0) {
-      console.warn(`No historical data from Polygon for ${symbol}`);
+      logger.debug({ symbol, timeframe }, "No historical data from Polygon");
+      recordPolygonEmpty(symbol, timeframe);
       return [];
     }
 
-    const timeframeMs = timeframeToMs(timeframe);
     const bars: Bar[] = data.results.map((agg) => {
       const bar_start = agg.t;
       const bar_end = bar_start + timeframeMs;
 
+      // [RELIABILITY] Ensure seq = floor(bar_start / 60000) for 1m bars
+      const seqDivisor = timeframe === "1m" ? 60000 : timeframeMs;
+
       return {
         symbol,
         timeframe,
-        seq: Math.floor(bar_start / timeframeMs),
+        seq: Math.floor(bar_start / seqDivisor),
         bar_start,
         bar_end,
         ohlcv: {
@@ -221,11 +233,11 @@ async function fetchPolygonHistory(
       };
     });
 
-    console.log(`✅ Fetched ${bars.length} historical bars from Polygon for ${symbol}`);
+    logger.debug({ symbol, timeframe, count: bars.length }, "Fetched bars from Polygon");
     return bars;
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : "Unknown error";
-    console.warn(`Polygon API request failed: ${errorMsg}`);
+    logger.warn({ symbol, timeframe, error: errorMsg }, "Polygon API request failed");
     return [];
   }
 }

@@ -22,6 +22,7 @@ import { feedbackRouter } from "./routes/feedback";
 import { backtestRouter } from "./routes/backtest";
 import { signalsRouter } from "./routes/signals";
 import { metricsRouter } from "./routes/metrics";
+import { metricsPromRouter } from "./routes/metricsProm";
 import { adminRouter } from "./routes/admin";
 import authRouter from "./routes/auth";
 import exportRouter from "./routes/export";
@@ -41,6 +42,7 @@ import { initializeMarketSource } from "./market/bootstrap";
 import { initializeTelemetryBridge } from "./telemetry/bridge";
 import { telemetryBus } from "./telemetry/bus";
 import { proactiveCoachingEngine } from "./coach/proactiveCoaching";
+import { logger, createHttpLogger } from "./logger";
 
 const env = validateEnv(process.env);
 const app = express();
@@ -52,6 +54,9 @@ server.headersTimeout = 80000; // 80 seconds
 
 // [PERFORMANCE] Enable gzip compression for all responses
 app.use(compression());
+
+// [OBS] HTTP request logging
+app.use(createHttpLogger());
 
 app.use(express.json());
 app.use(cookieParser());
@@ -91,6 +96,7 @@ app.use("/auth", authRouter);
 
 app.use("/api/flags", flagsRouter);
 app.use("/api/metrics", metricsRouter);
+app.use("/api/metrics", metricsPromRouter);
 app.use("/api/admin", adminRouter);
 
 initializeMarketPipeline(app);
@@ -125,7 +131,7 @@ triggerManager.initialize(sessionStartMs);
 
 // Initialize proactive coaching engine
 proactiveCoachingEngine.setupMarketMonitoring(telemetryBus);
-console.log("✅ Proactive coaching engine initialized");
+logger.info("Proactive coaching engine initialized");
 
 // Error middleware - must be last
 app.use(notFound); // 404 handler
@@ -138,6 +144,12 @@ await initializeMarketSource();
 
 server.listen(PORT, "0.0.0.0", () => {
   const proto = env.NODE_ENV === "production" ? "wss" : "ws";
+  logger.info({
+    port: PORT,
+    env: env.NODE_ENV,
+    logLevel: env.LOG_LEVEL,
+    proto,
+  }, "Server started");
   console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
   console.log(`   Environment: ${env.NODE_ENV}`);
   console.log(`   Log level: ${env.LOG_LEVEL}`);
@@ -145,42 +157,41 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`   WebSocket: ${proto}://0.0.0.0:${PORT}/ws/realtime`);
   console.log(`   [SSE] mounted at /realtime/sse`);
   console.log(`   [WS] voice at /ws/realtime, tools at /ws/tools`);
+  console.log(`   [OBS] Prometheus metrics at /api/metrics/prometheus`);
 });
 
 // Global process error handlers for crash visibility
 process.on("uncaughtException", (error) => {
-  console.error("[CRITICAL] Uncaught Exception:", {
+  logger.fatal({
     message: error.message,
     stack: error.stack,
     timestamp: new Date().toISOString(),
-  });
-  console.error("[CRITICAL] Process exiting due to uncaught exception");
+  }, "Uncaught Exception - exiting");
   process.exit(1);
 });
 
 process.on("unhandledRejection", (reason, promise) => {
-  console.error("[CRITICAL] Unhandled Rejection:", {
+  logger.fatal({
     reason,
     promise,
     timestamp: new Date().toISOString(),
-  });
-  console.error("[CRITICAL] Process exiting due to unhandled rejection");
+  }, "Unhandled Rejection - exiting");
   process.exit(1);
 });
 
 // Graceful shutdown handlers
 process.on("SIGTERM", () => {
-  console.log("[Server] SIGTERM received, closing server gracefully...");
+  logger.info("SIGTERM received, closing server gracefully");
   server.close(() => {
-    console.log("[Server] Server closed");
+    logger.info("Server closed");
     process.exit(0);
   });
 });
 
 process.on("SIGINT", () => {
-  console.log("[Server] SIGINT received, closing server gracefully...");
+  logger.info("SIGINT received, closing server gracefully");
   server.close(() => {
-    console.log("[Server] Server closed");
+    logger.info("Server closed");
     process.exit(0);
   });
 });

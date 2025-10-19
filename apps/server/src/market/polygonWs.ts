@@ -1,10 +1,13 @@
 import { websocketClient } from "@polygon.io/client-js";
 import { validateEnv } from "@shared/env";
 import { eventBus } from "./eventBus";
-import { isExtendedHoursActive } from "./marketHours";
 import { mockTickGenerator } from "./mockTickGenerator";
+import { logger } from "@server/logger";
 
 const env = validateEnv(process.env);
+
+// [OBS] Feature flags for mock/replay modes
+const FF_MOCK = process.env.FF_MOCK === "true";
 
 export class PolygonWebSocket {
   private ws: ReturnType<typeof websocketClient> | null = null;
@@ -20,22 +23,21 @@ export class PolygonWebSocket {
 
   async connect() {
     try {
-      // Check if ANY extended hours trading is active (pre-market, regular, or after-hours)
-      // Polygon WebSocket provides real-time data 4 AM - 8 PM ET
-      const extendedHoursActive = isExtendedHoursActive();
-
-      if (!extendedHoursActive) {
-        console.log(`🌙 Outside extended hours (4 AM-8 PM ET) - WebSocket unavailable, using REST API + mock ticks`);
-        this.useMockData = false; // Don't block REST API - just means we need mock ticks
+      // [ALWAYS-ON] Remove time-based gating - connect 24/7
+      // If Polygon is closed, stream will be silent (which is fine)
+      // Only use mock data if FF_MOCK flag is explicitly enabled
+      if (FF_MOCK) {
+        logger.info("FF_MOCK enabled - using mock tick generator");
+        this.useMockData = true;
         this.useWebSocket = false;
         this.isConnected = true;
-        this.resubscribe(); // Start mock tick generators (bars will use REST API for history)
+        this.resubscribe(); // Start mock tick generators
         return;
       }
 
       // Stock Advanced plan uses real-time feed
       const wsUrl = "wss://socket.polygon.io";
-      console.log(`📡 Connecting to Polygon real-time feed (extended hours active)`);
+      logger.info("Connecting to Polygon real-time feed (always-on mode)");
 
       this.useMockData = false;
       this.useWebSocket = true;
@@ -45,7 +47,7 @@ export class PolygonWebSocket {
         const ws = this.ws as any;
 
         ws.onopen = () => {
-          console.log("✅ Polygon WebSocket connected");
+          logger.info("Polygon WebSocket connected");
           this.isConnected = true;
           this.reconnectAttempts = 0;
           this.lastMessageTime = Date.now();
@@ -73,30 +75,30 @@ export class PolygonWebSocket {
             const messages = JSON.parse(response);
             messages.forEach((msg: any) => this.handleMessage(msg));
           } catch (err) {
-            console.error("Failed to parse Polygon message:", err);
+            logger.error({ err }, "Failed to parse Polygon message");
           }
         };
 
         ws.onerror = (error: any) => {
-          console.error("Polygon WebSocket error:", error);
+          logger.error({ error }, "Polygon WebSocket error");
         };
 
         ws.onclose = () => {
-          console.warn("Polygon WebSocket closed");
+          logger.warn("Polygon WebSocket closed");
           this.isConnected = false;
           this.stopHeartbeat();
           this.reconnect();
         };
       }
     } catch (err) {
-      console.error("Failed to connect to Polygon:", err);
+      logger.error({ err }, "Failed to connect to Polygon");
       this.reconnect();
     }
   }
 
   private handleMessage(msg: any) {
     if (msg.ev === "status") {
-      console.log("Polygon status:", msg.message);
+      logger.debug({ status: msg.status, message: msg.message }, "Polygon status");
       
       // Detect TRUE authentication failures only (not benign errors)
       const authFailed = msg.status === "auth_failed" || 
@@ -107,7 +109,7 @@ export class PolygonWebSocket {
                         ));
       
       if (authFailed) {
-        console.error("❌ Polygon authentication failed - falling back to mock data");
+        logger.error("Polygon authentication failed - falling back to mock data");
         this.useMockData = true;
         this.useWebSocket = false;
         this.isConnected = false;
@@ -127,7 +129,7 @@ export class PolygonWebSocket {
     }
 
     if (msg.ev === "T") {
-      console.log(`📊 Tick: ${msg.sym} $${msg.p} (${msg.s} shares)`);
+      logger.debug({ symbol: msg.sym, price: msg.p, size: msg.s }, "Polygon tick");
       const tick: any = {
         ts: msg.t,
         price: msg.p,
@@ -140,13 +142,13 @@ export class PolygonWebSocket {
   subscribe(symbol: string) {
     this.subscribedSymbols.add(symbol);
 
-    if (this.useMockData || !this.useWebSocket) {
-      // Start mock tick generator for this symbol (auth failed OR outside extended hours)
+    if (this.useMockData || FF_MOCK) {
+      // Start mock tick generator for this symbol (FF_MOCK enabled)
       mockTickGenerator.start(symbol);
       return;
     }
 
-    if (this.isConnected && this.ws) {
+    if (this.isConnected && this.ws && this.useWebSocket) {
       (this.ws as any).send(
         JSON.stringify({
           action: "subscribe",
@@ -159,13 +161,13 @@ export class PolygonWebSocket {
   unsubscribe(symbol: string) {
     this.subscribedSymbols.delete(symbol);
 
-    if (this.useMockData || !this.useWebSocket) {
-      // Stop mock tick generator (auth failed OR outside extended hours)
+    if (this.useMockData || FF_MOCK) {
+      // Stop mock tick generator (FF_MOCK enabled)
       mockTickGenerator.stop(symbol);
       return;
     }
 
-    if (this.isConnected && this.ws) {
+    if (this.isConnected && this.ws && this.useWebSocket) {
       (this.ws as any).send(
         JSON.stringify({
           action: "unsubscribe",
@@ -176,15 +178,15 @@ export class PolygonWebSocket {
   }
 
   private resubscribe() {
-    if (this.useMockData || !this.useWebSocket) {
-      // Start mock generators for all subscribed symbols (auth failed OR outside extended hours)
+    if (this.useMockData || FF_MOCK) {
+      // Start mock generators for all subscribed symbols (FF_MOCK enabled)
       for (const symbol of this.subscribedSymbols) {
         mockTickGenerator.start(symbol);
       }
       return;
     }
 
-    if (this.subscribedSymbols.size > 0 && this.ws) {
+    if (this.subscribedSymbols.size > 0 && this.ws && this.useWebSocket) {
       const params = Array.from(this.subscribedSymbols)
         .map((sym) => `T.${sym}`)
         .join(",");
@@ -212,19 +214,19 @@ export class PolygonWebSocket {
 
   private startHeartbeat() {
     // Don't need heartbeat for mock data
-    if (this.useMockData) return;
+    if (this.useMockData || FF_MOCK) return;
 
     this.heartbeatInterval = setInterval(() => {
-      if (this.isConnected && !this.useMockData) {
+      if (this.isConnected && !this.useMockData && !FF_MOCK) {
         const timeSinceLastMessage = Date.now() - this.lastMessageTime;
 
         if (timeSinceLastMessage > 60000) {
-          console.warn("No message received in 60s, reconnecting...");
+          logger.warn("No message received in 60s, reconnecting...");
           if (this.ws) {
             (this.ws as any).close();
           }
         } else {
-          console.log("🫀 Polygon heartbeat");
+          logger.debug("Polygon heartbeat");
         }
       }
     }, 30000);

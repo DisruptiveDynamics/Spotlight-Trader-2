@@ -21,6 +21,13 @@ export const envSchema = z.object({
   HISTORY_INIT_TIMEFRAME: z.enum(["1m", "2m", "5m", "15m", "30m", "1h"]).default("1m"),
   TOOL_TIMEOUT_MS: z.coerce.number().min(500).max(5000).default(1500),
   RING_BUFFER_CAP: z.coerce.number().min(1000).max(10000).default(5000),
+  
+  // [OBS] SSE backpressure tuning
+  SSE_BUFFER_CAP: z.coerce.number().min(100).max(5000).default(500).optional(),
+  
+  // [FEATURE FLAGS] Mock/replay modes
+  FF_MOCK: z.string().optional(), // Enable mock tick generator
+  FF_REPLAY: z.string().optional(), // Enable replay mode
 });
 
 export type Env = z.infer<typeof envSchema>;

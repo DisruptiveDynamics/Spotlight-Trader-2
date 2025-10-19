@@ -1,4 +1,6 @@
 import type { Bar } from "@server/market/eventBus";
+import { recordRingSize, recordRingEviction } from "@server/metrics/registry";
+import { logger } from "@server/logger";
 
 interface CachedBar {
   seq: number;
@@ -46,9 +48,16 @@ export class RingBuffer {
 
     buffer.push(...cachedBars);
 
-    if (buffer.length > this.maxSize) {
-      buffer.splice(0, buffer.length - this.maxSize);
+    // Track evictions
+    const evicted = buffer.length - this.maxSize;
+    if (evicted > 0) {
+      buffer.splice(0, evicted);
+      recordRingEviction(symbol);
+      logger.debug({ symbol, evicted }, "Ring buffer eviction");
     }
+
+    // Update ring size metric
+    recordRingSize(symbol, buffer.length);
   }
 
   getSinceSeq(symbol: string, seq: number): CachedBar[] {

@@ -7,15 +7,26 @@ import {
   recordSSEDisconnection,
   recordSSEEvent,
   recordSSEBackpressure,
+  recordSSEDropped,
 } from "@server/metrics/registry";
 import { getMarketSource, getMarketReason } from "@server/market/bootstrap";
 import { getEpochId, getEpochStartMs } from "./epoch"; // [RESILIENCE] Server restart detection
+import { logger } from "@server/logger";
+
+// [PERFORMANCE] Configurable SSE buffer capacity
+const SSE_BUFFER_CAP = parseInt(process.env.SSE_BUFFER_CAP || "500", 10);
 
 export async function sseMarketStream(req: Request, res: Response) {
   const symbolsParam = (req.query.symbols as string) || "SPY";
   const symbols = symbolsParam.split(",").map((s) => s.trim().toUpperCase());
   const timeframe = (req.query.timeframe as string) || "1m"; // Allow client to specify timeframe
   const sinceSeq = req.query.sinceSeq ? parseInt(req.query.sinceSeq as string, 10) : undefined;
+
+  // [RESILIENCE] Support Last-Event-ID header for resume
+  const lastEventId = req.headers["last-event-id"]
+    ? parseInt(req.headers["last-event-id"] as string, 10)
+    : undefined;
+  const resumeFromSeq = lastEventId || sinceSeq;
 
   // [RESILIENCE] Include epoch info in headers for client restart detection
   res.setHeader("Content-Type", "text/event-stream");
@@ -31,7 +42,12 @@ export async function sseMarketStream(req: Request, res: Response) {
   const userId = (req as any).userId || "anonymous";
   recordSSEConnection(userId);
 
-  const bpc = new BackpressureController(res, 100);
+  const bpc = new BackpressureController(res, SSE_BUFFER_CAP);
+
+  logger.debug(
+    { symbols, timeframe, resumeFromSeq, userId, bufferCap: SSE_BUFFER_CAP },
+    "SSE connection established"
+  );
 
   // [PERFORMANCE] Send bootstrap event immediately (non-blocking)
   bpc.write("bootstrap", {
@@ -51,12 +67,18 @@ export async function sseMarketStream(req: Request, res: Response) {
 
   // [PERFORMANCE] Fetch seed data asynchronously (non-blocking)
   // This allows SSE to connect immediately while history loads in background
-  if (sinceSeq !== undefined) {
+  if (resumeFromSeq !== undefined) {
     Promise.all(
       symbols.map(async (symbol) => {
         try {
-          const backfill = await getHistory({ symbol, timeframe: timeframe as any, sinceSeq });
-          for (const bar of backfill) {
+          const backfill = await getHistory({ symbol, timeframe: timeframe as any, sinceSeq: resumeFromSeq });
+          // [RESILIENCE] Filter bars to honor Last-Event-ID (dedupe on resume)
+          const filteredBars = backfill.filter((bar) => bar.seq > resumeFromSeq);
+          logger.debug(
+            { symbol, totalBars: backfill.length, filteredBars: filteredBars.length, resumeFromSeq },
+            "SSE backfill filtered"
+          );
+          for (const bar of filteredBars) {
             bpc.write(
               "bar",
               {
@@ -71,11 +93,11 @@ export async function sseMarketStream(req: Request, res: Response) {
             );
           }
         } catch (err) {
-          console.error(`Failed to fetch backfill for ${symbol}:`, err);
+          logger.error({ err, symbol }, "Failed to fetch backfill");
         }
       })
     ).catch((err) => {
-      console.error("Backfill error:", err);
+      logger.error({ err }, "Backfill error");
     });
   } else {
     // Send initial seed data for cold start (async, non-blocking)
@@ -98,11 +120,11 @@ export async function sseMarketStream(req: Request, res: Response) {
             );
           }
         } catch (err) {
-          console.error(`Failed to fetch seed for ${symbol}:`, err);
+          logger.error({ err, symbol }, "Failed to fetch seed");
         }
       })
     ).catch((err) => {
-      console.error("Seed fetch error:", err);
+      logger.error({ err }, "Seed fetch error");
     });
   }
 
@@ -185,6 +207,20 @@ export async function sseMarketStream(req: Request, res: Response) {
     res.write(":\n\n");
     const stats = bpc.getStats();
     recordSSEBackpressure(stats.buffered, stats.dropped, lastDropped);
+    
+    // [OBS] Warn and track drops per symbol/timeframe
+    const newDrops = stats.dropped - lastDropped;
+    if (newDrops > 0) {
+      logger.warn(
+        { symbols, timeframe, dropped: newDrops, totalDropped: stats.dropped },
+        "SSE backpressure drops detected"
+      );
+      // Record drop for primary symbol
+      symbols.forEach((symbol) => {
+        recordSSEDropped(symbol, timeframe, newDrops);
+      });
+    }
+    
     lastDropped = stats.dropped;
   }, 15000);
 
@@ -195,5 +231,6 @@ export async function sseMarketStream(req: Request, res: Response) {
     });
     bpc.destroy();
     recordSSEDisconnection(userId);
+    logger.debug({ symbols, userId }, "SSE connection closed");
   });
 }

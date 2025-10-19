@@ -23,7 +23,7 @@ interface UserPreferences {
 
 export function setupPreferencesRoutes(app: Express) {
   // GET /api/nexa/preferences - Get user preferences
-  app.get("/api/nexa/preferences", requirePin, async (req: Request, res: Response) => {
+  app.get("/api/nexa/preferences", async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId || "owner";
 
@@ -73,7 +73,7 @@ export function setupPreferencesRoutes(app: Express) {
   });
 
   // PUT /api/nexa/preferences - Update all preferences (for migration)
-  app.put("/api/nexa/preferences", requirePin, async (req: Request, res: Response) => {
+  app.put("/api/nexa/preferences", async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId || "owner";
       const updates: UserPreferences = req.body;

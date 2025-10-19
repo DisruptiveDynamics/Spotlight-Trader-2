@@ -131,10 +131,10 @@ app.use("/auth", pinAuthRouter);
 // Public epoch endpoint (no auth required - used for client restart detection)
 app.use("/api", epochRouter);
 
-// Protected routes (require PIN authentication)
-app.use("/api/flags", requirePin, flagsRouter);
-app.use("/api/metrics/json", requirePin, metricsRouter); // JSON metrics (protected)
-app.use("/api/admin", requirePin, adminRouter);
+// All routes open - personal app, no auth needed
+app.use("/api/flags", flagsRouter);
+app.use("/api/metrics/json", metricsRouter);
+app.use("/api/admin", adminRouter);
 
 initializeMarketPipeline(app);
 initializeTelemetryBridge();
@@ -144,21 +144,21 @@ setupPreferencesRoutes(app);
 setupVoiceProxy(app, server);
 setupToolsBridge(server);
 
-app.use("/api", requirePin, rulesRouter);
-app.use("/api/journals", requirePin, journalsRouter);
-app.use("/api/memory", requirePin, rateLimit(), memoryRouter);
-app.use("/api/insight", requirePin, rateLimit(), insightRouter);
-app.use("/api/feedback", requirePin, feedbackRouter);
-app.use("/api/backtest", requirePin, rateLimit(), backtestRouter);
-app.use("/api/signals", requirePin, signalsRouter);
-app.use("/api/export", requirePin, exportRouter);
-app.use("/api/import", requirePin, importRouter);
-app.use("/api/coach", requirePin, coachSettingsRouter);
-app.use("/api/copilot", requirePin, copilotToolsRouter);
-app.use("/api/copilot", requirePin, copilotActionsRouter);
-app.use("/api/voice", requirePin, voicePreviewRouter);
-app.use("/api/triggers", requirePin, triggerTestRouter);
-app.use("/api/replay", replayRouter); // No auth needed for personal app
+app.use("/api", rulesRouter);
+app.use("/api/journals", journalsRouter);
+app.use("/api/memory", rateLimit(), memoryRouter);
+app.use("/api/insight", rateLimit(), insightRouter);
+app.use("/api/feedback", feedbackRouter);
+app.use("/api/backtest", rateLimit(), backtestRouter);
+app.use("/api/signals", signalsRouter);
+app.use("/api/export", exportRouter);
+app.use("/api/import", importRouter);
+app.use("/api/coach", coachSettingsRouter);
+app.use("/api/copilot", copilotToolsRouter);
+app.use("/api/copilot", copilotActionsRouter);
+app.use("/api/voice", voicePreviewRouter);
+app.use("/api/triggers", triggerTestRouter);
+app.use("/api/replay", replayRouter);
 
 initializeLearningLoop();
 startEodScheduler();

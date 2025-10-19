@@ -14,7 +14,6 @@ import { rulesEngineService } from "@server/rules/service";
 import { signalsService } from "@server/signals/service";
 import { sseMarketStream } from "@server/stream/sse";
 import type { Express } from "express";
-import { requirePin } from "@server/middleware/requirePin";
 
 const DEFAULT_FAVORITES = ["SPY", "QQQ"];
 const DEFAULT_TIMEFRAME = "1m";

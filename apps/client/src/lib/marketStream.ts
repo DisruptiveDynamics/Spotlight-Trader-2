@@ -36,6 +36,7 @@ export type SSEStatus =
   | "degraded_ws"
   | "replaying_gap"
   | "live"
+  | "idle"
   | "error";
 
 interface MarketSSEOptions {
@@ -83,6 +84,10 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
   // [RESILIENCE] Track duplicate rejections to force resync
   let duplicateRejections: number[] = []; // Timestamps of rejections
+
+  // [IDLE-STATE] Track last live bar to detect idle markets (no trading activity)
+  let lastLiveBarAt = Date.now();
+  const IDLE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
   const maxReconnectDelay = opts?.maxReconnectDelay || 30000;
 
@@ -405,6 +410,9 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
         lastSeq = b.seq;
         
+        // [IDLE-STATE] Track live data arrival
+        lastLiveBarAt = Date.now();
+        
         // [PHASE-5] Track bar in local buffer for reconciliation
         localBars.push(b);
         if (localBars.length > MAX_LOCAL_BARS) {
@@ -413,7 +421,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         
         listeners.bar.forEach((fn) => fn(b));
 
-        if (currentState === "connected" || currentState === "replaying_gap") {
+        if (currentState === "connected" || currentState === "replaying_gap" || currentState === "idle") {
           emitStatus("live");
         }
       });
@@ -511,6 +519,15 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
   connect();
 
+  // [IDLE-STATE] Check for idle market every 30 seconds
+  const idleCheckInterval = setInterval(() => {
+    const idleMs = Date.now() - lastLiveBarAt;
+    if (idleMs > IDLE_THRESHOLD_MS && currentState === "live") {
+      logger.info(`📊 Market idle: ${Math.round(idleMs / 60000)} minutes since last bar`);
+      emitStatus("idle");
+    }
+  }, 30000);
+
   // Gap-fill on window focus (user returns to tab after being away)
   const handleFocus = async () => {
     if (lastSeq > 0 && currentState === "live") {
@@ -577,6 +594,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         clearTimeout(reconnectTimeout);
         reconnectTimeout = null;
       }
+      clearInterval(idleCheckInterval); // Clean up idle checker
       es?.close();
 
       // Cleanup focus listener

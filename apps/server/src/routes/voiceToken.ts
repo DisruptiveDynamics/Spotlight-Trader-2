@@ -41,7 +41,7 @@ const AVAILABLE_VOICES = [
 
 export function setupVoiceTokenRoute(app: Express) {
   // GET /api/voice/voices - Get available voice options
-  app.get("/api/voice/voices", requirePin, (req, res) => {
+  app.get("/api/voice/voices", (req, res) => {
     res.json({ voices: AVAILABLE_VOICES });
   });
 
@@ -114,7 +114,7 @@ export function setupVoiceTokenRoute(app: Express) {
     }
   });
 
-  // POST /api/voice/ephemeral-token - Generate ephemeral token for WebRTC (AUTHENTICATED)
+  // POST /api/voice/ephemeral-token - Generate ephemeral token for WebRTC
   app.post("/api/voice/ephemeral-token", requirePin, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId || "owner";

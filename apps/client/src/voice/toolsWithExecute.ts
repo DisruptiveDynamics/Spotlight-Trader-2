@@ -184,5 +184,27 @@ export function createVoiceTools(toolBridge: ToolBridge) {
         return result.output;
       },
     }),
+
+    tool({
+      name: "get_memory",
+      description:
+        "Search your knowledge base for relevant memories across playbook, glossary, postmortems, and uploaded knowledge. Use this to recall past conversations, lessons learned, and user preferences.",
+      parameters: z.object({
+        query: z.string().describe("What to search for in your memories"),
+        kind: z
+          .enum(["playbook", "glossary", "postmortem", "knowledge", "all"])
+          .nullish()
+          .default("all")
+          .describe("Type of memory to search"),
+        limit: z.number().int().min(1).max(10).nullish().default(5).describe("Max results"),
+      }),
+      execute: async (input) => {
+        const result = await toolBridge.exec("get_memory", input, 3000);
+        if (!result.ok) {
+          throw new Error(result.error || "Tool execution failed");
+        }
+        return result.output;
+      },
+    }),
   ];
 }

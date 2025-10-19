@@ -4,6 +4,14 @@ import { startReplay, stopReplay, setReplaySpeed } from "@server/replay/engine";
 const router: Router = Router();
 
 router.post("/start", async (req, res) => {
+  // [FF_REPLAY] OnDemand replay is a dev/test tool - gate behind feature flag
+  if (process.env.FF_REPLAY !== "on") {
+    return res.status(403).json({ 
+      ok: false, 
+      error: "Replay mode disabled. Set FF_REPLAY=on to enable (dev/test only)" 
+    });
+  }
+
   try {
     const { symbol, fromMs, toMs, speed } = req.body ?? {};
     

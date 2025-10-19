@@ -178,13 +178,18 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
     }
   }
 
-  // Priority 5: Generate high-quality mock data (always 1m, then rollup)
+  // Priority 5: Generate mock data ONLY if FF_MOCK=on (dev/test only)
+  if (process.env.FF_MOCK !== "on") {
+    console.log(`📊 No data available for ${symbol} - Polygon returned empty results and mock generation is disabled`);
+    return [];
+  }
+
   const toMs = before || Date.now();
   const multiplier = timeframeToMultiplier(timeframe);
   const needed1mBars = limit * multiplier;
   const fromMs = toMs - needed1mBars * 60000;
   
-  console.log(`🎭 Generating ${needed1mBars} mock 1m bars for ${symbol} (Polygon unavailable)`);
+  console.log(`🎭 [FF_MOCK] Generating ${needed1mBars} mock 1m bars for ${symbol} (feature flag enabled)`);
   const mock1mBars = generateRealisticBars(symbol, fromMs, toMs, needed1mBars);
   ringBuffer.putBars(symbol, mock1mBars);
   

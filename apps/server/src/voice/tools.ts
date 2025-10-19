@@ -316,6 +316,34 @@ export const voiceTools = {
       })),
     };
   },
+
+  async get_memory(input: unknown, userId: string) {
+    const params = z
+      .object({
+        query: z.string().min(1),
+        kind: z.enum(["playbook", "glossary", "postmortem", "knowledge", "all"]).nullish().default("all"),
+        limit: z.number().int().min(1).max(10).nullish().default(5),
+      })
+      .parse(input);
+
+    const excludeKnowledge = params.kind !== "knowledge" && params.kind !== "all";
+    const results = await retrieveTopK(userId, params.query, params.limit ?? 5, 10, 0.1, excludeKnowledge);
+
+    const filteredResults = params.kind === "all" 
+      ? results 
+      : results.filter((r) => r.kind === params.kind);
+
+    return {
+      count: filteredResults.length,
+      memories: filteredResults.map((r: any) => ({
+        kind: r.kind,
+        content: r.text,
+        score: r.score,
+        tags: r.tags || [],
+        createdAt: r.createdAt,
+      })),
+    };
+  },
 };
 
 export const toolSchemas = [
@@ -427,6 +455,25 @@ export const toolSchemas = [
       properties: {
         query: { type: "string", description: "Search query" },
         limit: { type: "integer", minimum: 1, maximum: 20, description: "Max results" },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function" as const,
+    name: "get_memory",
+    description: "Search your knowledge base for relevant memories across playbook, glossary, postmortems, and uploaded knowledge. Use this to recall past conversations, lessons learned, and user preferences.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "What to search for in your memories" },
+        kind: { 
+          type: "string", 
+          enum: ["playbook", "glossary", "postmortem", "knowledge", "all"],
+          description: "Type of memory to search (default: all)" 
+        },
+        limit: { type: "integer", minimum: 1, maximum: 10, description: "Max results (default: 5)" },
       },
       required: ["query"],
       additionalProperties: false,

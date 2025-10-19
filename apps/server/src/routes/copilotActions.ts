@@ -1,12 +1,13 @@
 import { eq } from "drizzle-orm";
-import { Router, type Router as ExpressRouter } from "express";
+import { Router, type Request, type Response, type Router as ExpressRouter } from "express";
 
 import { db } from "../db";
 import { callouts } from "../db/schema";
+import { requirePin } from "../middleware/requirePin";
 
 const router: ExpressRouter = Router();
 
-router.post("/callouts/accept", async (req, res) => {
+router.post("/callouts/accept", requirePin, async (req: Request, res: Response) => {
   try {
     const { calloutId } = req.body;
 
@@ -19,7 +20,7 @@ router.post("/callouts/accept", async (req, res) => {
   }
 });
 
-router.post("/callouts/reject", async (req, res) => {
+router.post("/callouts/reject", requirePin, async (req: Request, res: Response) => {
   try {
     const { calloutId, reason } = req.body;
 

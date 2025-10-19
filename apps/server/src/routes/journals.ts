@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { Request, Response } from "express";
 import { z } from "zod";
 
 import { generateEodSummary, formatEodSummary } from "../journals/eod.js";
@@ -10,7 +11,7 @@ import {
   deleteJournal,
   linkJournalToSignal,
 } from "../journals/service.js";
-import { AuthRequest } from "../middleware/requireUser.js";
+import { requirePin } from "../middleware/requirePin";
 
 const router: Router = Router();
 
@@ -24,10 +25,10 @@ const ListJournalsSchema = z.object({
   date: z.string().optional(),
 });
 
-router.post("/", async (req: AuthRequest, res) => {
+router.post("/", requirePin, async (req: Request, res: Response) => {
   try {
     const parsed = CreateJournalSchema.parse(req.body);
-    const userId = req.user!.userId;
+    const userId = (req as any).userId;
 
     const content = parsed.text ?? parsed.tradeJson;
     if (!content) {
@@ -53,10 +54,10 @@ router.post("/", async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/", async (req: AuthRequest, res) => {
+router.get("/", requirePin, async (req: Request, res: Response) => {
   try {
     const parsed = ListJournalsSchema.parse(req.query);
-    const userId = req.user!.userId;
+    const userId = (req as any).userId;
 
     const options = parsed.date ? { date: parsed.date } : {};
     const journals = await listJournals(userId, options);
@@ -71,9 +72,9 @@ router.get("/", async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/:id", async (req: AuthRequest, res) => {
+router.get("/:id", requirePin, async (req: Request, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = (req as any).userId;
     const { id } = req.params;
     if (!id) return res.status(400).json({ error: "ID required" });
 
@@ -90,10 +91,10 @@ router.get("/:id", async (req: AuthRequest, res) => {
   }
 });
 
-router.put("/:id", async (req: AuthRequest, res) => {
+router.put("/:id", requirePin, async (req: Request, res: Response) => {
   try {
     const parsed = CreateJournalSchema.parse(req.body);
-    const userId = req.user!.userId;
+    const userId = (req as any).userId;
     const { id } = req.params;
     if (!id) return res.status(400).json({ error: "ID required" });
 
@@ -114,9 +115,9 @@ router.put("/:id", async (req: AuthRequest, res) => {
   }
 });
 
-router.delete("/:id", async (req: AuthRequest, res) => {
+router.delete("/:id", requirePin, async (req: Request, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = (req as any).userId;
     const { id } = req.params;
     if (!id) return res.status(400).json({ error: "ID required" });
 
@@ -129,9 +130,9 @@ router.delete("/:id", async (req: AuthRequest, res) => {
   }
 });
 
-router.post("/eod/preview", async (req: AuthRequest, res) => {
+router.post("/eod/preview", requirePin, async (req: Request, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = (req as any).userId;
     const today = new Date().toISOString().split("T")[0] ?? "";
 
     const summary = await generateEodSummary(userId, today);

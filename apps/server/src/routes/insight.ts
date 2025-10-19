@@ -3,25 +3,25 @@ import { Router } from "express";
 import type { Request, Response } from "express";
 import OpenAI from "openai";
 
+import { requirePin } from "../middleware/requirePin";
+
 const router: Router = Router();
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Rate limiting map: userId -> last request timestamps
 const rateLimitMap = new Map<string, number[]>();
-const RATE_LIMIT_WINDOW = 10000; // 10 seconds
+const RATE_LIMIT_WINDOW = 10000;
 const MAX_REQUESTS = 2;
 
 function checkRateLimit(userId: string): boolean {
   const now = Date.now();
   const userRequests = rateLimitMap.get(userId) || [];
 
-  // Remove old requests outside the window
   const recentRequests = userRequests.filter((ts) => now - ts < RATE_LIMIT_WINDOW);
 
   if (recentRequests.length >= MAX_REQUESTS) {
-    return false; // Rate limit exceeded
+    return false;
   }
 
   recentRequests.push(now);
@@ -29,26 +29,23 @@ function checkRateLimit(userId: string): boolean {
   return true;
 }
 
-router.post("/explain", async (req: Request, res: Response) => {
+router.post("/explain", requirePin, async (req: Request, res: Response) => {
   try {
     const { context, question } = req.body as InsightRequest;
-    const userId = req.ip || "anonymous";
+    const userId = (req as any).userId;
 
-    // Check rate limit
     if (!checkRateLimit(userId)) {
       return res.status(429).json({
         error: "Rate limit exceeded. Please wait before making another request.",
       });
     }
 
-    // Validate input
     if (!context || !question) {
       return res.status(400).json({
         error: "Missing context or question",
       });
     }
 
-    // Build structured prompt for AI
     const systemPrompt = `You are a world-class day-trading coach who reasons from raw OHLC data and technical indicators.
 
 Your expertise:
@@ -64,8 +61,7 @@ Always:
 - Keep responses under 150 words for voice clarity
 - Use trader terminology appropriately`;
 
-    // Build context summary
-    const lastBars = context.bars.slice(-5); // Last 5 bars
+    const lastBars = context.bars.slice(-5);
     const currentBar = lastBars[lastBars.length - 1];
 
     const barsSummary = lastBars
@@ -114,7 +110,6 @@ ${signalsSummary}
 
 Question: ${question}`;
 
-    // Call OpenAI for analysis
     try {
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -134,7 +129,6 @@ Question: ${question}`;
         timestamp: Date.now(),
       };
 
-      // Log for development
       console.log("📊 Insight Request:", {
         symbol: context.symbol,
         question: question.substring(0, 50),
@@ -145,7 +139,6 @@ Question: ${question}`;
     } catch (aiError) {
       console.error("❌ OpenAI error:", aiError);
 
-      // Fallback response
       const response: InsightResponse = {
         text: `I'm analyzing ${context.symbol} on the ${context.timeframe} timeframe. Current price is ${currentBar?.c.toFixed(2)}. ${
           context.overlays.ema

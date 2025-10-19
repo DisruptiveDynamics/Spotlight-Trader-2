@@ -1,15 +1,15 @@
 import { eq } from "drizzle-orm";
 import { Router } from "express";
+import type { Request, Response } from "express";
 
 import { db } from "../db/index.js";
 import { coachProfiles } from "../db/schema.js";
-import { requireUser, AuthRequest } from "../middleware/requireUser.js";
+import { requirePin } from "../middleware/requirePin";
 
 const router: Router = Router();
 
-// GET /api/coach/settings - Get coach settings
-router.get("/settings", requireUser, async (req: AuthRequest, res) => {
-  const userId = req.user!.userId;
+router.get("/settings", requirePin, async (req: Request, res: Response) => {
+  const userId = (req as any).userId;
 
   try {
     const results = await db
@@ -19,7 +19,6 @@ router.get("/settings", requireUser, async (req: AuthRequest, res) => {
       .limit(1);
 
     if (results.length === 0) {
-      // Return defaults
       return res.json({
         agentName: "Coach",
         voice: "alloy",
@@ -31,7 +30,6 @@ router.get("/settings", requireUser, async (req: AuthRequest, res) => {
 
     const profile = results[0]!;
 
-    // Map database values to client format
     res.json({
       agentName: profile.agentName,
       voice: profile.voiceId,
@@ -45,13 +43,11 @@ router.get("/settings", requireUser, async (req: AuthRequest, res) => {
   }
 });
 
-// PUT /api/coach/settings - Update coach settings
-router.put("/settings", requireUser, async (req: AuthRequest, res) => {
-  const userId = req.user!.userId;
+router.put("/settings", requirePin, async (req: Request, res: Response) => {
+  const userId = (req as any).userId;
   const { agentName, voice, tonePreset, jargon, decisiveness } = req.body;
 
   try {
-    // Check if profile exists
     const existing = await db
       .select()
       .from(coachProfiles)
@@ -68,10 +64,8 @@ router.put("/settings", requireUser, async (req: AuthRequest, res) => {
     };
 
     if (existing.length === 0) {
-      // Insert new profile
       await db.insert(coachProfiles).values(profileData);
     } else {
-      // Update existing profile
       await db.update(coachProfiles).set(profileData).where(eq(coachProfiles.userId, userId));
     }
 
@@ -102,9 +96,8 @@ function mapToneToPreset(tone: string): string {
   return reverseMap[tone] || "balanced";
 }
 
-// PATCH /api/coach/voice - Update voice only
-router.patch("/voice", requireUser, async (req: AuthRequest, res) => {
-  const userId = req.user!.userId;
+router.patch("/voice", requirePin, async (req: Request, res: Response) => {
+  const userId = (req as any).userId;
   const { voiceId } = req.body;
 
   if (!voiceId) {
@@ -119,7 +112,6 @@ router.patch("/voice", requireUser, async (req: AuthRequest, res) => {
   }
 
   try {
-    // Check if profile exists
     const existing = await db
       .select()
       .from(coachProfiles)
@@ -127,7 +119,6 @@ router.patch("/voice", requireUser, async (req: AuthRequest, res) => {
       .limit(1);
 
     if (existing.length === 0) {
-      // Create new profile with just the voice
       await db.insert(coachProfiles).values({
         userId,
         agentName: "Nexa",
@@ -139,7 +130,6 @@ router.patch("/voice", requireUser, async (req: AuthRequest, res) => {
         pronouns: "she/her",
       });
     } else {
-      // Update just the voice
       await db.update(coachProfiles).set({ voiceId }).where(eq(coachProfiles.userId, userId));
     }
 

@@ -1,4 +1,4 @@
-import { STREAM_URL, HISTORY_URL } from "../config";
+import { STREAM_URL, HISTORY_URL, MARKET_IDLE_MS } from "../config";
 
 export type Ohlcv = { o: number; h: number; l: number; c: number; v: number };
 
@@ -28,6 +28,7 @@ export type Tick = {
 export type SSEStatus =
   | "connecting"
   | "connected"
+  | "connected_idle"
   | "degraded_ws"
   | "replaying_gap"
   | "live"
@@ -53,6 +54,10 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
   
   // [RESILIENCE] Track duplicate rejections to force resync
   let duplicateRejections: number[] = []; // Timestamps of rejections
+
+  // [UX] Track last bar time for idle detection
+  let lastBarTime = Date.now();
+  let idleCheckInterval: number | null = null;
 
   const maxReconnectDelay = opts?.maxReconnectDelay || 30000;
 
@@ -188,6 +193,19 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       emitStatus("connected");
       window.dispatchEvent(new CustomEvent("sse:connected"));
 
+      // [UX] Start idle detection
+      lastBarTime = Date.now();
+      if (idleCheckInterval) {
+        clearInterval(idleCheckInterval);
+      }
+      idleCheckInterval = window.setInterval(() => {
+        const timeSinceLastBar = Date.now() - lastBarTime;
+        if (timeSinceLastBar > MARKET_IDLE_MS && currentState === "live") {
+          console.log(`💤 Market idle: no bars for ${Math.round(timeSinceLastBar / 1000)}s`);
+          emitStatus("connected_idle");
+        }
+      }, 30000); // Check every 30s
+
       // Gap-fill on reconnect if we have a lastSeq
       if (lastSeq > 0) {
         const symbol = symbols[0] || "SPY";
@@ -200,6 +218,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
             bars.forEach((bar: Bar) => {
               if (bar.seq > lastSeq) {
                 lastSeq = bar.seq;
+                lastBarTime = Date.now(); // Update last bar time
                 listeners.bar.forEach((fn) => fn(bar));
               }
             });
@@ -275,9 +294,10 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         }
 
         lastSeq = b.seq;
+        lastBarTime = Date.now(); // [UX] Update last bar time for idle detection
         listeners.bar.forEach((fn) => fn(b));
 
-        if (currentState === "connected" || currentState === "replaying_gap") {
+        if (currentState === "connected" || currentState === "replaying_gap" || currentState === "connected_idle") {
           emitStatus("live");
         }
       });
@@ -380,6 +400,10 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
         reconnectTimeout = null;
+      }
+      if (idleCheckInterval) {
+        clearInterval(idleCheckInterval);
+        idleCheckInterval = null;
       }
       es?.close();
 

@@ -5,3 +5,6 @@ export const API_BASE =
 
 export const HISTORY_URL = `${API_BASE}/api/history`;
 export const STREAM_URL = `${API_BASE}/stream/market`;
+
+// [UX] Market idle timeout (default 5 minutes = 300000ms)
+export const MARKET_IDLE_MS = parseInt(import.meta.env.VITE_MARKET_IDLE_MS || "300000", 10);

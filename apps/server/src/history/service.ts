@@ -4,8 +4,12 @@ import type { Bar, Timeframe } from "@server/market/eventBus";
 import { polygonWs } from "@server/market/polygonWs";
 import { recordPolygonEmpty } from "@server/metrics/registry";
 import { logger } from "@server/logger";
+import { InflightCache } from "./inflight";
 
 const env = validateEnv(process.env);
+
+// [PERFORMANCE] Inflight request deduplication
+const inflightHistoryCache = new InflightCache<Bar[]>();
 
 interface HistoryQuery {
   symbol: string;
@@ -42,7 +46,7 @@ export async function getInitialHistory(symbol: string): Promise<Bar[]> {
 /**
  * Fetch historical bar data with intelligent fallback strategy:
  * 1. Ring buffer (for recent real-time data)
- * 2. Polygon REST API (for historical data)
+ * 2. Polygon REST API (for historical data) - with inflight deduplication
  * 3. High-quality mock generator (fallback)
  */
 export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
@@ -90,10 +94,15 @@ export async function getHistory(query: HistoryQuery): Promise<Bar[]> {
   }
 
   // Priority 3: Fetch from Polygon REST API (skip if using mock data)
+  // [PERFORMANCE] Use inflight deduplication to coalesce concurrent requests
   const isUsingMockData = polygonWs.isUsingMockData();
   
   if (!isUsingMockData) {
-    const polygonBars = await fetchPolygonHistory(symbol, timeframe, limit, before);
+    const cacheKey = `${symbol}:${timeframe}:${limit}:${before || 'now'}`;
+    const polygonBars = await inflightHistoryCache.coalesce(cacheKey, () =>
+      fetchPolygonHistory(symbol, timeframe, limit, before)
+    );
+    
     if (polygonBars.length > 0) {
       ringBuffer.putBars(symbol, polygonBars);
       return polygonBars;

@@ -14,6 +14,8 @@ import { coachAdvisor } from "@server/coach/advisor";
 import { getMarketSource, getMarketReason } from "@server/market/bootstrap";
 import { isRthOpen } from "@server/market/session";
 import { handleChartTimeframe } from "@server/routes/chartTimeframe";
+import { rollupCache } from "@server/chart/rollupCache";
+import { logger } from "@server/logger";
 
 const DEFAULT_FAVORITES = ["SPY", "QQQ"];
 const DEFAULT_TIMEFRAME = "1m";
@@ -46,10 +48,13 @@ function subscribeSymbolTimeframe(symbol: string, timeframe: string) {
         c: bar.ohlcv.c,
         v: bar.ohlcv.v,
       });
+      
+      // [PERFORMANCE] Invalidate rollup cache on 1m bar close
+      rollupCache.invalidate(symbol);
     };
     barListeners.set(bars1mKey, bars1mListener);
     eventBus.on(`bar:new:${symbol}:1m` as any, bars1mListener);
-    console.log(`📊 [CRITICAL] Subscribed ${symbol} to 1m authoritative feed (never removed)`);
+    logger.info({ symbol }, "Subscribed to 1m authoritative feed (never removed)");
   }
 
   // Now handle user-specific timeframe subscription for SSE streaming
@@ -96,7 +101,7 @@ function subscribeSymbolTimeframe(symbol: string, timeframe: string) {
   }
 
   activeSubscriptions.set(symbol, timeframe);
-  console.log(`📊 Subscribed ${symbol} to ${timeframe} timeframe`);
+  logger.debug({ symbol, timeframe }, "Subscribed to timeframe");
 }
 
 export function initializeMarketPipeline(app: Express) {
@@ -201,4 +206,5 @@ export function initializeMarketPipeline(app: Express) {
   console.log("✅ Rules engine started");
   console.log("✅ Signals service started");
   console.log("✅ Coach advisor started");
+  logger.info({ symbols: DEFAULT_FAVORITES }, "Market pipeline initialized");
 }

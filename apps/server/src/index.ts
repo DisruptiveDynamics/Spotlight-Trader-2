@@ -158,7 +158,7 @@ app.use("/api/copilot", requirePin, copilotToolsRouter);
 app.use("/api/copilot", requirePin, copilotActionsRouter);
 app.use("/api/voice", requirePin, voicePreviewRouter);
 app.use("/api/triggers", requirePin, triggerTestRouter);
-app.use("/api/replay", requirePin, replayRouter);
+app.use("/api/replay", replayRouter); // No auth needed for personal app
 
 initializeLearningLoop();
 startEodScheduler();

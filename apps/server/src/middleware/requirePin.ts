@@ -46,7 +46,7 @@ export function setAuthCookie(res: Response, token: string) {
     httpOnly: true,
     sameSite: isHttps ? "none" : "lax",
     secure: isHttps,
-    maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
+    maxAge: 1000 * 60 * 60 * 24, // 24 hours
     path: "/",
   });
 }

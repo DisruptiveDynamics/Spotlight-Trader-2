@@ -9,7 +9,7 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 The application is a TypeScript monorepo using pnpm workspaces, comprising `apps/client` (React 18, Vite, Tailwind CSS), `apps/server` (Node.js 20 Express), and shared packages.
 
-**Real-Time Data Pipeline**: Features a deterministic, lossless data pipeline for live market data, integrating Polygon REST API for historical data and tick-by-tick streaming down to 50ms microbars. Server-Sent Events (SSE) provide streaming market data and trading alerts with lossless resume capabilities. It supports 24/7 Polygon data with extended hours and a server-authoritative timeframe system with multi-timeframe rollups from a 1-minute buffer.
+**Real-Time Data Pipeline**: Features a deterministic, lossless data pipeline for live market data, integrating Polygon REST API for historical data and tick-by-tick streaming down to 50ms microbars. Server-Sent Events (SSE) provide streaming market data and trading alerts with lossless resume capabilities. It supports 24/7 Polygon data with extended hours and a server-authoritative timeframe system with multi-timeframe rollups from a 1-minute buffer. Dynamic symbol subscription system with SymbolManager orchestrates Polygon WebSocket, bar builder, session VWAP, and history seeding with ref-counting and 5-minute TTL for inactive symbols.
 
 **Communication Protocols**:
 - **Server-Sent Events (SSE)**: For streaming market data and trading alerts.

@@ -11,6 +11,8 @@ The application is a TypeScript monorepo using pnpm workspaces, comprising `apps
 
 **Real-Time Data Pipeline**: Features a deterministic, lossless data pipeline for live market data, integrating Polygon REST API for historical data and tick-by-tick streaming down to 50ms microbars. Server-Sent Events (SSE) provide streaming market data and trading alerts with lossless resume capabilities. It supports 24/7 Polygon data with extended hours and a server-authoritative timeframe system with multi-timeframe rollups from a 1-minute buffer. Dynamic symbol subscription system with SymbolManager orchestrates Polygon WebSocket, bar builder, session VWAP, and history seeding with ref-counting and 5-minute TTL for inactive symbols.
 
+**Phase 1 Data Correctness (Oct 2025)**: Production-grade minute-bar reconciliation system ensuring tick-based estimates are replaced with official Polygon AM aggregates when available. Dual subscription model (T.* ticks + AM.* aggregates) with idempotent dedupe via `reconciledSeqs` tracking prevents duplicate emissions. `ringBuffer.replaceOrUpsertBySeq()` ensures single bar per seq across all consumers. `bars1m.reconcile()` matches by seq (primary) with bar_end fallback for DST safety. SESSION policy (RTH | RTH_EXT) consistently filters both historical REST and live WebSocket streams to 09:30-16:00 ET when RTH. Seq calculation strictly `floor(bar_start/60000)` for deterministic alignment across all sources. Volume drift logging alerts when tick-based vs AM differs >10%.
+
 **Communication Protocols**:
 - **Server-Sent Events (SSE)**: For streaming market data and trading alerts.
 - **WebRTC (via OpenAI Agents SDK)**: For browser-to-OpenAI audio streaming for the voice coach, secured with ephemeral client tokens.

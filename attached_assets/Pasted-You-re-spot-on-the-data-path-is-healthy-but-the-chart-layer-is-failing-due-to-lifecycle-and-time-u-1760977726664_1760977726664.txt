@@ -1,0 +1,297 @@
+You’re spot on: the data path is healthy, but the chart layer is failing due to lifecycle and time-unit mistakes. We should fix the ms→seconds conversion, make the chart/series stable across renders, re-add volume, and ensure SSE only delivers the requested timeframe. Below are safe, minimal patches that align with your repo and won’t break existing flows.
+
+What we’ll fix now
+- Correct ms→seconds conversion for history and live bars.
+- Stabilize the chart so it isn’t torn down on every render (stops “Object is disposed”).
+- Re-add a volume histogram that updates with price bars.
+- Ensure SSE is filtered by timeframe so your chart only processes relevant bars.
+- Provide a TapePanel fallback if tick streaming is disabled by feature flag.
+
+Files to add/update
+
+```typescript name=apps/client/src/lib/chartAdapters.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/client/src/lib/chartAdapters.ts
+// Adapters to map server ms timestamps to lightweight-charts (seconds)
+import type { CandlestickData, Time, UTCTimestamp, HistogramData } from "lightweight-charts";
+
+export function toSec(ms: number): Time {
+  return Math.floor(ms / 1000) as UTCTimestamp;
+}
+
+export function toCandleData(b: {
+  bar_start?: number; // ms
+  bar_end: number;    // ms
+  ohlcv: { o: number; h: number; l: number; c: number };
+}): CandlestickData {
+  const startMs = b.bar_start ?? (b.bar_end - 60_000);
+  return {
+    time: toSec(startMs),
+    open: b.ohlcv.o,
+    high: b.ohlcv.h,
+    low: b.ohlcv.l,
+    close: b.ohlcv.c,
+  };
+}
+
+export function toVolumeData(b: {
+  bar_start?: number; // ms
+  bar_end: number;    // ms
+  ohlcv: { o: number; h: number; l: number; c: number; v?: number };
+}): HistogramData {
+  const startMs = b.bar_start ?? (b.bar_end - 60_000);
+  const value = Number.isFinite(b.ohlcv.v as number) ? (b.ohlcv.v as number) : 0;
+  const color = b.ohlcv.c >= b.ohlcv.o ? "#16A34A" : "#DC2626";
+  return {
+    time: toSec(startMs),
+    value,
+    color,
+  };
+}
+```
+
+```typescript name=apps/client/src/features/chart/PaneStable.tsx url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/client/src/features/chart/PaneStable.tsx
+import React, { useEffect, useMemo, useRef } from "react";
+import { createChart, IChartApi, CandlestickData, HistogramData } from "lightweight-charts";
+import { toCandleData, toVolumeData } from "../../lib/chartAdapters";
+import { subscribeBars, unsubscribeBars } from "../../lib/marketStream";
+
+type SeedBar = {
+  bar_start?: number;
+  bar_end: number;
+  ohlcv: { o: number; h: number; l: number; c: number; v?: number };
+};
+
+type Props = {
+  symbol: string;
+  timeframe: "1m" | "2m" | "5m" | "10m" | "15m" | "30m" | "1h";
+  seed: SeedBar[];
+};
+
+export default function PaneStable({ symbol, timeframe, seed }: Props) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const priceSeriesRef = useRef<ReturnType<IChartApi["addCandlestickSeries"]> | null>(null);
+  const volSeriesRef = useRef<ReturnType<IChartApi["addHistogramSeries"]> | null>(null);
+  const lastTimeRef = useRef<number | undefined>(undefined);
+  const seedKey = `${symbol}:${timeframe}`;
+
+  const chartOptions = useMemo(
+    () => ({
+      autoSize: true,
+      layout: { background: { color: "#0B0F14" }, textColor: "#C9D1D9" },
+      rightPriceScale: { borderVisible: false },
+      timeScale: { secondsVisible: true, borderVisible: false, rightOffset: 5 },
+      grid: { horzLines: { color: "#1F2937" }, vertLines: { color: "#1F2937" } },
+    }),
+    []
+  );
+
+  const priceOptions = useMemo(
+    () => ({
+      priceLineVisible: false,
+      upColor: "#16A34A",
+      downColor: "#DC2626",
+      wickUpColor: "#16A34A",
+      wickDownColor: "#DC2626",
+      borderVisible: false,
+    }),
+    []
+  );
+
+  const volOptions = useMemo(
+    () => ({
+      priceFormat: { type: "volume" as const },
+      priceScaleId: "",
+      scaleMargins: { top: 0.8, bottom: 0 },
+    }),
+    []
+  );
+
+  // Initialize chart once
+  useEffect(() => {
+    if (chartRef.current || !containerRef.current) return;
+
+    const chart = createChart(containerRef.current, chartOptions);
+    chartRef.current = chart;
+
+    const price = chart.addCandlestickSeries(priceOptions);
+    priceSeriesRef.current = price;
+
+    const vol = chart.addHistogramSeries(volOptions);
+    volSeriesRef.current = vol;
+
+    const ro = new ResizeObserver(() => chart.timeScale().fitContent());
+    ro.observe(containerRef.current);
+
+    return () => {
+      ro.disconnect();
+      try {
+        chartRef.current?.remove();
+      } catch {}
+      chartRef.current = null;
+      priceSeriesRef.current = null;
+      volSeriesRef.current = null;
+      lastTimeRef.current = undefined;
+    };
+  }, [chartOptions, priceOptions, volOptions]);
+
+  // Seed on symbol/timeframe change (ms → seconds)
+  useEffect(() => {
+    if (!priceSeriesRef.current || !volSeriesRef.current) return;
+
+    const candles: CandlestickData[] = seed.map(toCandleData).sort((a, b) => Number(a.time) - Number(b.time));
+    const vols: HistogramData[] = seed.map(toVolumeData).sort((a, b) => Number(a.time) - Number(b.time));
+
+    priceSeriesRef.current.setData(candles);
+    volSeriesRef.current.setData(vols);
+    lastTimeRef.current = candles.length ? (candles[candles.length - 1].time as number) : undefined;
+    chartRef.current?.timeScale().fitContent();
+  }, [seedKey, seed]);
+
+  // Live updates (bar events are ms on the wire → convert)
+  useEffect(() => {
+    const subId = subscribeBars(symbol, timeframe, (bar) => {
+      if (!priceSeriesRef.current || !volSeriesRef.current) return;
+      const candle = toCandleData(bar);
+      const vol = toVolumeData(bar);
+      const t = candle.time as number;
+      if (lastTimeRef.current === undefined || t >= lastTimeRef.current) {
+        priceSeriesRef.current.update(candle);
+        volSeriesRef.current.update(vol);
+        lastTimeRef.current = t;
+      }
+    });
+    return () => unsubscribeBars(subId);
+  }, [symbol, timeframe]);
+
+  return <div ref={containerRef} className="h-full w-full" />;
+}
+```
+
+```typescript name=apps/server/src/stream/sse.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/stream/sse.ts
+// Ensure SSE is filtered by timeframe and uses correct IDs for resume
+import { parseLastEventId } from "./lastEventId";
+import { eventBus } from "@server/market/eventBus";
+import { getHistory } from "@server/history/service";
+import { sseConnections, sseDropped } from "@server/routes/metricsProm";
+import { logger } from "@server/logger";
+
+export function streamMarket(req, res) {
+  res.status(200);
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  // @ts-ignore
+  res.flushHeaders?.();
+  // @ts-ignore
+  res.socket?.setKeepAlive?.(true);
+
+  const symbols = ((req.query.symbols as string) || (req.query.symbol as string) || "SPY")
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+  const timeframe = String(req.query.timeframe || "1m");
+  const lastId = parseLastEventId(req.headers["last-event-id"] as string | undefined);
+  const cap = Number(process.env.SSE_BUFFER_CAP ?? 1000);
+  const bpc = createBufferedSSEWriter(res, { capacity: cap });
+  sseConnections.inc();
+
+  // Heartbeat + drop metrics
+  let lastDropped = 0;
+  const hb = setInterval(() => {
+    try {
+      res.write(":\n\n");
+      const stats = bpc.getStats?.();
+      if (stats?.dropped && stats.dropped > lastDropped) {
+        const dropped = stats.dropped - lastDropped;
+        sseDropped.labels("unknown", timeframe).inc(dropped);
+        logger.warn({ dropped, cap }, "sse_backpressure_drop");
+        lastDropped = stats.dropped;
+      }
+    } catch (e) {
+      logger.warn({ e }, "sse_heartbeat_failed");
+    }
+  }, 15000);
+
+  // Seed only this timeframe and filter by Last-Event-ID
+  (async () => {
+    try {
+      await Promise.all(
+        symbols.map(async (symbol) => {
+          const bars = await getHistory({ symbol, timeframe, limit: Number(req.query.limit) || 300 });
+          for (const bar of bars) {
+            if (lastId !== undefined && bar.seq <= lastId) continue;
+            bpc.write(
+              "bar",
+              { symbol: bar.symbol, timeframe: bar.timeframe, seq: bar.seq, bar_start: bar.bar_start, bar_end: bar.bar_end, ohlcv: bar.ohlcv },
+              String(bar.seq)
+            );
+          }
+        })
+      );
+    } catch (e) {
+      logger.warn({ e }, "sse_seed_failed");
+    }
+  })();
+
+  // Listen only for this timeframe to avoid spurious events
+  const disposers: Array<() => void> = [];
+  for (const symbol of symbols) {
+    const onBar = (bar: any) => {
+      if (bar.timeframe !== timeframe) return;
+      bpc.write(
+        "bar",
+        { symbol: bar.symbol, timeframe: bar.timeframe, seq: bar.seq, bar_start: bar.bar_start, bar_end: bar.bar_end, ohlcv: bar.ohlcv },
+        String(bar.seq)
+      );
+    };
+    eventBus.on(`bar:new:${symbol}:${timeframe}` as any, onBar);
+    disposers.push(() => eventBus.off(`bar:new:${symbol}:${timeframe}` as any, onBar));
+
+    // Optional: microbar if you emit them for smoothing
+    const onMicro = (mb: any) => bpc.write("microbar", { symbol, ...mb });
+    eventBus.on(`microbar:${symbol}` as any, onMicro);
+    disposers.push(() => eventBus.off(`microbar:${symbol}` as any, onMicro));
+
+    // Note: do NOT stream raw ticks here unless FF_SSE_TICKS=on
+    // (Use a dedicated WS for tape in the future)
+  }
+
+  req.on("close", () => {
+    clearInterval(hb);
+    bpc.destroy();
+    sseConnections.dec();
+    disposers.forEach((fn) => {
+      try { fn(); } catch {}
+    });
+  });
+}
+```
+
+```typescript name=apps/client/src/components/TapePanel.tsx url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/client/src/components/TapePanel.tsx
+import React from "react";
+
+const ticksEnabled = import.meta.env.VITE_SSE_TICKS === "on";
+
+export default function TapePanel() {
+  if (!ticksEnabled) {
+    return (
+      <div className="p-2 text-xs text-amber-400">
+        Live tick-by-tick is disabled for stability. Bars and microbars are live.
+        Enable ticks by setting VITE_SSE_TICKS=on for testing.
+      </div>
+    );
+  }
+  // existing tape UI/subscription...
+  return <div className="h-full w-full">{/* ... */}</div>;
+}
+```
+
+What to validate after applying
+- History renders 300+ bars immediately; timestamps correct (seconds).
+- Live updates stream smoothly; no “Object is disposed” errors.
+- Volume pane renders and updates with the price bars.
+- SSE only delivers the requested timeframe; no cross-timeframe noise.
+- TapePanel shows a fallback if ticks are disabled.
+
+If you want, I’ll push these fixes to the existing PR so you can pull to Replit and verify quickly.

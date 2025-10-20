@@ -1,0 +1,235 @@
+You have live data, but the chart lifecycle is unstable. Lightweight-charts “Object is disposed” means the chart/series was removed and you’re still calling methods on it. That happens when the component remounts or an effect tears down and re-creates the chart on every render.
+
+What to fix now
+- Create the chart and series exactly once per symbol/timeframe, not on every render.
+- Avoid passing unstable props (new objects/functions) that cause re-renders/remounts.
+- Seed data on symbol/timeframe change; for live updates, call series.update instead of setData.
+- Isolate the SSE/data subscription from React rendering so it doesn’t force Chart to remount.
+- Guard for React 18 StrictMode double-invoke: initialize only once, clean up only on unmount.
+
+Drop-in hook that stabilizes the chart lifecycle
+Use this hook in your chart component. It creates the chart once, attaches a candlestick series, and exposes setData/update methods without re-rendering the component.
+
+```typescript name=apps/client/src/features/chart/useLightweightChart.ts
+import { MutableRefObject, useEffect, useMemo, useRef } from "react";
+import { createChart, IChartApi, CandlestickData, Time, UTCTimestamp } from "lightweight-charts";
+
+type UseLwChartOpts = {
+  seriesOptions?: any; // keep stable via useMemo at callsite
+  chartOptions?: any;  // keep stable via useMemo at callsite
+  // used to re-seed when these change (e.g., "SPY:1m")
+  seedKey: string;
+  // initial seed data in seconds (NOT ms)
+  seed?: CandlestickData[];
+};
+
+export function useLightweightChart(
+  containerRef: MutableRefObject<HTMLDivElement | null>,
+  opts: UseLwChartOpts
+) {
+  const chartRef = useRef<IChartApi | null>(null);
+  const seriesRef = useRef<ReturnType<IChartApi["addCandlestickSeries"]> | null>(null);
+  const lastTimeRef = useRef<UTCTimestamp | number | undefined>(undefined);
+  const didInitRef = useRef(false);
+
+  const chartOptions = useMemo(() => opts.chartOptions ?? {}, [opts.chartOptions]);
+  const seriesOptions = useMemo(() => opts.seriesOptions ?? {}, [opts.seriesOptions]);
+
+  // Initialize once
+  useEffect(() => {
+    if (didInitRef.current) return;
+    const el = containerRef.current;
+    if (!el || chartRef.current) return;
+
+    const chart = createChart(el, {
+      autoSize: true,
+      layout: { background: { color: "#0B0F14" }, textColor: "#C9D1D9" },
+      rightPriceScale: { borderVisible: false },
+      timeScale: { secondsVisible: true, borderVisible: false },
+      ...chartOptions,
+    });
+    chartRef.current = chart;
+
+    const series = chart.addCandlestickSeries({
+      priceLineVisible: false,
+      ...seriesOptions,
+    });
+    seriesRef.current = series;
+
+    // Resize observer
+    const ro = new ResizeObserver(() => chart.timeScale().fitContent());
+    ro.observe(el);
+
+    didInitRef.current = true;
+
+    return () => {
+      ro.disconnect();
+      try {
+        if (chartRef.current) chartRef.current.remove();
+      } catch {}
+      chartRef.current = null;
+      seriesRef.current = null;
+      didInitRef.current = false;
+    };
+  }, [containerRef, chartOptions, seriesOptions]);
+
+  // Seed on seedKey change (e.g., symbol:timeframe), once per change
+  useEffect(() => {
+    if (!seriesRef.current) return;
+    if (opts.seed && opts.seed.length) {
+      // Ensure times are seconds, not ms
+      const sorted = [...opts.seed].sort((a, b) => Number(a.time) - Number(b.time));
+      seriesRef.current.setData(sorted);
+      lastTimeRef.current = sorted[sorted.length - 1]?.time;
+    } else {
+      // clear if no seed
+      seriesRef.current.setData([]);
+      lastTimeRef.current = undefined;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opts.seedKey]);
+
+  function setData(data: CandlestickData[]) {
+    if (!seriesRef.current) return;
+    const sorted = [...data].sort((a, b) => Number(a.time) - Number(b.time));
+    seriesRef.current.setData(sorted);
+    lastTimeRef.current = sorted[sorted.length - 1]?.time;
+  }
+
+  function update(bar: CandlestickData) {
+    if (!seriesRef.current) return;
+    // Times MUST be seconds for lightweight-charts
+    const t = Number(bar.time) as UTCTimestamp;
+    if (lastTimeRef.current === undefined || t >= (lastTimeRef.current as number)) {
+      seriesRef.current.update(bar);
+      lastTimeRef.current = t;
+    }
+  }
+
+  return {
+    chart: chartRef,
+    series: seriesRef,
+    setData,
+    update,
+  };
+}
+```
+
+Use the hook in your chart component
+- Memoize options so the hook doesn’t see a new object each render.
+- Seed only on symbol/timeframe changes. Use .update for streaming bars.
+
+```typescript name=apps/client/src/features/chart/PaneStable.tsx
+import React, { useMemo, useRef, useEffect } from "react";
+import type { CandlestickData } from "lightweight-charts";
+import { useLightweightChart } from "./useLightweightChart";
+import { subscribeBars, unsubscribeBars } from "../../lib/marketStream"; // your SSE adapter
+import { toCandleData } from "../../lib/chartAdapters"; // ms→seconds conversion
+
+type Props = {
+  symbol: string;
+  timeframe: "1m" | "5m" | "15m";
+  seed: { bar_start: number; bar_end: number; ohlcv: { o: number; h: number; l: number; c: number } }[];
+};
+
+function PaneStable({ symbol, timeframe, seed }: Props) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const chartOptions = useMemo(
+    () => ({
+      autoSize: true,
+      timeScale: { secondsVisible: true, rightOffset: 5 },
+    }),
+    []
+  );
+
+  const seriesOptions = useMemo(
+    () => ({
+      upColor: "#16A34A",
+      downColor: "#DC2626",
+      borderVisible: false,
+      wickUpColor: "#16A34A",
+      wickDownColor: "#DC2626",
+    }),
+    []
+  );
+
+  const seedKey = `${symbol}:${timeframe}`;
+  const seedCandles: CandlestickData[] = useMemo(
+    () =>
+      seed
+        .map(toCandleData) // convert ms→seconds, return { time, open, high, low, close }
+        .sort((a, b) => Number(a.time) - Number(b.time)),
+    [seedKey, seed]
+  );
+
+  const { update } = useLightweightChart(containerRef, {
+    chartOptions,
+    seriesOptions,
+    seedKey,
+    seed: seedCandles,
+  });
+
+  useEffect(() => {
+    // Attach a single, stable subscriber that doesn’t re-render the component
+    const id = subscribeBars(symbol, timeframe, (bar) => {
+      // Adapter ensures seconds (not ms)
+      update(toCandleData(bar));
+    });
+
+    return () => {
+      unsubscribeBars(id);
+    };
+  }, [symbol, timeframe, update]);
+
+  return <div ref={containerRef} className="h-full w-full" />;
+}
+
+export default React.memo(PaneStable);
+```
+
+Minimal adapter: convert server ms to seconds and deliver stable updates
+```typescript name=apps/client/src/lib/chartAdapters.ts
+import type { CandlestickData, Time } from "lightweight-charts";
+
+export function toSec(ms: number): Time {
+  // lightweight-charts expects seconds since epoch (UTC)
+  return Math.floor(ms / 1000) as Time;
+}
+
+export function toCandleData(b: {
+  bar_start?: number;
+  bar_end: number;
+  ohlcv: { o: number; h: number; l: number; c: number };
+}): CandlestickData {
+  // Use bar_end - 60s as canonical bar time (close time also works if consistent)
+  const start = b.bar_start ?? b.bar_end - 60_000;
+  return {
+    time: toSec(start),
+    open: b.ohlcv.o,
+    high: b.ohlcv.h,
+    low: b.ohlcv.l,
+    close: b.ohlcv.c,
+  };
+}
+```
+
+Fix patterns that commonly cause “Object is disposed”
+- Effects that depend on new props every render: Wrap options in useMemo; wrap callbacks in useCallback or use stable adapters as above.
+- Passing inlined objects into Chart component: move to useMemo to make them referentially stable.
+- Parent re-rendering the Chart due to unrelated state (e.g., audio/mic state): wrap the Chart in React.memo and ensure parent only passes primitive or memoized props; move voice controls outside the chart subtree if they cause frequent re-renders.
+- StrictMode double-invoke in dev: our hook uses didInitRef to only init once, and cleans up only on unmount.
+
+Actionable diagnosis steps (5 minutes)
+- Add mount/unmount logs to your current chart component to confirm remounts:
+  - console.debug in useEffect init and cleanup; log a unique id (useId or a ref counter).
+- Verify time units: in the network payloads, bar_start/bar_end are ms; your adapter must convert to seconds for the chart.
+- Ensure one SSE subscriber: confirm you aren’t creating a new EventSource or registering a new onmessage handler on every render.
+- Confirm seeding policy: on symbol/timeframe change, call setData once with the full array; then update() for each incoming bar and microbar.
+
+If you want, I can fold this into PR #3 by:
+- Adding useLightweightChart.ts and swapping your chart component to the stable pattern above.
+- Ensuring marketStream’s subscribeBars/unsubscribeBars provide a single, global SSE subscription with per-listener callbacks (no re-renders).
+- Memoizing chart and series options, and wrapping the chart component with React.memo.
+
+Once that’s in, the chart will no longer be destroyed on each re-render; the “Object is disposed” errors and “one bar then frozen” symptom should disappear, while live updates remain smooth.

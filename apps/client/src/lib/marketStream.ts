@@ -7,9 +7,11 @@ import { useAuthStore } from "../stores/authStore";
 
 export type Ohlcv = { o: number; h: number; l: number; c: number; v: number };
 
+export type Timeframe = "1m" | "2m" | "5m" | "10m" | "15m" | "30m" | "1h";
+
 export type Bar = {
   symbol: string;
-  timeframe: "1m";
+  timeframe: Timeframe;
   seq: number;
   bar_start: number;
   bar_end: number;
@@ -43,6 +45,22 @@ interface MarketSSEOptions {
   sinceSeq?: number;
   maxReconnectDelay?: number;
   timeframe?: string;
+}
+
+/**
+ * Parse timeframe string to milliseconds
+ * Examples: "1m" -> 60000, "5m" -> 300000, "1h" -> 3600000
+ */
+function parseTimeframeMs(tf: string): number {
+  const match = tf.match(/^(\d+)([mh])$/);
+  if (!match) return 60000; // Default to 1 minute
+  
+  const value = parseInt(match[1], 10);
+  const unit = match[2];
+  
+  if (unit === "m") return value * 60 * 1000;
+  if (unit === "h") return value * 60 * 60 * 1000;
+  return 60000;
 }
 
 // Runtime type guards for SSE payloads
@@ -147,6 +165,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
       const symbol = symbols[0] || "SPY";
       const timeframe = opts?.timeframe || "1m";
+      const timeframeMs = parseTimeframeMs(timeframe);
       
       // [PHASE-5] Fetch last 10 bars for reconciliation (reduced from 50)
       const params = new URLSearchParams({
@@ -162,13 +181,13 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
       const rawBars = await res.json();
 
-      // Transform server bars
+      // Transform server bars (generalized for any timeframe)
       const serverBars: Bar[] = rawBars
         .map((b: any) => ({
           symbol: b.symbol || symbol,
-          timeframe: b.timeframe || "1m",
-          seq: Math.floor(b.bar_end / 60000),
-          bar_start: b.bar_end - 60000,
+          timeframe: (b.timeframe || timeframe) as Timeframe,
+          seq: Math.floor(b.bar_end / timeframeMs),
+          bar_start: b.bar_start || (b.bar_end - timeframeMs),
           bar_end: b.bar_end,
           ohlcv: b.ohlcv,
         }))
@@ -231,6 +250,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
       const symbol = symbols[0] || "SPY";
       const timeframe = opts?.timeframe || "1m";
+      const timeframeMs = parseTimeframeMs(timeframe);
       const limit = Math.min(toSeq - fromSeq + 1, 100);
 
       const params = new URLSearchParams({
@@ -246,12 +266,12 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
       const rawBars = await res.json();
 
-      // Transform history response to Bar format
+      // Transform history response to Bar format (generalized for any timeframe)
       const bars: Bar[] = rawBars.map((b: any) => ({
         symbol: b.symbol || symbol,
-        timeframe: b.timeframe || "1m",
-        seq: Math.floor(b.bar_end / 60000),
-        bar_start: b.bar_end - 60000,
+        timeframe: (b.timeframe || timeframe) as Timeframe,
+        seq: Math.floor(b.bar_end / timeframeMs),
+        bar_start: b.bar_start || (b.bar_end - timeframeMs),
         bar_end: b.bar_end,
         ohlcv: b.ohlcv,
       }));

@@ -1,0 +1,300 @@
+You’re right: 30 seconds to “wake up” is not normal. That delay is almost certainly your 3‑second SSE reconnect loop repeating ~10 times before stabilizing. Let’s lock this down with a focused diagnostic pass and a couple of surgical hardening changes that won’t break the app.
+
+What to check first (5–10 minutes)
+- Flags/env for stability
+  - FF_SSE_TICKS=off (do not stream raw ticks over SSE)
+  - SSE_BUFFER_CAP=1000
+  - LOG_LEVEL=debug (temporarily while diagnosing)
+  - SESSION=RTH_EXT, STREAM_SUBSCRIBE_CHANNELS=A,T (if used)
+- Cookies/CORS
+  - SSE must be same-origin with credentials; cookie: SameSite=None; Secure; maxAge ~24h
+- Client snapshot policy
+  - On initial connect: one snapshot only
+  - On reconnect: sinceSeq backfill only (no full re-snapshot)
+- Sequence dedupe
+  - Ignore any incoming bar with seq <= lastSeq
+- History path
+  - Polygon aggs uses ms-in-path, not ISO; non-200s logged with masked apiKey
+- Proxies/timeouts
+  - Server sets proper SSE headers, heartbeats every 10–15s, disabled compression for SSE, and keeps TCP alive
+
+Deep-dive checklist and how to run it
+- Confirm heartbeats: curl -N http://localhost:5000/api/stream/market?symbol=SPY and ensure you see colon comment lines at a steady cadence (e.g., “:” every 15s). If they stop, the proxy will drop you.
+- Watch drops: GET /api/metrics and ensure spotlight_sse_dropped_total stays flat during normal use after removing ticks.
+- Confirm resume: Note EventSource Last-Event-ID in network tab; restart server; verify no duplicate bar warnings and quick resume with sinceSeq backfill only.
+- Timeframe switch: Switch 1m→5m, verify exactly one history request, no request storm; repeated requests should be fast if rollup cache present.
+
+Surgical patches you can apply safely
+1) SSE server hardening: headers, heartbeat, buffer cap, drop metrics, Last-Event-ID filtering, and no compression
+```typescript name=apps/server/src/stream/sse.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/stream/sse.ts
+import { parseLastEventId } from "./lastEventId";
+import { sseConnections, sseDropped } from "@server/routes/metricsProm";
+import { logger } from "@server/logger";
+
+export function streamMarket(req, res) {
+  // Core SSE headers
+  res.status(200);
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // no buffering behind proxies
+  // Important: ensure compression is disabled for this route in middleware
+
+  // Flush early so proxies see headers
+  // @ts-ignore
+  res.flushHeaders?.();
+
+  // Keep the TCP alive
+  // @ts-ignore
+  res.socket?.setKeepAlive?.(true);
+
+  const SSE_BUFFER_CAP = Number(process.env.SSE_BUFFER_CAP ?? 1000);
+  const bpc = createBufferedSSEWriter(res, { capacity: SSE_BUFFER_CAP });
+
+  sseConnections.inc();
+
+  // Heartbeat and drop reporting
+  let lastDropped = 0;
+  const hb = setInterval(() => {
+    try {
+      res.write(":\n\n"); // SSE heartbeat comment
+      const stats = bpc.getStats?.();
+      if (stats?.dropped && stats.dropped > lastDropped) {
+        const dropped = stats.dropped - lastDropped;
+        sseDropped.labels("unknown", "1m").inc(dropped); // label if you have symbol/timeframe in scope
+        logger.warn({ dropped, cap: SSE_BUFFER_CAP }, "sse_backpressure_drop");
+        lastDropped = stats.dropped;
+      }
+    } catch (e) {
+      logger.warn({ e }, "sse_heartbeat_write_failed");
+    }
+  }, 15000);
+
+  // Seed on connect with Last-Event-ID filter
+  const lastId = parseLastEventId(req.headers["last-event-id"] as string | undefined);
+  const { symbols = ["SPY"], timeframe = "1m" } = req.query ?? {};
+
+  // Optionally ensure symbol subscribed & pre-seeded history (safe no-op if already handled elsewhere)
+  // await subscribeSymbol for each symbol here if that’s your pattern
+
+  seed(symbols, timeframe as string, lastId).catch((e) =>
+    logger.warn({ e }, "sse_seed_failed")
+  );
+
+  // Attach bar/microbar listeners only (do not emit raw ticks here)
+  const disposers = attachBarListeners(symbols, timeframe as string, bpc);
+
+  req.on("close", () => {
+    clearInterval(hb);
+    bpc.destroy();
+    sseConnections.dec();
+    disposers.forEach((fn) => {
+      try { fn(); } catch {}
+    });
+  });
+}
+
+async function seed(symbols: string[], timeframe: string, lastId?: number) {
+  await Promise.all(
+    symbols.map(async (symbol) => {
+      const bars = await getHistory({ symbol, timeframe });
+      for (const bar of bars) {
+        if (lastId !== undefined && bar.seq <= lastId) continue; // filter dupes on resume
+        // id: bar.seq enables Last-Event-ID
+        bpc.write(
+          "bar",
+          { symbol: bar.symbol, timeframe: bar.timeframe, seq: bar.seq, bar_start: bar.bar_start, bar_end: bar.bar_end, ohlcv: bar.ohlcv },
+          String(bar.seq)
+        );
+      }
+    })
+  );
+}
+
+function attachBarListeners(symbols: string[], timeframe: string, bpc: any) {
+  const disposers: Array<() => void> = [];
+  for (const symbol of symbols) {
+    const onBar = (bar: Bar) => {
+      if (bar.timeframe !== timeframe) return;
+      bpc.write(
+        "bar",
+        { symbol: bar.symbol, timeframe: bar.timeframe, seq: bar.seq, bar_start: bar.bar_start, bar_end: bar.bar_end, ohlcv: bar.ohlcv },
+        String(bar.seq)
+      );
+    };
+    const onMicro = (mb: any) => {
+      bpc.write("microbar", { symbol, ...mb });
+    };
+    eventBus.on(`bar:new:${symbol}:${timeframe}` as any, onBar);
+    eventBus.on(`microbar:${symbol}` as any, onMicro);
+    disposers.push(() => {
+      eventBus.off(`bar:new:${symbol}:${timeframe}` as any, onBar);
+      eventBus.off(`microbar:${symbol}` as any, onMicro);
+    });
+  }
+  return disposers;
+}
+```
+
+Disable compression for SSE route
+```typescript name=apps/server/src/index.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/index.ts
+// If you use compression(), ensure SSE routes bypass it:
+import compression from "compression";
+
+app.use(
+  compression({
+    filter: (req, res) => {
+      if (req.url?.startsWith("/api/stream")) return false; // don’t compress SSE
+      return compression.filter(req, res);
+    },
+  })
+);
+```
+
+Optional: set Node HTTP timeouts high enough
+```typescript name=apps/server/src/index.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/index.ts
+const server = app.listen(PORT, () => { /* ... */ });
+// Prevent premature idle close; keep below any provider hard limits
+server.keepAliveTimeout = 75_000;
+server.headersTimeout = 80_000;
+```
+
+2) Client snapshot-once, sinceSeq-only backfill on reconnect, and dedupe
+```typescript name=apps/client/src/lib/marketStream.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/client/src/lib/marketStream.ts
+// Key concepts:
+// - resyncDone: ensures we run a single snapshot per (symbol,timeframe)
+// - sinceSeq backfill on reconnect when lastSeq>0
+// - dedupe: drop any incoming bar with seq <= lastSeq
+const resyncDone = new Set<string>();
+let lastSeq = 0;
+
+function onBar(b: Bar) {
+  if (b.seq <= lastSeq) return; // dedupe
+  lastSeq = b.seq;
+  listeners.bar.forEach((fn) => fn(b));
+}
+
+async function initialSnapshot(symbol: string, timeframe: string) {
+  const key = `${symbol}:${timeframe}`;
+  if (resyncDone.has(key)) return;
+  resyncDone.add(key);
+  const params = new URLSearchParams({ symbol, timeframe, limit: "50" });
+  const res = await fetch(`${HISTORY_URL}?${params}`, { credentials: "include" as any });
+  if (!res.ok) throw new Error(`snapshot failed: ${res.status}`);
+  const rows = await res.json();
+  const bars: Bar[] = rows
+    .map((b: any) => {
+      const barStart = b.bar_start ?? (b.bar_end - 60_000);
+      return {
+        symbol: b.symbol || symbol,
+        timeframe: b.timeframe || timeframe,
+        seq: Math.floor(barStart / 60_000),
+        bar_start: barStart,
+        bar_end: b.bar_end,
+        ohlcv: b.ohlcv,
+      } as Bar;
+    })
+    .sort((a, b) => a.seq - b.seq);
+  if (bars.length) {
+    lastSeq = bars.at(-1)!.seq;
+    bars.forEach(onBar);
+  }
+}
+
+async function backfillSince(symbol: string, timeframe: string) {
+  if (lastSeq === 0) return;
+  const params = new URLSearchParams({ symbol, timeframe, sinceSeq: String(lastSeq) });
+  const res = await fetch(`${HISTORY_URL}?${params}`, { credentials: "include" as any });
+  if (!res.ok) return;
+  const rows = await res.json();
+  rows
+    .map((b: any) => ({
+      symbol: b.symbol || symbol,
+      timeframe: b.timeframe || timeframe,
+      seq: Math.floor((b.bar_start ?? (b.bar_end - 60_000)) / 60_000),
+      bar_start: b.bar_start ?? (b.bar_end - 60_000),
+      bar_end: b.bar_end,
+      ohlcv: b.ohlcv,
+    }))
+    .sort((a, b) => a.seq - b.seq)
+    .forEach(onBar);
+}
+
+// On EventSource open:
+es.addEventListener("open", async () => {
+  if (lastSeq === 0) await initialSnapshot(activeSymbol, activeTf);
+  else await backfillSince(activeSymbol, activeTf);
+});
+```
+
+3) Polygon history: ensure ms-in-path, masked error logs (if not already applied)
+```typescript name=apps/server/src/history/service.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/history/service.ts
+const toMs = before ?? Date.now();
+const timeframeMs = timeframeToMs(timeframe);
+const fromMs = toMs - limit * timeframeMs;
+
+const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${timeframeToMultiplier(timeframe)}/minute/${fromMs}/${toMs}`;
+const params = new URLSearchParams({
+  adjusted: "true",
+  sort: "asc",
+  limit: String(Math.min(limit, 50_000)),
+  apiKey: env.POLYGON_API_KEY,
+});
+
+const res = await fetch(`${url}?${params.toString()}`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(10_000) });
+const body = await res.text().catch(() => "");
+if (!res.ok) {
+  console.warn(`[history] Polygon error ${res.status} url=${url} q=${params.toString().replace(env.POLYGON_API_KEY, "****")} body=${body.slice(0, 300)}...`);
+  return [];
+}
+```
+
+4) Optional: inflight coalescing to prevent request storms on timeframe switch
+```typescript name=apps/server/src/history/inflight.ts
+type Key = string;
+const inflight = new Map<Key, Promise<any>>();
+export function coalesce<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = inflight.get(key);
+  if (existing) return existing as Promise<T>;
+  const p = fn().finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
+}
+```
+
+Use in history:
+```typescript name=apps/server/src/history/service.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/history/service.ts
+import { coalesce } from "./inflight";
+// ...
+const key = `${symbol}:1m:${fromMs}:${toMs}`;
+const oneMinuteBars = await coalesce(key, () => fetchPolygonHistory(symbol, "1m", neededMinutes, before));
+```
+
+5) Dynamic symbol subscription so any symbol (e.g., AMD) works for charts/voice
+If not already implemented, subscribe on-demand and seed history so AMD has data immediately.
+```typescript name=apps/server/src/routes/symbols.ts
+// POST /api/symbols/subscribe { symbol: "AMD", seedLimit?: 200 } → primes buffers + starts WS
+```
+Call this before starting SSE for a new symbol or inside the SSE handler for listed symbols.
+
+How to diagnose the 30s delay precisely
+- Browser devtools console
+  - Count “SSE error, reconnecting in 3s…” messages; if you see ~10 in a row before bars appear, that explains the 30s.
+- Browser network tab
+  - Check the SSE request response headers: Content-Type text/event-stream; Cache-Control no-cache; X-Accel-Buffering no; response has regular “: heartbeat” lines every ~15s.
+- Server logs
+  - Look for sse_backpressure_drop; if this still increments while ticks are off, the buffer is too small or microbar rate is too high.
+- Metrics
+  - /api/metrics shows spotlight_sse_connections steady, spotlight_sse_dropped_total flat. If not flat, tune SSE_BUFFER_CAP or reduce emission cadence.
+
+Acceptance criteria (what “good” looks like)
+- Connection stability
+  - No 3s reconnect loop; reconnection only on network/server restart. Last-Event-ID resume yields no duplicate/stale warnings.
+- Startup latency
+  - Bars and microbars visible within 1–3 seconds of opening the chart.
+- Timeframe switch
+  - Exactly one snapshot call per switch; no request storms; fast repeat loads if you added rollup cache.
+- Any symbol works
+  - AMD: subscribe → immediate history seed → live updates flow; voice coach returns context.
+
+If you want, I can add a small DIAG_SSE.md with the exact curl commands and what to expect, and fold the hardening changes above into the existing PR branch so you can pull to Replit and retest quickly.

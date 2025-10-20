@@ -315,18 +315,25 @@ export async function sseMarketStream(req: Request, res: Response) {
 
   let lastDropped = 0;
 
-  // [RESILIENCE] Send ping event every 10s to prevent proxy idle timeout
-  // Also monitors backpressure stats for observability
+  // [RESILIENCE] Send SSE heartbeat every 15s to prevent proxy idle timeout
+  // Uses standard SSE comment format (`: \n\n`) for maximum compatibility
   const heartbeat = setInterval(() => {
-    const stats = bpc.getStats();
-    bpc.write("ping", { 
-      ts: Date.now(),
-      buffered: stats.buffered,
-      dropped: stats.dropped 
-    });
-    recordSSEBackpressure(stats.buffered, stats.dropped, lastDropped);
-    lastDropped = stats.dropped;
-  }, 10000);
+    try {
+      // Send standard SSE heartbeat comment (prevents proxy buffering/timeout)
+      res.write(": heartbeat\n\n");
+      
+      // Monitor backpressure for observability
+      const stats = bpc.getStats();
+      if (stats.dropped > lastDropped) {
+        const dropped = stats.dropped - lastDropped;
+        console.warn(`[SSE] Backpressure: ${dropped} events dropped (buffer cap: ${SSE_BUFFER_CAP})`);
+        lastDropped = stats.dropped;
+      }
+      recordSSEBackpressure(stats.buffered, stats.dropped, lastDropped);
+    } catch (err) {
+      console.warn("[SSE] Heartbeat write failed:", err);
+    }
+  }, 15000);
 
   req.on("close", () => {
     clearInterval(heartbeat);

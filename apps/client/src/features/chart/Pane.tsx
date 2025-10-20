@@ -394,6 +394,78 @@ export function Pane({ className = "" }: PaneProps) {
       scheduleProcess();
     });
 
+    sseConnection.onBarReset((bars: Bar[]) => {
+      // [GUARD] Only reset if this event is for our active symbol/timeframe
+      if (bars.length === 0) {
+        console.warn(`[Pane] Bar reset received but bars array is empty`);
+        return;
+      }
+      
+      const resetSymbol = bars[0]?.symbol;
+      const resetTimeframe = bars[0]?.timeframe;
+      
+      if (resetSymbol !== active.symbol) {
+        console.log(`[Pane] Ignoring bar:reset for ${resetSymbol} (active: ${active.symbol})`);
+        return;
+      }
+      
+      if (resetTimeframe !== active.timeframe) {
+        console.log(`[Pane] Ignoring bar:reset for ${resetTimeframe} (active: ${active.timeframe})`);
+        return;
+      }
+      
+      console.log(`[Pane] Bar reset received: ${bars.length} bars for ${resetSymbol} ${resetTimeframe}`);
+      
+      if (!seriesRef.current || !volumeSeriesRef.current) return;
+      
+      // Clear queues
+      barQueueRef.current = [];
+      microQueueRef.current = [];
+      
+      // Transform bars to chart format
+      const chartData = bars.map((bar) => ({
+        time: Math.floor(bar.bar_start / 1000) as UTCTimestamp,
+        open: bar.ohlcv.o,
+        high: bar.ohlcv.h,
+        low: bar.ohlcv.l,
+        close: bar.ohlcv.c,
+      }));
+      
+      const volumeData = bars.map((bar) => ({
+        time: Math.floor(bar.bar_start / 1000) as UTCTimestamp,
+        value: bar.ohlcv.v,
+        color: bar.ohlcv.c >= bar.ohlcv.o ? "#10b98150" : "#ef444450",
+      }));
+      
+      // Set new data (this clears and redraws the chart)
+      seriesRef.current.setData(chartData);
+      volumeSeriesRef.current.setData(volumeData);
+      
+      // Update candle state to match chart data
+      const newCandles: Candle[] = bars.map((bar) => ({
+        t: bar.bar_start,
+        ohlcv: {
+          o: bar.ohlcv.o,
+          h: bar.ohlcv.h,
+          l: bar.ohlcv.l,
+          c: bar.ohlcv.c,
+          v: bar.ohlcv.v,
+        },
+      }));
+      setCandles(newCandles);
+      
+      // Update current bar tracking
+      if (bars.length > 0) {
+        const lastBar = bars[bars.length - 1];
+        if (lastBar) {
+          currentMinuteRef.current = Math.floor(lastBar.bar_end / 60000) * 60000;
+          currentBarTimeRef.current = Math.floor(lastBar.bar_start / 1000) as UTCTimestamp;
+        }
+      }
+      
+      console.log(`[Pane] Chart reset with ${bars.length} bars`);
+    });
+
     sseConnection.onMicro((micro: Micro) => {
       microQueueRef.current.push(micro);
       scheduleProcess();

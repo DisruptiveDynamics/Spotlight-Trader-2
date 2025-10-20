@@ -20,7 +20,19 @@ interface PolygonTradeMessage {
   s: number;
 }
 
-type PolygonMessage = PolygonStatusMessage | PolygonTradeMessage;
+interface PolygonAggregateMessage {
+  ev: "AM";
+  sym: string;
+  s: number; // bar start timestamp (ms)
+  e: number; // bar end timestamp (ms)
+  o: number; // open
+  h: number; // high
+  l: number; // low
+  c: number; // close
+  v: number; // volume
+}
+
+type PolygonMessage = PolygonStatusMessage | PolygonTradeMessage | PolygonAggregateMessage;
 
 interface WebSocketEvent {
   data?: string;
@@ -135,6 +147,25 @@ export class PolygonWebSocket {
       };
       eventBus.emit(`tick:${msg.sym}` as const, tick);
     }
+
+    if (msg.ev === "AM") {
+      console.log(`📈 Official AM: ${msg.sym} close=$${msg.c} vol=${msg.v}`);
+      // Emit official aggregate minute for reconciliation
+      eventBus.emit(`am:${msg.sym}` as const, {
+        symbol: msg.sym,
+        timeframe: "1m" as const,
+        bar_start: msg.s,
+        bar_end: msg.e,
+        ohlcv: {
+          o: msg.o,
+          h: msg.h,
+          l: msg.l,
+          c: msg.c,
+          v: msg.v,
+        },
+        seq: Math.floor(msg.s / 60000),
+      });
+    }
   }
 
   subscribe(symbol: string) {
@@ -147,10 +178,11 @@ export class PolygonWebSocket {
     }
 
     if (this.isConnected && this.ws) {
+      // Subscribe to both ticks (T) and official minute aggregates (AM)
       (this.ws as any).send(
         JSON.stringify({
           action: "subscribe",
-          params: `T.${symbol}`,
+          params: `T.${symbol},AM.${symbol}`,
         }),
       );
     }
@@ -165,10 +197,11 @@ export class PolygonWebSocket {
     }
 
     if (this.isConnected && this.ws) {
+      // Unsubscribe from both ticks (T) and official minute aggregates (AM)
       (this.ws as any).send(
         JSON.stringify({
           action: "unsubscribe",
-          params: `T.${symbol}`,
+          params: `T.${symbol},AM.${symbol}`,
         }),
       );
     }
@@ -181,8 +214,9 @@ export class PolygonWebSocket {
     }
 
     if (this.subscribedSymbols.size > 0 && this.ws) {
+      // Subscribe to both ticks (T) and official minute aggregates (AM) for all symbols
       const params = Array.from(this.subscribedSymbols)
-        .map((sym) => `T.${sym}`)
+        .flatMap((sym) => [`T.${sym}`, `AM.${sym}`])
         .join(",");
       (this.ws as any).send(
         JSON.stringify({

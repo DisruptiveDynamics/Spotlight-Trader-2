@@ -56,6 +56,7 @@ import type { EvaluatedRule, Signal } from "@shared/types/rules";
 type EventMap = {
   [key: `tick:${string}`]: Tick;
   [key: `microbar:${string}`]: Microbar;
+  [key: `am:${string}`]: MarketBarEvent;
   [key: `bar:new:${string}:${Timeframe}`]: MarketBarEvent;
   "bar:reset": { symbol: string; timeframe: Timeframe; bars: import("@shared/types").Bar[] };
   "rule:evaluated": EvaluatedRule;

@@ -1,7 +1,15 @@
 import { eventBus, type Tick, type Microbar, type MarketBarEvent } from "./eventBus";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
+import { bars1m } from "@server/chart/bars1m";
+import { ringBuffer } from "@server/cache/ring";
+import { validateEnv } from "@shared/env";
 
 const ET = "America/New_York";
+const env = validateEnv(process.env);
+
+// RTH session boundaries (09:30-16:00 ET)
+const RTH_START_MINUTES = 9 * 60 + 30; // 9:30 AM
+const RTH_END_MINUTES = 16 * 60; // 4:00 PM
 
 interface BarState {
   open: number;
@@ -28,8 +36,12 @@ export class BarBuilder {
   private barFinalizeTimers = new Map<string, NodeJS.Timeout>();
   // Track tick listeners to properly remove them
   private tickListeners = new Map<string, (tick: Tick) => void>();
+  // Track AM listeners for reconciliation
+  private amListeners = new Map<string, (am: MarketBarEvent) => void>();
   // Track last seq for monotonic sequence numbers
   private lastSeq = new Map<string, number>();
+  // Track reconciled seqs to prevent duplicate emissions
+  private reconciledSeqs = new Map<string, Set<number>>();
 
   private floorToExchangeMinute(tsMs: number, barMinutes: number = 1): number {
     const d = toZonedTime(new Date(tsMs), ET);
@@ -44,6 +56,22 @@ export class BarBuilder {
       0,
     );
     return fromZonedTime(wall, ET).getTime();
+  }
+
+  /**
+   * Check if a bar timestamp falls within RTH session (09:30-16:00 ET)
+   */
+  private isWithinRTH(timestampMs: number): boolean {
+    const etDate = toZonedTime(new Date(timestampMs), ET);
+    const dayOfWeek = etDate.getDay();
+    
+    // Weekend check
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      return false;
+    }
+    
+    const timeInMinutes = etDate.getHours() * 60 + etDate.getMinutes();
+    return timeInMinutes >= RTH_START_MINUTES && timeInMinutes < RTH_END_MINUTES;
   }
 
   subscribe(symbol: string, timeframe: string = "1m") {
@@ -76,6 +104,14 @@ export class BarBuilder {
     this.tickListeners.set(stateKey, tickListener);
 
     eventBus.on(`tick:${symbol}` as const, tickListener);
+    
+    // Listen for official AM aggregates for reconciliation (1m only)
+    if (timeframe === "1m") {
+      const amListener = (am: MarketBarEvent) => this.handleAMReconciliation(symbol, am);
+      this.amListeners.set(stateKey, amListener);
+      eventBus.on(`am:${symbol}` as const, amListener);
+    }
+    
     this.startMicrobarTimer(symbol, timeframe);
     this.startBarFinalizeTimer(symbol, timeframe);
   }
@@ -98,6 +134,13 @@ export class BarBuilder {
     if (tickListener) {
       eventBus.off(`tick:${symbol}` as any, tickListener);
       this.tickListeners.delete(stateKey);
+    }
+
+    // Remove AM listener
+    const amListener = this.amListeners.get(stateKey);
+    if (amListener) {
+      eventBus.off(`am:${symbol}` as any, amListener);
+      this.amListeners.delete(stateKey);
     }
 
     // Clean up state and timers
@@ -153,6 +196,15 @@ export class BarBuilder {
   private finalizeBar(symbol: string, timeframe: string, state: SymbolState) {
     if (!state.currentBar) return;
 
+    // Apply session filtering if SESSION=RTH
+    if (env.SESSION === "RTH" && !this.isWithinRTH(state.bar_start)) {
+      console.debug(
+        `[barBuilder] skipping non-RTH bar: ${symbol} ${timeframe} ` +
+        `start=${new Date(state.bar_start).toISOString()} (SESSION=RTH)`
+      );
+      return;
+    }
+
     const stateKey = `${symbol}:${timeframe}`;
 
     // [CRITICAL] Authoritative seq = floor(bar_start ms / 60_000)
@@ -160,11 +212,21 @@ export class BarBuilder {
     // - Live ticks → barBuilder
     // - Historical REST API → history service
     // - SSE backfill → client
+    // - AM aggregates → Polygon official data
     // Using bar_start (not bar_end) matches industry standard and Polygon API
-    const seqFromTime = Math.floor(state.bar_start / 60000);
-    const currentSeq = this.lastSeq.get(stateKey) ?? 0;
-    const seq = seqFromTime > currentSeq ? seqFromTime : currentSeq + 1;
+    // NO monotonic fallback - seq must match AM for reconciliation to work
+    const seq = Math.floor(state.bar_start / 60000);
     this.lastSeq.set(stateKey, seq);
+
+    // Skip emission if this seq was already reconciled with AM
+    const reconciledSet = this.reconciledSeqs.get(stateKey);
+    if (reconciledSet?.has(seq)) {
+      console.debug(
+        `[barBuilder] skipping duplicate emission for seq=${seq} ` +
+        `(already reconciled with AM)`
+      );
+      return;
+    }
 
     const finalizedBar: MarketBarEvent = {
       symbol,
@@ -186,6 +248,22 @@ export class BarBuilder {
       `start=${new Date(state.bar_start).toISOString()} end=${new Date(state.bar_end).toISOString()} ` +
       `o=${finalizedBar.ohlcv.o} c=${finalizedBar.ohlcv.c} v=${finalizedBar.ohlcv.v}`
     );
+
+    // Write to ringBuffer immediately for gap-fill availability (before AM arrives)
+    if (timeframe === "1m") {
+      ringBuffer.putBars(symbol, [{
+        symbol,
+        timestamp: state.bar_start,
+        open: finalizedBar.ohlcv.o,
+        high: finalizedBar.ohlcv.h,
+        low: finalizedBar.ohlcv.l,
+        close: finalizedBar.ohlcv.c,
+        volume: finalizedBar.ohlcv.v,
+        seq,
+        bar_start: state.bar_start,
+        bar_end: state.bar_end,
+      }]);
+    }
 
     // Clear microbars to prevent memory leak
     state.microbars = [];
@@ -245,6 +323,83 @@ export class BarBuilder {
   getState(symbol: string, timeframe: string = "1m"): SymbolState | undefined {
     const stateKey = `${symbol}:${timeframe}`;
     return this.states.get(stateKey);
+  }
+
+  /**
+   * Handle official AM aggregate reconciliation
+   * Replaces tick-based bars with authoritative Polygon data
+   */
+  private handleAMReconciliation(symbol: string, am: MarketBarEvent) {
+    // Apply session filtering if SESSION=RTH
+    if (env.SESSION === "RTH" && !this.isWithinRTH(am.bar_start)) {
+      console.debug(
+        `[AM reconcile] skipping non-RTH bar: ${symbol} ` +
+        `start=${new Date(am.bar_start).toISOString()} (SESSION=RTH)`
+      );
+      return;
+    }
+
+    // Reconcile the closed minute in the authoritative buffer
+    const result = bars1m.reconcile(symbol, {
+      symbol: am.symbol,
+      seq: am.seq,
+      bar_start: am.bar_start,
+      bar_end: am.bar_end,
+      o: am.ohlcv.o,
+      h: am.ohlcv.h,
+      l: am.ohlcv.l,
+      c: am.ohlcv.c,
+      v: am.ohlcv.v,
+    });
+
+    // Propagate correction to ringBuffer (replace/upsert by seq)
+    ringBuffer.replaceOrUpsertBySeq(symbol, {
+      symbol: am.symbol,
+      timestamp: am.bar_start,
+      open: am.ohlcv.o,
+      high: am.ohlcv.h,
+      low: am.ohlcv.l,
+      close: am.ohlcv.c,
+      volume: am.ohlcv.v,
+      seq: am.seq,
+      bar_start: am.bar_start,
+      bar_end: am.bar_end,
+    });
+
+    // Mark this seq as reconciled to prevent duplicate emission from finalizeBar
+    const stateKey = `${symbol}:1m`;
+    if (!this.reconciledSeqs.has(stateKey)) {
+      this.reconciledSeqs.set(stateKey, new Set());
+    }
+    this.reconciledSeqs.get(stateKey)!.add(am.seq);
+
+    // Re-emit corrected bar to update live stream and clients
+    eventBus.emit(`bar:new:${symbol}:1m` as any, am);
+
+    // Log reconciliation with volume drift detection
+    if (result.replaced && result.oldBar) {
+      const volumeDiff = Math.abs(result.oldBar.v - am.ohlcv.v);
+      const volumeDiffPct = am.ohlcv.v > 0 ? (volumeDiff / am.ohlcv.v) * 100 : 0;
+      
+      if (volumeDiffPct > 10) {
+        console.debug(
+          `[AM reconcile] ${symbol} seq=${am.seq} ` +
+          `VOLUME DRIFT ${volumeDiffPct.toFixed(1)}%: ` +
+          `tick=${result.oldBar.v} → AM=${am.ohlcv.v} (diff=${volumeDiff})`
+        );
+      } else {
+        console.debug(
+          `[AM reconcile] ${symbol} seq=${am.seq} ` +
+          `tick_v=${result.oldBar.v} AM_v=${am.ohlcv.v} ` +
+          `o=${am.ohlcv.o} h=${am.ohlcv.h} l=${am.ohlcv.l} c=${am.ohlcv.c}`
+        );
+      }
+    } else {
+      console.debug(
+        `[AM gap-fill] ${symbol} seq=${am.seq} ` +
+        `v=${am.ohlcv.v} o=${am.ohlcv.o} h=${am.ohlcv.h} l=${am.ohlcv.l} c=${am.ohlcv.c}`
+      );
+    }
   }
 }
 

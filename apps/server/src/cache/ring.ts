@@ -42,6 +42,45 @@ export class RingBuffer {
     }
   }
 
+  /**
+   * Replace or upsert a bar by seq (for AM reconciliation)
+   * If bar with same seq exists, replace it. Otherwise append.
+   */
+  replaceOrUpsertBySeq(symbol: string, bar: Bar) {
+    if (!this.buffers.has(symbol)) {
+      this.buffers.set(symbol, []);
+    }
+
+    const buffer = this.buffers.get(symbol)!;
+    
+    const cachedBar: CachedBar = {
+      seq: bar.seq,
+      bar_start: bar.bar_start,
+      bar_end: bar.bar_end,
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+      volume: bar.volume,
+    };
+
+    // Find existing bar with same seq
+    const existingIndex = buffer.findIndex((b) => b.seq === bar.seq);
+
+    if (existingIndex >= 0) {
+      // Replace existing bar
+      buffer[existingIndex] = cachedBar;
+    } else {
+      // Append new bar
+      buffer.push(cachedBar);
+      
+      // Trim to max size if needed
+      if (buffer.length > this.maxSize) {
+        buffer.splice(0, buffer.length - this.maxSize);
+      }
+    }
+  }
+
   getSinceSeq(symbol: string, seq: number): CachedBar[] {
     const buffer = this.buffers.get(symbol);
     if (!buffer) return [];

@@ -5,8 +5,13 @@ import type { Timeframe } from "@server/market/eventBus";
 import { polygonWs } from "@server/market/polygonWs";
 import { validateEnv } from "@shared/env";
 import type { Bar } from "@shared/types";
+import { toZonedTime } from "date-fns-tz";
 
 const env = validateEnv(process.env);
+
+// RTH session boundaries (09:30-16:00 ET)
+const RTH_START_MINUTES = 9 * 60 + 30; // 9:30 AM
+const RTH_END_MINUTES = 16 * 60; // 4:00 PM
 
 // Helper to convert cached bar to flat Bar structure
 function toFlatBar(cached: { seq: number; bar_start: number; bar_end: number; open: number; high: number; low: number; close: number; volume: number }, symbol: string): Bar {
@@ -275,6 +280,35 @@ function timeframeToMs(timeframe: Timeframe): number {
 }
 
 /**
+ * Check if a bar timestamp falls within RTH session (09:30-16:00 ET)
+ */
+function isWithinRTH(timestampMs: number): boolean {
+  const etDate = toZonedTime(new Date(timestampMs), "America/New_York");
+  const dayOfWeek = etDate.getDay();
+  
+  // Weekend check
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
+    return false;
+  }
+  
+  const timeInMinutes = etDate.getHours() * 60 + etDate.getMinutes();
+  return timeInMinutes >= RTH_START_MINUTES && timeInMinutes < RTH_END_MINUTES;
+}
+
+/**
+ * Filter bars by session policy
+ */
+function filterBySession(bars: Bar[]): Bar[] {
+  if (env.SESSION === "RTH_EXT") {
+    // Include all bars (pre/post/RTH)
+    return bars;
+  }
+  
+  // SESSION === "RTH": filter to only RTH hours (09:30-16:00 ET)
+  return bars.filter((bar) => isWithinRTH(bar.bar_start));
+}
+
+/**
  * Fetch historical bars from Polygon REST API using direct fetch
  * Uses limit-based fetch (not time-based) for efficient cold starts
  */
@@ -358,8 +392,16 @@ async function fetchPolygonHistory(
       };
     });
 
-    console.log(`✅ Fetched ${bars.length} historical bars from Polygon for ${symbol}`);
-    return bars;
+    // Apply session filtering
+    const filteredBars = filterBySession(bars);
+    const sessionLabel = env.SESSION === "RTH" ? "RTH only" : "RTH+EXT";
+    
+    console.log(
+      `✅ Fetched ${bars.length} bars from Polygon for ${symbol} ` +
+      `(${filteredBars.length} after ${sessionLabel} filter)`
+    );
+    
+    return filteredBars;
   } catch (err) {
     console.warn(`[history] Polygon request failed:`, err);
     return [];

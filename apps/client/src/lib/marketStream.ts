@@ -278,8 +278,36 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     }
   };
 
-  const connect = () => {
+  // [DYNAMIC SUBSCRIPTION] Ensure symbols are subscribed before connecting
+  const ensureSymbolsSubscribed = async () => {
+    for (const symbol of symbols) {
+      try {
+        const res = await fetch("/api/symbols/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ symbol, seedLimit: 200 }),
+        });
+        if (!res.ok) {
+          logger.warn(`Failed to subscribe ${symbol}: ${res.status}`);
+        } else {
+          const data = await res.json();
+          if (!data.already) {
+            logger.info(`✅ Subscribed to ${symbol} (seeded ${data.seeded || 0} bars)`);
+          }
+        }
+      } catch (err) {
+        logger.warn(`Symbol subscription error for ${symbol}:`, err);
+        // Continue - SSE will still attempt to connect
+      }
+    }
+  };
+
+  const connect = async () => {
     if (isManualClose) return;
+
+    // Subscribe symbols before establishing SSE connection
+    await ensureSymbolsSubscribed();
 
     const params = new URLSearchParams({ symbols: symbols.join(",") });
     if (lastSeq > 0) {

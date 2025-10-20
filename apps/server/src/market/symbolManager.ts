@@ -9,7 +9,7 @@ import { polygonWs } from "@server/market/polygonWs";
 type SubEntry = { refs: number; lastTouched: number; timer?: NodeJS.Timeout };
 
 const ACTIVE = new Map<string, SubEntry>();
-const TTL_MS = Number(process.env.SYMBOL_TTL_MS ?? 15 * 60_000); // 15m default
+const TTL_MS = Number(process.env.SYMBOL_TTL_MS ?? 5 * 60_000); // 5m default
 
 // Track bar listeners to properly clean up
 const barListeners = new Map<string, (bar: any) => void>();

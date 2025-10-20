@@ -23,6 +23,10 @@ const activeSubscriptions = new Map<string, string>();
 // Track bar listeners to properly remove them
 const barListeners = new Map<string, (bar: any) => void>();
 
+// [COALESCING] Track in-flight history requests to prevent duplicate fetches
+// Key: `symbol:timeframe:limit:before:sinceSeq`, Value: Promise<Bar[]>
+const inflightHistoryRequests = new Map<string, Promise<any>>();
+
 function subscribeSymbolTimeframe(symbol: string, timeframe: string) {
   // CRITICAL: Always ensure 1m barBuilder subscription exists
   // The 1m feed is authoritative and feeds bars1m, VWAP, voice tools, and rollups
@@ -153,7 +157,24 @@ export function initializeMarketPipeline(app: Express) {
         query.sinceSeq = parseInt(sinceSeq as string, 10);
       }
 
-      const bars = await getHistory(query);
+      // [COALESCING] Create unique key for this request
+      const requestKey = `${query.symbol}:${query.timeframe}:${query.limit}:${query.before || ''}:${query.sinceSeq || ''}`;
+      
+      // Check if identical request is already in flight
+      let requestPromise = inflightHistoryRequests.get(requestKey);
+      
+      if (requestPromise) {
+        console.log(`♻️ Coalescing duplicate history request: ${requestKey}`);
+      } else {
+        // Create new request and track it
+        requestPromise = getHistory(query).finally(() => {
+          // Clean up when done
+          inflightHistoryRequests.delete(requestKey);
+        });
+        inflightHistoryRequests.set(requestKey, requestPromise);
+      }
+
+      const bars = await requestPromise;
 
       // Bars already have nested ohlcv format, just return them
       res.json(bars);

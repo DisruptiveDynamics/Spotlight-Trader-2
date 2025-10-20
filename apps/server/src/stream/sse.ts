@@ -207,6 +207,20 @@ export async function sseMarketStream(req: Request, res: Response) {
   eventBus.on("signal:new", alertHandler as any);
   listeners.push({ event: "signal:new", handler: alertHandler as EventHandler });
 
+  // [TIMEFRAME-SWITCH] Listen for bar:reset events when user switches timeframes
+  const barResetHandler = (data: { symbol: string; timeframe: string; bars: any[] }) => {
+    recordSSEEvent("bar_reset");
+    bpc.write("bar:reset", {
+      symbol: data.symbol,
+      timeframe: data.timeframe,
+      bars: data.bars,
+    });
+    console.log(`[SSE] Sent bar:reset for ${data.symbol} ${data.timeframe}: ${data.bars.length} bars`);
+  };
+
+  eventBus.on("bar:reset", barResetHandler as any);
+  listeners.push({ event: "bar:reset", handler: barResetHandler as EventHandler });
+
   // [PHASE-5] Create batcher per symbol (aggregate up to 5 microbars or 20ms)
   const batchers = new Map<string, MicrobarBatcher>();
 

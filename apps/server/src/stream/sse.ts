@@ -18,6 +18,10 @@ export async function sseMarketStream(req: Request, res: Response) {
   const symbols = symbolsParam.split(",").map((s) => s.trim().toUpperCase());
   const timeframe = (req.query.timeframe as string) || "1m"; // Allow client to specify timeframe
   
+  // [CONFIG] Feature flags for SSE streaming
+  const SSE_BUFFER_CAP = Number(process.env.SSE_BUFFER_CAP ?? 1000);
+  const SSE_TICKS_ENABLED = (process.env.FF_SSE_TICKS ?? "off").toLowerCase() === "on";
+  
   // Parse sinceSeq from query param OR Last-Event-ID header (SSE standard)
   const querySeq = req.query.sinceSeq ? parseInt(req.query.sinceSeq as string, 10) : undefined;
   const lastEventId = req.headers["last-event-id"] ? parseInt(req.headers["last-event-id"] as string, 10) : undefined;
@@ -47,7 +51,7 @@ export async function sseMarketStream(req: Request, res: Response) {
   const userId = (req as any).userId || "anonymous";
   recordSSEConnection(userId);
 
-  const bpc = new BackpressureController(res, 1000);
+  const bpc = new BackpressureController(res, SSE_BUFFER_CAP);
 
   // [PERFORMANCE] Send bootstrap event immediately (non-blocking)
   bpc.write("bootstrap", {
@@ -276,6 +280,23 @@ export async function sseMarketStream(req: Request, res: Response) {
       { event: `microbar:${symbol}`, handler: microbarHandler as EventHandler },
       { event: barEventKey, handler: barHandler as EventHandler },
     );
+
+    // [CONFIG] Tick streaming (disabled by default for stability)
+    if (SSE_TICKS_ENABLED) {
+      const tickHandler = (tick: TickData) => {
+        recordSSEEvent("tick");
+        bpc.write("tick", {
+          symbol,
+          ts: tick.ts,
+          price: tick.price,
+          size: tick.size,
+          side: tick.side,
+        });
+      };
+      
+      eventBus.on(`tick:${symbol}` as const, tickHandler as any);
+      listeners.push({ event: `tick:${symbol}`, handler: tickHandler as EventHandler });
+    }
   }
 
   let lastDropped = 0;

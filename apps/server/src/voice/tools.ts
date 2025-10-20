@@ -1,11 +1,13 @@
 import { validateEnv } from "@shared/env";
 import { desc, eq } from "drizzle-orm";
+import { nanoid } from "nanoid";
 import { z } from "zod";
 
 import { bars1m } from "../chart/bars1m";
+import { copilotBroadcaster } from "../copilot/broadcaster";
 import { getChartSnapshot } from "../copilot/tools/handlers";
 import { db } from "../db";
-import { rules, journalEvents, signals } from "../db/schema";
+import { rules, journalEvents, signals, callouts } from "../db/schema";
 import { getSessionVWAPForSymbol } from "../indicators/vwap";
 import { retrieveTopK } from "../memory/store";
 
@@ -344,6 +346,68 @@ export const voiceTools = {
       })),
     };
   },
+
+  async get_recent_callouts(_input: unknown, userId: string) {
+    const callouts = copilotBroadcaster.getRecentCallouts(userId);
+    return {
+      count: callouts.length,
+      callouts: callouts.map((c) => ({
+        id: c.id,
+        kind: c.kind,
+        setupTag: c.setupTag,
+        rationale: c.rationale,
+        qualityGrade: c.qualityGrade,
+        urgency: c.urgency,
+        timestamp: c.timestamp,
+      })),
+    };
+  },
+
+  async respond_to_callout(input: unknown, userId: string) {
+    const params = z
+      .object({
+        calloutId: z.string(),
+        action: z.enum(["accept", "reject"]),
+        reason: z.string().nullish(),
+      })
+      .parse(input);
+
+    const recentCallouts = copilotBroadcaster.getRecentCallouts(userId);
+    const callout = recentCallouts.find((c) => c.id === params.calloutId);
+
+    if (!callout) {
+      return { success: false, error: "Callout not found in recent list" };
+    }
+
+    try {
+      if (params.action === "accept") {
+        await db.update(callouts).set({ accepted: true }).where(eq(callouts.id, params.calloutId));
+      } else {
+        await db
+          .update(callouts)
+          .set({ accepted: false, rejectedReason: params.reason || "Rejected via voice" })
+          .where(eq(callouts.id, params.calloutId));
+      }
+
+      await db.insert(journalEvents).values({
+        id: nanoid(),
+        userId,
+        type: "decision",
+        symbol: callout.setupTag.split("_")[0] || callout.setupTag,
+        timeframe: "5m",
+        timestamp: new Date(),
+        decision: params.action,
+        reasoning: params.reason || `${params.action}ed via voice`,
+      });
+
+      copilotBroadcaster.removeCallout(userId, params.calloutId);
+
+      return { success: true, action: params.action };
+    } catch (err) {
+      console.error("Failed to respond to callout:", err);
+      return { success: false, error: "Database update failed" };
+    }
+  },
 };
 
 export const toolSchemas = [
@@ -476,6 +540,31 @@ export const toolSchemas = [
         limit: { type: "integer", minimum: 1, maximum: 10, description: "Max results (default: 5)" },
       },
       required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function" as const,
+    name: "get_recent_callouts",
+    description: "Get recent trading callouts and setup alerts from the copilot. Use this when the user asks 'what are you seeing' or wants to know about recent market opportunities.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function" as const,
+    name: "respond_to_callout",
+    description: "Accept or reject a trading callout. Use this when the user decides to take or pass on a setup.",
+    parameters: {
+      type: "object",
+      properties: {
+        calloutId: { type: "string", description: "ID of the callout to respond to" },
+        action: { type: "string", enum: ["accept", "reject"], description: "Accept or reject the callout" },
+        reason: { type: "string", description: "Optional reason for the decision" },
+      },
+      required: ["calloutId", "action"],
       additionalProperties: false,
     },
   },

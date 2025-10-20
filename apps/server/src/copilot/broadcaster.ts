@@ -14,6 +14,8 @@ interface CalloutEvent {
 
 class CopilotBroadcaster extends EventEmitter {
   private clients = new Map<string, Response>();
+  private recentCallouts = new Map<string, CalloutEvent[]>();
+  private MAX_CALLOUTS_PER_USER = 10;
 
   addClient(userId: string, res: Response) {
     this.clients.set(userId, res);
@@ -35,7 +37,29 @@ class CopilotBroadcaster extends EventEmitter {
       }
     }
 
+    const userCallouts = this.recentCallouts.get(event.userId) || [];
+    userCallouts.unshift(event);
+    if (userCallouts.length > this.MAX_CALLOUTS_PER_USER) {
+      userCallouts.pop();
+    }
+    this.recentCallouts.set(event.userId, userCallouts);
+
     this.emit("callout", event);
+  }
+
+  getRecentCallouts(userId: string): CalloutEvent[] {
+    return this.recentCallouts.get(userId) || [];
+  }
+
+  removeCallout(userId: string, calloutId: string): boolean {
+    const userCallouts = this.recentCallouts.get(userId) || [];
+    const index = userCallouts.findIndex((c) => c.id === calloutId);
+    if (index !== -1) {
+      userCallouts.splice(index, 1);
+      this.recentCallouts.set(userId, userCallouts);
+      return true;
+    }
+    return false;
   }
 
   getClientCount(): number {

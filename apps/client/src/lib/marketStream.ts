@@ -89,6 +89,11 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
   let lastLiveBarAt = Date.now();
   const IDLE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
+  // [GUARD] Prevent infinite resync loops - only allow one resync at a time
+  let resyncInFlight = false;
+  let lastResyncAt = 0;
+  const MIN_RESYNC_INTERVAL_MS = 2000; // Debounce: minimum 2s between resyncs
+
   const maxReconnectDelay = opts?.maxReconnectDelay || 30000;
 
   const listeners = {
@@ -111,6 +116,23 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
   // [RESILIENCE] Soft reset and resync when server restarts or sequence is stale
   const performResync = async (reason: string) => {
+    // [GUARD] Prevent concurrent resyncs and rapid successive calls
+    const now = Date.now();
+    const timeSinceLastResync = now - lastResyncAt;
+    
+    if (resyncInFlight) {
+      logger.warn(`⏳ Resync already in progress, ignoring request (${reason})`);
+      return;
+    }
+    
+    if (timeSinceLastResync < MIN_RESYNC_INTERVAL_MS) {
+      logger.warn(`⏸️ Resync debounced: ${timeSinceLastResync}ms < ${MIN_RESYNC_INTERVAL_MS}ms (${reason})`);
+      return;
+    }
+    
+    resyncInFlight = true;
+    lastResyncAt = now;
+    
     try {
       logger.info(`🔄 Performing resync (${reason})`);
 
@@ -195,6 +217,9 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       emitStatus("error");
       // [RESILIENCE] Emit completion even on error
       window.dispatchEvent(new CustomEvent("market:resync-complete"));
+    } finally {
+      // [GUARD] Clear in-flight flag
+      resyncInFlight = false;
     }
   };
 

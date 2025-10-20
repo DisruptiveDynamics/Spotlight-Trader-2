@@ -37,8 +37,8 @@ export interface ChartState {
   focusedPane: number;
 
   // Actions
-  setSymbol: (symbol: string) => void;
-  setTimeframe: (timeframe: Timeframe) => void;
+  setSymbol: (symbol: string) => Promise<void>;
+  setTimeframe: (timeframe: Timeframe) => Promise<void>;
   setLayout: (layout: Layout) => void;
   setChartStyle: (style: ChartStyle) => void;
   setOverlays: (overlays: Partial<ChartOverlays>) => void;
@@ -73,10 +73,47 @@ export const useChartState = create<ChartState>()(
       },
       focusedPane: 0,
 
-      setSymbol: (symbol: string) =>
+      setSymbol: async (symbol: string) => {
+        const symbolUpper = symbol.toUpperCase();
+
+        // Optimistically update UI
         set((state) => ({
-          active: { ...state.active, symbol: symbol.toUpperCase() },
-        })),
+          active: { ...state.active, symbol: symbolUpper },
+        }));
+
+        try {
+          // Call server API to subscribe to new symbol
+          const response = await fetch("/api/symbols/subscribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ symbol: symbolUpper, seedLimit: 300 }),
+          });
+
+          if (!response.ok) {
+            console.error("[ChartState] Symbol subscription failed:", response.status);
+            // Only rollback if we're still on the failed symbol (prevents race conditions)
+            set((state) => {
+              if (state.active.symbol === symbolUpper) {
+                return { active: { ...state.active, symbol: "SPY" } };
+              }
+              return state;
+            });
+          } else {
+            const data = await response.json();
+            console.log(`[ChartState] ✅ Subscribed to ${symbolUpper}`, data);
+          }
+        } catch (error) {
+          console.error("[ChartState] Symbol subscription error:", error);
+          // Only rollback if we're still on the failed symbol (prevents race conditions)
+          set((state) => {
+            if (state.active.symbol === symbolUpper) {
+              return { active: { ...state.active, symbol: "SPY" } };
+            }
+            return state;
+          });
+        }
+      },
 
       setTimeframe: async (timeframe: Timeframe) => {
         const symbol = useChartState.getState().active.symbol;

@@ -37,6 +37,7 @@ import { voiceDebugRouter } from "./routes/voiceDebug";
 import replayRouter from "./routes/replay";
 import metricsPromRouter from "./routes/metricsProm";
 import diagRouter from "./routes/diag";
+import symbolsRouter from "./routes/symbols";
 import { requirePin } from "./middleware/requirePin";
 import { initializeMarketSource } from "./market/bootstrap";
 import { errorHandler, notFound } from "./middleware/error";
@@ -159,6 +160,7 @@ app.use("/api/copilot", copilotActionsRouter);
 app.use("/api/voice", voicePreviewRouter);
 app.use("/api/triggers", triggerTestRouter);
 app.use("/api/replay", replayRouter);
+app.use("/api/symbols", symbolsRouter);
 
 initializeLearningLoop();
 startEodScheduler();

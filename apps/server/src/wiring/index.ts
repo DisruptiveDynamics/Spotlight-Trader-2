@@ -9,6 +9,7 @@ import { getMarketSource, getMarketReason } from "@server/market/bootstrap";
 import { eventBus } from "@server/market/eventBus";
 import { polygonWs } from "@server/market/polygonWs";
 import { isRthOpen } from "@server/market/session";
+import { subscribeSymbol } from "@server/market/symbolManager";
 import { handleChartTimeframe } from "@server/routes/chartTimeframe";
 import { rulesEngineService } from "@server/rules/service";
 import { signalsService } from "@server/signals/service";
@@ -113,12 +114,12 @@ export function initializeMarketPipeline(app: Express) {
   // Start optional audit tap (disabled by default via flag)
   marketAuditTap.start();
 
+  // Subscribe to default favorites using SymbolManager
+  // This enables live data + seeds historical bars immediately
   for (const symbol of DEFAULT_FAVORITES) {
-    polygonWs.subscribe(symbol);
-    subscribeSymbolTimeframe(symbol, DEFAULT_TIMEFRAME);
-
-    // Subscribe to session VWAP (same tick stream as Tape)
-    sessionVWAP.subscribe(symbol);
+    subscribeSymbol(symbol, { seedLimit: 200 }).catch((err) => {
+      console.error(`Failed to subscribe ${symbol}:`, err);
+    });
   }
 
   // [PERFORMANCE] Paged history endpoint for lazy loading

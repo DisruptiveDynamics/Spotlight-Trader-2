@@ -98,6 +98,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
   const listeners = {
     bar: [] as ((b: Bar) => void)[],
+    barReset: [] as ((bars: Bar[]) => void)[],
     microbar: [] as ((m: Micro) => void)[],
     tick: [] as ((t: Tick) => void)[],
     status: [] as ((s: SSEStatus) => void)[],
@@ -480,6 +481,60 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       });
     });
 
+    // [TIMEFRAME-SWITCH] Handle bar:reset for timeframe changes
+    es.addEventListener("bar:reset", (e) => {
+      logger.debug(`[SSE] Received bar:reset event`);
+      const data = JSON.parse((e as MessageEvent).data) as {
+        symbol: string;
+        timeframe: string;
+        bars: Array<{
+          symbol: string;
+          timestamp: number;
+          timeframe: string;
+          open: number;
+          high: number;
+          low: number;
+          close: number;
+          volume: number;
+          seq: number;
+          bar_start: number;
+          bar_end: number;
+        }>;
+      };
+
+      // Transform to client Bar format
+      const bars: Bar[] = data.bars.map((b) => ({
+        symbol: b.symbol,
+        timeframe: b.timeframe as "1m",
+        seq: b.seq,
+        bar_start: b.bar_start,
+        bar_end: b.bar_end,
+        ohlcv: {
+          o: b.open,
+          h: b.high,
+          l: b.low,
+          c: b.close,
+          v: b.volume,
+        },
+      }));
+
+      logger.info(`📊 Bar reset: ${data.symbol} ${data.timeframe}, ${bars.length} bars`);
+
+      // Update lastSeq to highest bar
+      if (bars.length > 0) {
+        lastSeq = Math.max(...bars.map((b) => b.seq));
+      }
+
+      // Clear local buffer and replace with new bars
+      localBars.length = 0;
+      bars.slice(-MAX_LOCAL_BARS).forEach((bar) => {
+        localBars.push(bar);
+      });
+
+      // Emit all bars to listeners (will trigger chart redraw)
+      listeners.barReset.forEach((fn) => fn(bars));
+    });
+
     // [PHASE-5] Handle individual microbar (legacy)
     es.addEventListener("microbar", (e) => {
       const m = JSON.parse((e as MessageEvent).data);
@@ -619,6 +674,9 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
   return {
     onBar(fn: (b: Bar) => void) {
       listeners.bar.push(fn);
+    },
+    onBarReset(fn: (bars: Bar[]) => void) {
+      listeners.barReset.push(fn);
     },
     onMicro(fn: (m: Micro) => void) {
       listeners.microbar.push(fn);

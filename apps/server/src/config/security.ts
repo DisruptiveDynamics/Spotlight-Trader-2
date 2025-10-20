@@ -58,7 +58,8 @@ export function setupSecurity(app: Express) {
       },
       credentials: true,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization"],
+      allowedHeaders: ["Content-Type", "Authorization", "Last-Event-ID"],
+      exposedHeaders: ["X-Market-Source", "X-Market-Reason", "X-Market-Session", "X-Market-Open", "X-Epoch-Id", "X-Epoch-Start-Ms"],
     }),
   );
 }

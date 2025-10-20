@@ -47,7 +47,7 @@ export async function sseMarketStream(req: Request, res: Response) {
   const userId = (req as any).userId || "anonymous";
   recordSSEConnection(userId);
 
-  const bpc = new BackpressureController(res, 100);
+  const bpc = new BackpressureController(res, 1000);
 
   // [PERFORMANCE] Send bootstrap event immediately (non-blocking)
   bpc.write("bootstrap", {
@@ -267,28 +267,14 @@ export async function sseMarketStream(req: Request, res: Response) {
       lastSentSeq = Math.max(lastSentSeq, data.seq);
     };
 
-    // Tick streaming for real-time "tape" feel
-    const tickHandler = (tick: TickData) => {
-      recordSSEEvent("tick");
-      bpc.write("tick", {
-        symbol,
-        ts: tick.ts,
-        price: tick.price,
-        size: tick.size,
-        side: tick.side, // 'buy' | 'sell' for color coding
-      });
-    };
-
     const barEventKey = `bar:new:${symbol}:${timeframe}`;
 
     eventBus.on(`microbar:${symbol}` as const, microbarHandler as any);
     eventBus.on(barEventKey as any, barHandler as any);
-    eventBus.on(`tick:${symbol}` as const, tickHandler as any);
 
     listeners.push(
       { event: `microbar:${symbol}`, handler: microbarHandler as EventHandler },
       { event: barEventKey, handler: barHandler as EventHandler },
-      { event: `tick:${symbol}`, handler: tickHandler as EventHandler },
     );
   }
 

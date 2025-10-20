@@ -1,0 +1,47 @@
+You’re exactly right: the SSE drops are caused by flooding it with raw ticks. EventSource is great for low/medium-rate streams (bars, microbars), but not for hundreds of msgs/sec. Here’s the plan I recommend and can fold into the open PR right away.
+
+Immediate fixes (low risk, high impact)
+- Stop streaming ticks over SSE
+  - Remove/add behind a flag FF_SSE_TICKS=off by default.
+  - Keep only bar and microbar on SSE. Microbars at ~4 Hz per symbol are plenty for smooth charts.
+  - Side effect: TapePanel will not receive tick events via SSE. Temporarily degrade (show “ticks unavailable”) or wire it to a dedicated WS later (see below).
+
+- Increase SSE buffer capacity
+  - Set SSE_BUFFER_CAP=1000 (env) in Replit Secrets for now; keep it configurable. This reduces backpressure drops during bursts.
+
+- Throttle/aggregate server emissions where possible
+  - Microbar cadence is already ~250ms — OK. Ensure you don’t emit redundant unchanged payloads; skip if no change since last emit for that symbol.
+
+- Keep REST backfill + Last-Event-ID resume
+  - This ensures lossless behavior around reconnects even if a few microbar emissions are missed.
+
+- Session/PIN annoyance
+  - Ensure EventSource is opened with withCredentials: true (client) and CORS allows credentials (server).
+  - Confirm setAuthCookie is in use with SameSite=None, Secure=true, maxAge=24h. Consider disabling HMR reloads for iPad dev sessions to avoid clearing stores.
+
+What to do next (optional but recommended)
+- Dedicated WebSocket for Tape (ticks)
+  - If you need true T&S, move tick streaming to a WS endpoint (/ws/tape) with:
+    - Sampling and/or coalescing server-side (e.g., max 10–20 ticks/sec per symbol) OR last-trade-only at 100–200ms.
+    - Backpressure guard (bufferedAmount threshold).
+    - Binary payload (MessagePack) if you want to push many symbols.
+  - Keep SSE purely for chart events (bars/microbars/alerts). This division is a common, battle-tested pattern.
+
+- Observability for this issue
+  - Keep the sse_dropped_total counter and watch it after disabling ticks.
+  - Add labels {symbol,timeframe} where available.
+  - Demote chatty “seed/ring” logs to debug (LOG_LEVEL=info in prod).
+
+How we’ll verify (fast)
+- With FF_SSE_TICKS=off and SSE_BUFFER_CAP=1000:
+  - curl -N your SSE endpoint: you should see only “bar” and “microbar”; no “tick”.
+  - /api/metrics: sse_dropped_total should stay flat during normal use. sse_connections should not flap every 3s.
+  - Charts update smoothly; no duplicate/stale warnings; server logs no longer show dropped=NN climbing each heartbeat.
+
+I can push these changes into PR #3 now:
+- Gate tick streaming in SSE behind FF_SSE_TICKS (default off).
+- Raise SSE buffer cap and add per-connection drop metrics (if not already).
+- Add “ticks unavailable” fallback in TapePanel when FF_SSE_TICKS=off, with a note to switch to WS later.
+- Confirm EventSource withCredentials + CORS settings, and keep the cookie helper.
+
+Would you like me to proceed updating the PR accordingly and set FF_SSE_TICKS=off + SSE_BUFFER_CAP=1000 in the PR’s .env.example and docs?

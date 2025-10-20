@@ -24,6 +24,8 @@ The application is a TypeScript monorepo using pnpm workspaces, comprising `apps
 
 **Frontend Architecture**: Built with React 18 and TypeScript, utilizing Lightweight Charts, Zustand for state management, and Tailwind CSS. It includes a professional charting system, a TOS-style toolbar, and a Pane component for multi-chart grids.
 
+**Multi-Timeframe Charting System (Oct 2025)**: Production-grade charting with lightweight-charts using direct ref-based lifecycle management. Features deterministic bar sequencing generalized for all timeframes (1m, 2m, 5m, 10m, 15m, 30m, 1h) with correct timestamp calculations, gap detection, and backfill logic. The PaneStable component provides single initialization, proper seeding from history API, volume histogram rendering, and real-time bar updates via SSE. Chart adapters (chartAdapters.ts) handle timeframe-aware millisecond→seconds conversion for lightweight-charts compatibility. Architecture choice: direct chart refs over hook abstraction for production-grade stability.
+
 **Rules Engine Architecture**: Enables strategy automation and AI explanations through expression evaluation, signal generation with risk governance, and AI explanation generation via the OpenAI API.
 
 **Journaling & Memory System**: Offers structured trade tracking and automated end-of-day summaries. The Coach Memory System employs Pgvector for storing and retrieving `playbook`, `glossary`, `postmortem`, and `knowledge` memories using OpenAI embeddings. A knowledge upload pipeline supports ingesting YouTube videos, PDFs, and text notes with semantic chunking.

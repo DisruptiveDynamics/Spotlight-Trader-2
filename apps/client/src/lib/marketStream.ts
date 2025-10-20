@@ -525,7 +525,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       // Transform to client Bar format
       const bars: Bar[] = data.bars.map((b) => ({
         symbol: b.symbol,
-        timeframe: b.timeframe as "1m",
+        timeframe: b.timeframe as Timeframe,
         seq: b.seq,
         bar_start: b.bar_start,
         bar_end: b.bar_end,

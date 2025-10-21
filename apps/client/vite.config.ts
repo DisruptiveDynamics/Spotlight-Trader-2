@@ -6,6 +6,9 @@ import { defineConfig } from "vite";
 // Currently only auto-detects Replit - other platforms need explicit VITE_HTTPS=1
 const USE_HTTPS = process.env.VITE_HTTPS === "1" || !!process.env.REPLIT_DOMAINS;
 
+// Extract the public hostname from REPLIT_DOMAINS (format: "host1.repl.co,host2.repl.co")
+const PUBLIC_HOST = process.env.REPLIT_DOMAINS?.split(",")[0];
+
 export default defineConfig({
   plugins: [react()],
   define: {
@@ -23,17 +26,16 @@ export default defineConfig({
     port: 5000,
     strictPort: true,
     allowedHosts: true,
-    hmr: USE_HTTPS
+    hmr: USE_HTTPS && PUBLIC_HOST
       ? {
-          // HTTPS mode: secure WebSocket on port 443
-          // host: true means use window.location.hostname
+          // HTTPS mode with known public host (Replit): secure WebSocket on port 443
           protocol: "wss",
-          host: true,
+          host: PUBLIC_HOST,
           clientPort: 443,
           path: "/__vite_hmr",
         }
       : {
-          // HTTP mode: use the Express server directly  
+          // HTTP mode or local dev: use default Express server behavior
           path: "/__vite_hmr",
         },
     // NOTE: No proxy config needed - using unified dev server mode

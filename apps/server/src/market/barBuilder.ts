@@ -3,6 +3,7 @@ import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { bars1m } from "@server/chart/bars1m";
 import { ringBuffer } from "@server/cache/ring";
 import { validateEnv } from "@shared/env";
+import { sessionPolicy } from "./sessionPolicy";
 
 const ET = "America/New_York";
 const env = validateEnv(process.env);
@@ -198,11 +199,12 @@ export class BarBuilder {
   private finalizeBar(symbol: string, timeframe: string, state: SymbolState) {
     if (!state.currentBar) return;
 
-    // Apply session filtering if SESSION=RTH
-    if (env.SESSION === "RTH" && !this.isWithinRTH(state.bar_start)) {
+    // Apply session filtering based on current session policy (auto/RTH/RTH_EXT)
+    const currentSession = sessionPolicy.getCurrentSession(state.bar_start);
+    if (currentSession === "RTH" && !this.isWithinRTH(state.bar_start)) {
       console.debug(
         `[barBuilder] skipping non-RTH bar: ${symbol} ${timeframe} ` +
-        `start=${new Date(state.bar_start).toISOString()} (SESSION=RTH)`
+        `start=${new Date(state.bar_start).toISOString()} (SESSION=${currentSession})`
       );
       return;
     }
@@ -332,11 +334,12 @@ export class BarBuilder {
    * Replaces tick-based bars with authoritative Polygon data
    */
   private handleAMReconciliation(symbol: string, am: MarketBarEvent) {
-    // Apply session filtering if SESSION=RTH
-    if (env.SESSION === "RTH" && !this.isWithinRTH(am.bar_start)) {
+    // Apply session filtering based on current session policy (auto/RTH/RTH_EXT)
+    const currentSession = sessionPolicy.getCurrentSession(am.bar_start);
+    if (currentSession === "RTH" && !this.isWithinRTH(am.bar_start)) {
       console.debug(
         `[AM reconcile] skipping non-RTH bar: ${symbol} ` +
-        `start=${new Date(am.bar_start).toISOString()} (SESSION=RTH)`
+        `start=${new Date(am.bar_start).toISOString()} (SESSION=${currentSession})`
       );
       return;
     }

@@ -170,6 +170,7 @@ export const userPreferences = pgTable("user_preferences", {
   signalAudio: boolean("signal_audio").notNull().default(true),
   colorVision: text("color_vision").notNull().default("normal"),
   highContrast: boolean("high_contrast").notNull().default(false),
+  sessionPolicy: text("session_policy").notNull().default("auto"),
   notifications: jsonb("notifications").notNull().default({
     voice: true,
     visual: true,

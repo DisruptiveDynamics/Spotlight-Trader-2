@@ -3,6 +3,7 @@ import { bars1m } from "@server/chart/bars1m";
 import { rollupFrom1m } from "@server/chart/rollups";
 import type { Timeframe } from "@server/market/eventBus";
 import { polygonWs } from "@server/market/polygonWs";
+import { sessionPolicy } from "@server/market/sessionPolicy";
 import { validateEnv } from "@shared/env";
 import type { Bar } from "@shared/types";
 import { toZonedTime } from "date-fns-tz";
@@ -296,10 +297,18 @@ function isWithinRTH(timestampMs: number): boolean {
 }
 
 /**
- * Filter bars by session policy
+ * Filter bars by session policy (uses current session if timestamp is recent)
  */
 function filterBySession(bars: Bar[]): Bar[] {
-  if (env.SESSION === "RTH_EXT") {
+  if (bars.length === 0) return bars;
+  
+  // Use first bar timestamp to determine session (historical queries are deterministic)
+  const firstBar = bars[0];
+  if (!firstBar) return bars;
+  
+  const currentSession = sessionPolicy.getCurrentSession(firstBar.bar_start);
+  
+  if (currentSession === "RTH_EXT") {
     // Include all bars (pre/post/RTH)
     return bars;
   }
@@ -394,7 +403,11 @@ async function fetchPolygonHistory(
 
     // Apply session filtering
     const filteredBars = filterBySession(bars);
-    const sessionLabel = env.SESSION === "RTH" ? "RTH only" : "RTH+EXT";
+    const firstBar = filteredBars[0];
+    const currentSession = firstBar
+      ? sessionPolicy.getCurrentSession(firstBar.bar_start)
+      : sessionPolicy.getCurrentSession();
+    const sessionLabel = currentSession === "RTH" ? "RTH only" : "RTH+EXT";
     
     console.log(
       `✅ Fetched ${bars.length} bars from Polygon for ${symbol} ` +

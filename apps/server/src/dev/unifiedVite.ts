@@ -17,24 +17,26 @@ export async function attachViteMiddleware(app: Application, server: Server) {
   console.log("🔧 Starting Vite in middleware mode...");
   console.log(`   Client root: ${clientRoot}`);
 
-  // In Replit, detect if we're running behind the HTTPS proxy
-  const isReplitEnv = Boolean(process.env.REPL_SLUG);
+  // Detect HTTPS mode: auto-detect Replit OR explicit VITE_HTTPS override
+  const useHostedHttps = !!process.env.REPLIT_DOMAINS || process.env.VITE_HTTPS === "1";
+  
+  // Build HMR config with single-port design
+  const hmrConfig = {
+    server, // Always use shared Express server
+    ...(useHostedHttps && {
+      protocol: "wss" as const,
+      clientPort: 443,
+    }),
+  };
+  
+  console.log(`   HMR config: protocol=${hmrConfig.protocol || 'default'}, clientPort=${hmrConfig.clientPort || 'default'}, useHTTPS=${useHostedHttps}`);
   
   // Create Vite dev server in middleware mode
   const vite = await createViteServer({
     root: clientRoot,
     server: {
       middlewareMode: true,
-      hmr: isReplitEnv 
-        ? {
-            // Replit environment: let HMR connect via the proxy domain
-            protocol: "wss",
-            port: 443,
-          }
-        : {
-            // Local environment: use the HTTP server directly
-            server,
-          },
+      hmr: hmrConfig,
     },
     appType: "spa",
   });

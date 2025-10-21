@@ -2,9 +2,9 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import { defineConfig } from "vite";
 
-const USE_HTTPS = process.env.VITE_HTTPS === "1";
-const HMR_PROTOCOL = USE_HTTPS ? "wss" : "ws";
-const HMR_CLIENT_PORT = USE_HTTPS ? 443 : 5000;
+// Only enable HTTPS when we can derive the public host OR user explicitly sets VITE_HTTPS=1
+// Currently only auto-detects Replit - other platforms need explicit VITE_HTTPS=1
+const USE_HTTPS = process.env.VITE_HTTPS === "1" || !!process.env.REPLIT_DOMAINS;
 
 export default defineConfig({
   plugins: [react()],
@@ -23,12 +23,19 @@ export default defineConfig({
     port: 5000,
     strictPort: true,
     allowedHosts: true,
-    hmr: {
-      protocol: HMR_PROTOCOL,
-      // host: undefined - let client use window.location.host
-      clientPort: HMR_CLIENT_PORT,
-      path: "/__vite_hmr",
-    },
+    hmr: USE_HTTPS
+      ? {
+          // HTTPS mode: secure WebSocket on port 443
+          // host: true means use window.location.hostname
+          protocol: "wss",
+          host: true,
+          clientPort: 443,
+          path: "/__vite_hmr",
+        }
+      : {
+          // HTTP mode: use the Express server directly  
+          path: "/__vite_hmr",
+        },
     // NOTE: No proxy config needed - using unified dev server mode
     // (Express serves both API and Vite middleware on port 8080)
   },

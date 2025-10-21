@@ -1,0 +1,77 @@
+Thanks for the screenshots—this is very helpful. Here’s what they show and what to do next.
+
+What the screenshots indicate
+1) Server failing to come up initially (Image 1)
+- curl to /api/readyz and SSE headers failed because the server wasn’t listening yet.
+- Log tail shows:
+  - “Starting Vite middleware...”
+  - Then two errors:
+    - EADDRNOTAVAIL: address not available 34.75.151.117:24678
+    - EADDRINUSE: address already in use 0.0.0.0:5000
+- Impact: the unified dev server crashed and the process manager marked it “unhealthy,” so your curls failed.
+
+Root causes
+- HMR/host/port config: Vite/HMR tried to bind to a host/port that’s either not available in Replit or already in use (port 5000).
+- In unified dev mode, Express should own the listening socket (PORT, e.g., 8080). Vite must run in middlewareMode and reuse Express’ server, not bind its own port. HMR must point at the page’s current origin (no explicit host), and use wss in a hosted HTTPS preview.
+
+2) After config change, app stabilized (Image 2)
+- “Perfect! The fix is working again - no wss://127.0.0.1 errors and the page loads stably.”
+- You’re receiving ticks and bars for SPY/QQQ.
+- Remaining issue: repeated Polygon “Maximum number of websocket connections exceeded” messages. That means you’re creating more WS connections than your plan allows (e.g., reconnect loops, multiple instances, or parallel subs).
+
+What to run now (quick health re-check)
+Please run this small probe and paste all output (especially the log tail):
+
+- If you’re on Replit, set VITE_HTTPS=1 to avoid HMR ws/wss mismatch.
+
+Commands:
+- export VITE_HTTPS=1
+- pnpm install --frozen-lockfile || pnpm install
+- pnpm build
+- export UNIFIED_DEV=1 VITE_UNIFIED_DEV=1 PORT=${PORT:-8080}
+- pnpm --filter @spotlight/server dev:unified > server.quick.log 2>&1 & echo "PID=$!" && PID=$!
+- i=0; until curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1 || [ $i -ge 60 ]; do sleep 1; i=$((i+1)); done
+- echo "-- /health";     curl -fsS "http://127.0.0.1:${PORT}/health" || true; echo
+- echo "-- /api/readyz"; curl -fsS "http://127.0.0.1:${PORT}/api/readyz" || true; echo
+- echo "-- SSE headers"; curl -fsSI "http://127.0.0.1:${PORT}/realtime/sse?symbols=SPY&timeframe=1m" | sed -n '1,20p' || true
+- echo "-- Log tail";    tail -n 150 server.quick.log || true
+- kill "$PID" >/dev/null 2>&1 || true
+
+What “good” looks like
+- /health: ok true with uptimeSec
+- /api/readyz: status ready with HTTP 200
+- SSE headers: 200 OK, content-type: text/event-stream, connection: keep-alive, no content-encoding: gzip
+- Log tail: server listening on 0.0.0.0:PORT, Vite middleware attached, no EADDR* errors
+
+Immediate fixes to lock in
+- Ensure Vite/HMR doesn’t try to bind its own host/port in unified dev:
+  - Do NOT set an explicit host in the client’s vite.config for unified dev (let the client use window.location.host).
+  - Use wss on Replit (set VITE_HTTPS=1), or auto-detect hosted HTTPS. I can open a PR that auto-detects Replit/Codespaces/Gitpod and uses wss:443 automatically.
+- If port 5000 is still used somewhere, kill or avoid it:
+  - lsof -iTCP:5000 -sTCP:LISTEN -Pn || true
+  - If any PID shows up: kill -9 <PID> (note: Replit may respawn its own services; best is to not bind 5000 in unified dev).
+
+Polygon websocket limit warnings
+- These errors mean too many concurrent Polygon WS sessions. Common causes:
+  - Multiple server instances (watch your process manager; ensure only one server is running).
+  - Reconnect loop without backoff or without reusing a singleton WS connection.
+  - Connecting in both dev client and server simultaneously (avoid a standalone client dev server if you’re using unified mode).
+- Short-term mitigations:
+  - Run only the unified dev server (do not start a separate client dev on 5000).
+  - Reduce symbols while testing (subscribe to SPY only).
+  - Add exponential backoff and jitter to Polygon reconnects (e.g., 5s, 10s, 20s, capped at 60s), and ensure you reuse a single global WS connection rather than creating a new one per subscriber.
+- If you want, I can pinpoint where the Polygon connection is created and propose a minimal “singleton + backoff” patch.
+
+Optional hardening (fast follow)
+- Readiness: set readiness false before init and on SIGTERM/SIGINT; set true after all init is done.
+- Protect sensitive routes in production (admin/flags/metrics/diag/debug).
+- Server tsconfig: ensure "noEmit": false so production build emits dist.
+- .env.example: document VITE_HTTPS/UNIFIED_DEV/etc for contributors.
+
+If you want me to open a PR:
+- I’ll include:
+  - Robust HMR auto-detection (uses wss:443 on Replit; leaves local as ws:5000).
+  - Readiness toggling.
+  - Server tsconfig noEmit fix.
+  - Optional: guard debug/metrics routes in prod.
+- Tell me which repo/branch to target (e.g., LSAK86/Spotlight-Trader-2, meta/refactor-foundation or main).

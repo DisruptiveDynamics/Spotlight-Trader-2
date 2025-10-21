@@ -14,7 +14,7 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type Tab = "coach" | "accessibility";
+type Tab = "coach" | "market" | "accessibility";
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const { settings, updateSettings, resetSettings, loadSettings } = useCoachSettings();
@@ -23,11 +23,41 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [isLoadingVoices, setIsLoadingVoices] = useState(false);
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("coach");
+  const [sessionPolicy, setSessionPolicy] = useState<"auto" | "rth" | "rth_ext">("auto");
 
   useEffect(() => {
     fetchVoices();
     loadSettings();
+    loadSessionPolicy();
   }, []);
+
+  const loadSessionPolicy = async () => {
+    try {
+      const response = await fetch("/api/nexa/preferences");
+      if (response.ok) {
+        const data = await response.json();
+        setSessionPolicy(data.sessionPolicy || "auto");
+      }
+    } catch (error) {
+      console.error("Failed to load session policy:", error);
+    }
+  };
+
+  const updateSessionPolicy = async (policy: "auto" | "rth" | "rth_ext") => {
+    setSessionPolicy(policy);
+    try {
+      const response = await fetch("/api/nexa/preferences", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionPolicy: policy }),
+      });
+      if (!response.ok) {
+        console.error("Failed to save session policy");
+      }
+    } catch (error) {
+      console.error("Failed to save session policy:", error);
+    }
+  };
 
   const fetchVoices = async () => {
     setIsLoadingVoices(true);
@@ -139,6 +169,16 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               }`}
             >
               Coach
+            </button>
+            <button
+              onClick={() => setActiveTab("market")}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                activeTab === "market"
+                  ? "bg-blue-500 text-white"
+                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+              }`}
+            >
+              Market
             </button>
             <button
               onClick={() => setActiveTab("accessibility")}
@@ -291,6 +331,67 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 >
                   Sign Out
                 </button>
+              </div>
+            </>
+          )}
+
+          {activeTab === "market" && (
+            <>
+              {/* Session Policy */}
+              <div>
+                <label className="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
+                  Market Hours Filter
+                </label>
+                <div className="grid grid-cols-1 gap-2">
+                  <button
+                    onClick={() => updateSessionPolicy("auto")}
+                    className={`px-4 py-3 rounded-lg border-2 text-left transition-all ${
+                      sessionPolicy === "auto"
+                        ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                        : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
+                    }`}
+                  >
+                    <div className="font-medium text-gray-900 dark:text-gray-100">
+                      Auto (Recommended)
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Pre-market: 4:00-9:30 AM • Regular: 9:30 AM-4:00 PM • After-hours: 4:00-8:00 PM ET
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => updateSessionPolicy("rth")}
+                    className={`px-4 py-3 rounded-lg border-2 text-left transition-all ${
+                      sessionPolicy === "rth"
+                        ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                        : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
+                    }`}
+                  >
+                    <div className="font-medium text-gray-900 dark:text-gray-100">
+                      RTH Only
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Show only regular trading hours (9:30 AM-4:00 PM ET)
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => updateSessionPolicy("rth_ext")}
+                    className={`px-4 py-3 rounded-lg border-2 text-left transition-all ${
+                      sessionPolicy === "rth_ext"
+                        ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                        : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
+                    }`}
+                  >
+                    <div className="font-medium text-gray-900 dark:text-gray-100">
+                      Extended Hours
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Show all trading hours including pre/post market (4:00 AM-8:00 PM ET)
+                    </div>
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  This affects which market data is shown in charts and available to the voice assistant.
+                </p>
               </div>
             </>
           )}

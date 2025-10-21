@@ -297,24 +297,14 @@ function isWithinRTH(timestampMs: number): boolean {
 }
 
 /**
- * Filter bars by session policy (uses current session if timestamp is recent)
+ * Filter bars by session policy
+ * NOTE: This filters based on current auto mode, NOT user preferences
+ * User preference filtering happens at API/SSE level
  */
 function filterBySession(bars: Bar[]): Bar[] {
-  if (bars.length === 0) return bars;
-  
-  // Use first bar timestamp to determine session (historical queries are deterministic)
-  const firstBar = bars[0];
-  if (!firstBar) return bars;
-  
-  const currentSession = sessionPolicy.getCurrentSession(firstBar.bar_start);
-  
-  if (currentSession === "RTH_EXT") {
-    // Include all bars (pre/post/RTH)
-    return bars;
-  }
-  
-  // SESSION === "RTH": filter to only RTH hours (09:30-16:00 ET)
-  return bars.filter((bar) => isWithinRTH(bar.bar_start));
+  // REMOVED: Session filtering moved to API/SSE layer where user context exists
+  // History service now returns all bars, letting the API filter per-user
+  return bars;
 }
 
 /**
@@ -401,20 +391,12 @@ async function fetchPolygonHistory(
       };
     });
 
-    // Apply session filtering
-    const filteredBars = filterBySession(bars);
-    const firstBar = filteredBars[0];
-    const currentSession = firstBar
-      ? sessionPolicy.getCurrentSession(firstBar.bar_start)
-      : sessionPolicy.getCurrentSession();
-    const sessionLabel = currentSession === "RTH" ? "RTH only" : "RTH+EXT";
-    
+    // Return all bars - session filtering happens at API/SSE level per user
     console.log(
-      `✅ Fetched ${bars.length} bars from Polygon for ${symbol} ` +
-      `(${filteredBars.length} after ${sessionLabel} filter)`
+      `✅ Fetched ${bars.length} bars from Polygon for ${symbol}`
     );
     
-    return filteredBars;
+    return bars;
   } catch (err) {
     console.warn(`[history] Polygon request failed:`, err);
     return [];

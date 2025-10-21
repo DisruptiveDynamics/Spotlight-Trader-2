@@ -14,6 +14,7 @@ interface UserPreferences {
   signalAudio?: boolean;
   colorVision?: string;
   highContrast?: boolean;
+  sessionPolicy?: "auto" | "rth" | "rth_ext";
   notifications?: {
     voice?: boolean;
     visual?: boolean;
@@ -44,6 +45,7 @@ export function setupPreferencesRoutes(app: Express) {
           signalAudio: true,
           colorVision: "normal",
           highContrast: false,
+          sessionPolicy: "auto",
           notifications: {
             voice: true,
             visual: true,
@@ -62,6 +64,7 @@ export function setupPreferencesRoutes(app: Express) {
         signalAudio: pref.signalAudio,
         colorVision: pref.colorVision,
         highContrast: pref.highContrast,
+        sessionPolicy: pref.sessionPolicy || "auto",
         notifications: pref.notifications as { voice: boolean; visual: boolean; sound: boolean },
       });
     } catch (error) {
@@ -95,6 +98,7 @@ export function setupPreferencesRoutes(app: Express) {
         signalAudio: updates.signalAudio ?? true,
         colorVision: updates.colorVision ?? "normal",
         highContrast: updates.highContrast ?? false,
+        sessionPolicy: updates.sessionPolicy ?? "auto",
         notifications: updates.notifications ?? {
           voice: true,
           visual: true,
@@ -150,6 +154,7 @@ export function setupPreferencesRoutes(app: Express) {
               signalAudio: true,
               colorVision: "normal",
               highContrast: false,
+              sessionPolicy: "auto",
               notifications: {
                 voice: true,
                 visual: true,
@@ -180,6 +185,7 @@ export function setupPreferencesRoutes(app: Express) {
         signalAudio: updates.signalAudio ?? current.signalAudio,
         colorVision: updates.colorVision ?? current.colorVision,
         highContrast: updates.highContrast ?? current.highContrast,
+        sessionPolicy: updates.sessionPolicy ?? current.sessionPolicy ?? "auto",
         notifications: mergedNotifications,
         updatedAt: new Date(),
       };

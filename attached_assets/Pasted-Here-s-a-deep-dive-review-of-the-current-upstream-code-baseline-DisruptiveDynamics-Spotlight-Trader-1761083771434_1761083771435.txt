@@ -1,0 +1,101 @@
+Here’s a deep-dive review of the current upstream code baseline (DisruptiveDynamics/Spotlight-Trader-2, TypeScript ~98%) focusing on correctness, operability, security, and developer ergonomics. I’ve highlighted critical/high items first, then medium/low, and included concrete next steps.
+
+Important context about scope
+- I inspected the upstream repository at a recent commit (for example: 928833ae7d5a9f9f92fd6bcfb39aa2bd144ef0c4). If your fork deviates, share your merge commit or PR URL and I’ll do a targeted diff review of what actually landed in your repo.
+
+Key findings
+
+Critical
+- Server build likely won’t emit JS due to tsconfig inheritance
+  - packages/config/tsconfig.json sets "noEmit": true (base config).
+  - apps/server/tsconfig.json extends that base, but does NOT override "noEmit": false.
+  - Server’s build script is "tsc" and start is "node dist/index.js"; if tsc doesn’t emit, dist stays empty and production start will fail. This is a must-fix.
+- Public endpoints exposed in production
+  - apps/server/src/index.ts intentionally mounts many routes without auth with comments like “All routes open - personal app, no auth needed” and “public – no auth for monitoring.” Examples: /api/admin, /api/flags, /api/metrics/json, /api/metrics (Prom), /debug, and others.
+  - This is fine for personal dev, but dangerous in any hosted environment. You should protect sensitive routes (admin, flags, metrics, diag, voiceDebug, etc.) behind requirePin or other auth in production and restrict debug endpoints entirely.
+- Process exits on unhandled errors in all environments
+  - Global handlers call process.exit(1) on “uncaughtException” and “unhandledRejection” unconditionally. In production this can cause crash loops (unless a process manager supervises restarts with backoff). In dev it’s disruptive. Gate this by environment and add jitter/backoff or let the process manager handle restarts.
+- HMR over WSS forced in client dev config
+  - apps/client/vite.config.ts hardcodes USE_HTTPS = true, which forces HMR via “wss” on port 443. This breaks typical local dev without HTTPS and self-signed cert setup. Make this env-driven (default to ws/5000 for local dev).
+
+High
+- Readiness probe doesn’t reflect initialization
+  - apps/server/src/health.ts tracks readiness via serverReady with setServerReady(), but index.ts never toggles it. Since heavy async init is awaited (initializeMarketSource, pipeline, flags, triggers), readiness should be false until initialization completes, then set to true. Otherwise “ready” may be reported while components are still booting.
+- Dependency version drift across monorepo
+  - TypeScript: root ^5.9.3 vs apps/server and apps/client ^5.3.3
+  - Vite: root ^5.4.20 vs client ^5.0.12
+  - ws: root dev ^8.18.3 vs server dep ^8.16.0
+  - @neondatabase/serverless: root ^0.10.4 vs server ^0.9.0
+  - ESLint: root ^9.37.0 vs apps ^9.0.0
+  - This creates inconsistent behavior (types, bundling, plugins) and intermittent failures across environments. Unify versions (prefer the newer stable set) and keep toolchain packages in devDependencies of each workspace.
+- Root package.json carries build-time tools in dependencies
+  - Root has "dependencies": { vite, compression, cookie, date-fns… }. In a workspace, app-level runtime libs should live in app packages; toolchain like vite should be devDependencies (and usually not duplicated at root and apps). This increases install surface and can cause resolution oddities.
+
+Medium
+- Vite/dev mode interplay is confusing
+  - apps/server has a “unified dev” mode (Express + Vite on port 8080), while client has a standalone dev server on 5000. Root dev script runs only server unified. Document which approach is canonical and ensure client config aligns (proxying vs unified).
+- SSE compression exclusion: good, but filter could be more robust
+  - compression filter excludes /stream/* and /realtime/sse. If SSE paths change, this could regress. Consider a shared constant or a comment warning where to update.
+- scripts/cleanup-ports.ts is Unix-specific
+  - Uses lsof and kill -9. It will fail on Windows and potentially in CI runners. Add platform checks and a no-op or Windows alternative.
+- Metrics and diag exposure
+  - /api/metrics and /api/diag are useful in dev. Gate access in prod to avoid leaking operational details (or require an auth header/pin).
+- Client API base config is reasonable but needs doc
+  - apps/client/src/config.ts builds API_BASE from env + location heuristics. Document VITE_API_BASE and VITE_UNIFIED_DEV in a .env.example to reduce setup friction.
+
+Low
+- Logging/observability
+  - Server logs to console; there’s a pino dependency but the main entry doesn’t use it. Consider a consistent structured logger across all modules with level control per environment.
+- Rate limiting is selectively applied
+  - Some routes use rateLimit(), many don’t. That may be intentional. If exposed publicly, add rate limiting to endpoints that call expensive operations or external APIs.
+- Minor code hygiene
+  - Some dynamic imports and comments suggest experimentation (e.g., /tools/quote test route). That’s fine for dev, but consider feature flags to disable in prod builds.
+
+Actionable recommendations
+
+Top 6 changes to stabilize and secure
+
+1) Fix server build emission
+- Set "noEmit": false in apps/server/tsconfig.json so tsc build outputs dist for production starts.
+
+2) Protect sensitive routes in production
+- In apps/server/src/index.ts, wrap admin, flags, metrics, diag, voiceDebug and similar routes with a “protect” middleware when NODE_ENV === "production" (e.g., requirePin). Optionally disable /debug entirely in prod.
+
+3) Correct readiness signaling
+- Import setServerReady from ./health and sequence:
+  - setServerReady(false) before heavy async initialization
+  - setServerReady(true) after initializeMarketSource() and pipeline initialization completes and just before (or after) server.listen callback.
+
+4) Make HMR HTTPS optional via env
+- In apps/client/vite.config.ts, replace hardcoded USE_HTTPS = true with a flag from process.env (e.g., VITE_HTTPS=1). Default to HTTP/ws for local dev.
+
+5) Unify toolchain and core dependency versions across workspaces
+- Align TypeScript, Vite, ESLint, ws, @neondatabase/serverless to a single version set in apps and remove duplicates at root unless truly shared.
+- Move Vite from root dependencies to devDependencies (or remove from root entirely if each app declares it).
+
+6) Make cleanup-ports.ts cross-platform safe
+- Skip or provide alternative behavior on Windows. Don’t fail CI.
+
+Nice-to-have in parallel
+- Add .env.example documenting VITE_API_BASE, VITE_UNIFIED_DEV, VITE_BUILD_ID, PORT, TOOL_TIMEOUT_MS, and any keys used (Polygon, OpenAI, Neon).
+- Add CI checks for: pnpm -r check, lint, typecheck, build, test (vitest). Fail fast if server dist is missing.
+- Add a simple auth gate for /api/metrics and /api/diag (even a static token or PIN in prod).
+
+If you want, I can open a PR that implements the top fixes above. Here’s what I would include in that PR:
+- apps/server/tsconfig.json: add "noEmit": false.
+- apps/server/src/index.ts: add protect middleware for sensitive routes in prod; wire setServerReady(false/true) around initialization.
+- apps/client/vite.config.ts: make HMR HTTPS env-driven.
+- scripts/cleanup-ports.ts: add platform check and no-op on Windows.
+- apps/*/package.json: align TypeScript/Vite/ESLint/ws/@neondatabase/serverless versions to a consistent set and remove duplicated toolchain deps at root.
+- .env.example: add documented variables.
+
+What I need from you to proceed
+- The URL of the merge PR (or the merge commit SHA) in your repo so I can review the exact landed diff and base the PR on your branch.
+- Confirm which branch I should target (e.g., main or meta/refactor-foundation).
+- Confirm whether production is expected (so I can enforce route protections) or this remains dev-only (in which case I’ll still gate by NODE_ENV for safety).
+
+If you prefer, I can first post a small “audit PR” that only fixes:
+- the server tsconfig noEmit bug
+- readiness toggling
+- HMR env toggle
+Then we can follow with a separate “dependency alignment + route protection” PR.

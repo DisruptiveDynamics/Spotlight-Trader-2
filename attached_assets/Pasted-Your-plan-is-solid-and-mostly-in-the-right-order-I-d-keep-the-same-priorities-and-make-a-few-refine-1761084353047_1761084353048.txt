@@ -1,0 +1,266 @@
+Your plan is solid and mostly in the right order. I’d keep the same priorities and make a few refinements so you avoid regressions and improve production safety. Highlights:
+
+- Good: noEmit override; gating sensitive routes; fixing readiness; making HMR HTTPS optional; investigating volume spikes; softening process exits; housekeeping (deps, cross‑platform, .env).
+- Improve: protect metrics/diag with auth or IP allowlist; set readiness=false during shutdown; align TS/Vite versions across workspaces; add tests/instrumentation around bar replacement; make SSE compression exclusion robust; document unified vs split dev modes.
+
+Below are precise suggestions and ready-to-apply small edits for the quick wins (build, HMR, ports script, .env). For index.ts, I point out exactly where to add short snippets so you don’t have to refactor the whole file.
+
+What I would change or add to the plan
+
+1) Server build emission
+- Keep your fix. Add "noEmit": false only in apps/server/tsconfig.json.
+- Verify Node 20 + ESM: you already have "type": "module" and ESNext module; fine.
+
+```json name=apps/server/tsconfig.json url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/928833ae7d5a9f9f92fd6bcfb39aa2bd144ef0c4/apps/server/tsconfig.json
+{
+  "extends": "@spotlight/config/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "@server/*": ["./src/*"],
+      "@shared/*": ["../../packages/shared/src/*"]
+    },
+    "noEmit": false
+  },
+  "include": ["src"],
+  "exclude": ["src/__tests__/barBuilder.test.ts", "src/backtest/golden.test.ts"],
+  "references": [{ "path": "../../packages/shared" }]
+}
+```
+
+2) Secure production endpoints
+- Your approach is good. Also:
+  - Protect /api/metrics and /api/diag (both JSON and Prometheus) in prod.
+  - Consider IP allowlist for metrics if you have fixed monitoring addresses.
+  - Disable /debug entirely in prod, not just protected.
+- In apps/server/src/index.ts:
+  - Import setServerReady and add a small “protect” helper (env-gated).
+  - Wrap admin/flags/metrics/diag/voiceDebug with protect in prod.
+  - Example insertion (near other imports and route mounts):
+
+```ts
+// Add with other imports
+import { setServerReady } from "./health";
+
+// Create a small helper
+const protect =
+  env.NODE_ENV === "production" ? requirePin : (_req: any, _res: any, next: any) => next();
+
+// Disable debug routes in production
+if (env.NODE_ENV !== "production") {
+  app.use("/debug", voiceDebugRouter);
+}
+
+// Protect sensitive routes (production)
+app.use("/api/admin", protect, adminRouter);
+app.use("/api/flags", protect, flagsRouter);
+app.use("/api/metrics/json", protect, metricsRouter);
+// Consider separate exposure of Prometheus metrics only internally or also protect:
+app.use("/api/metrics", protect, metricsPromRouter);
+app.use("/api/diag", protect, diagRouter);
+```
+
+3) Readiness probe accuracy
+- Your plan is right. Also set readiness false on shutdown to signal draining.
+- In apps/server/src/index.ts:
+  - Early during boot: setServerReady(false).
+  - After initializeMarketSource() and other init completes: setServerReady(true).
+  - On SIGTERM/SIGINT: setServerReady(false) before closing.
+
+```ts
+// Very early after env/app/server creation:
+setServerReady(false);
+
+// ... do heavy async init:
+await initializeMarketSource();
+initializeTelemetryBridge();
+// etc...
+
+setServerReady(true);
+
+// In SIGTERM/SIGINT handlers:
+process.on("SIGTERM", () => {
+  setServerReady(false);
+  // close server...
+});
+process.on("SIGINT", () => {
+  setServerReady(false);
+  // close server...
+});
+```
+
+4) HMR HTTPS toggle via env (fix local dev)
+- Your plan is correct. Make HTTPS optional with VITE_HTTPS=1.
+
+```typescript name=apps/client/vite.config.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/928833ae7d5a9f9f92fd6bcfb39aa2bd144ef0c4/apps/client/vite.config.ts
+import react from "@vitejs/plugin-react";
+import path from "path";
+import { defineConfig } from "vite";
+
+const USE_HTTPS = process.env.VITE_HTTPS === "1";
+const HMR_PROTOCOL = USE_HTTPS ? "wss" : "ws";
+const HMR_CLIENT_PORT = USE_HTTPS ? 443 : 5000;
+
+export default defineConfig({
+  plugins: [react()],
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    "import.meta.env.VITE_BUILD_ID": JSON.stringify(process.env.VITE_BUILD_ID || ""),
+  },
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+      "@shared": path.resolve(__dirname, "../../packages/shared/src"),
+    },
+  },
+  server: {
+    host: true,
+    port: 5000,
+    strictPort: true,
+    allowedHosts: true,
+    hmr: {
+      protocol: HMR_PROTOCOL,
+      clientPort: HMR_CLIENT_PORT,
+      path: "/__vite_hmr",
+    },
+    // Unified dev mode served by API if desired; no proxy needed otherwise
+  },
+  build: {
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom"],
+          charts: ["lightweight-charts"],
+        },
+      },
+    },
+  },
+});
+```
+
+5) Volume bar spikes
+- Your investigative path is right. Add two safeguards:
+  - Unit/integration test that asserts upsert fully replaces a bar (no “volume adds”).
+  - Instrument server: log when a new bar’s seq matches existing and volume > 10× rolling avg; capture both prior and new payloads.
+- Ensure both client and server compute seq the same way (client uses Math.floor(bar_end / timeframeMs)). If the server uses a different epoch or rounding, seq drift will create dupes.
+
+6) Process exit handlers
+- Good to gate by env. I’d avoid process.exit in prod entirely unless truly fatal. Also consider flushing logs (pino.final) before exit.
+- You can do:
+  - Dev: exit(1).
+  - Prod: log, setServerReady(false), allow process manager to restart if the server actually stops serving; otherwise keep running.
+
+```ts
+process.on("uncaughtException", (error) => {
+  const isProd = env.NODE_ENV === "production";
+  console.error("[CRITICAL] Uncaught Exception:", { message: error.message, stack: error.stack });
+  if (isProd) {
+    setServerReady(false);
+    // optionally schedule a graceful shutdown after a delay or let PM2/systemd handle
+  } else {
+    process.exit(1);
+  }
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  const isProd = env.NODE_ENV === "production";
+  console.error("[CRITICAL] Unhandled Rejection:", { reason, promise });
+  if (isProd) {
+    setServerReady(false);
+  } else {
+    process.exit(1);
+  }
+});
+```
+
+7) Cross-platform cleanup-ports
+- Your plan is right; make it a no-op on Windows and catch errors cleanly.
+
+```typescript name=scripts/cleanup-ports.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/928833ae7d5a9f9f92fd6bcfb39aa2bd144ef0c4/scripts/cleanup-ports.ts
+#!/usr/bin/env tsx
+
+import { execSync } from "child_process";
+
+const PORTS = [5000, 8080];
+
+function killPort(port: number): void {
+  if (process.platform === "win32") {
+    console.log(`[Cleanup] Skipping port ${port} on Windows (no lsof)`);
+    return;
+  }
+
+  try {
+    console.log(`[Cleanup] Checking port ${port}...`);
+    const result = execSync(`lsof -ti:${port}`, { encoding: "utf-8" }).trim();
+
+    if (result) {
+      const pids = result.split("\n").filter(Boolean);
+      console.log(`[Cleanup] Found ${pids.length} process(es) on port ${port}: ${pids.join(", ")}`);
+      for (const pid of pids) {
+        try {
+          execSync(`kill -9 ${pid}`);
+          console.log(`[Cleanup] ✓ Killed process ${pid}`);
+        } catch (err) {
+          console.error(`[Cleanup] ✗ Failed to kill process ${pid}:`, err);
+        }
+      }
+    } else {
+      console.log(`[Cleanup] ✓ Port ${port} is free`);
+    }
+  } catch (err: any) {
+    if (err.status === 1) {
+      console.log(`[Cleanup] ✓ Port ${port} is free`);
+    } else {
+      console.error(`[Cleanup] Error checking port ${port}:`, err.message);
+    }
+  }
+}
+
+console.log("[Cleanup] Starting port cleanup...");
+for (const port of PORTS) killPort(port);
+console.log("[Cleanup] Port cleanup complete");
+```
+
+8) Document env and dev modes
+- Create a .env.example to make setup straightforward and clarify unified dev.
+
+```dotenv name=.env.example
+# Server
+PORT=8080
+NODE_ENV=development
+LOG_LEVEL=info
+TOOL_TIMEOUT_MS=1500
+
+# Client
+VITE_API_BASE=
+VITE_UNIFIED_DEV=1
+VITE_HTTPS=0
+VITE_BUILD_ID=
+
+# External services (examples; fill as needed)
+OPENAI_API_KEY=
+POLYGON_API_KEY=
+NEON_DATABASE_URL=
+RESEND_API_KEY=
+```
+
+9) Dependency alignment
+- Unify TypeScript (prefer ^5.9.x), Vite (^5.4.x), ESLint (^9.37.x), ws (^8.18.x), @neondatabase/serverless (pick one version, ideally the newer).
+- Keep toolchains as devDependencies within each workspace; avoid duplicate Vite versions at root and app. Run:
+  - pnpm -r up typescript@^5.9 vite@^5.4 eslint@^9.37 ws@^8.18 @neondatabase/serverless@latest
+  - pnpm -r dedupe
+- Run a full: pnpm -r check && pnpm -r typecheck && pnpm -r build && pnpm -r test.
+
+10) Extras worth adding soon
+- Set readiness=false on health degradation events (e.g., persistent stream failures) if you want orchestrator to restart.
+- Rate limit any endpoints that fetch external data.
+- Make SSE compression exclusion use a shared constant for the SSE path so refactors don’t regress it.
+- Add a couple of tests that assert bar replacement semantics and guard against duplicate seq merges.
+
+Would you like me to open a PR that implements items 1–4 and 7–8 now (build emission, route protections, readiness toggles, HMR toggle, cross‑platform ports script, .env.example)? If yes, tell me the repo/branch to target and I’ll prepare it.

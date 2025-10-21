@@ -45,6 +45,8 @@ export class BarBuilder {
   private lastSeq = new Map<string, number>();
   // Track reconciled seqs to prevent duplicate emissions
   private reconciledSeqs = new Map<string, Set<number>>();
+  // Track recent volumes for spike detection (rolling window of 20 bars)
+  private recentVolumes = new Map<string, number[]>();
 
   private floorToExchangeMinute(tsMs: number, barMinutes: number = 1): number {
     const d = toZonedTime(new Date(tsMs), ET);
@@ -240,6 +242,9 @@ export class BarBuilder {
       },
     };
 
+    // Volume spike detection for debugging
+    this.detectVolumeSpike(symbol, timeframe, finalizedBar.ohlcv.v, seq);
+
     console.debug(
       `[barBuilder] finalized symbol=${symbol} tf=${timeframe} seq=${seq} ` +
       `start=${new Date(state.bar_start).toISOString()} end=${new Date(state.bar_end).toISOString()} ` +
@@ -320,6 +325,40 @@ export class BarBuilder {
   getState(symbol: string, timeframe: string = "1m"): SymbolState | undefined {
     const stateKey = `${symbol}:${timeframe}`;
     return this.states.get(stateKey);
+  }
+
+  /**
+   * Detect volume spikes that are >10x recent average
+   * Helps debug potential duplicate bars or data issues
+   */
+  private detectVolumeSpike(symbol: string, timeframe: string, volume: number, seq: number) {
+    const key = `${symbol}:${timeframe}`;
+    
+    if (!this.recentVolumes.has(key)) {
+      this.recentVolumes.set(key, []);
+    }
+    
+    const recent = this.recentVolumes.get(key)!;
+    
+    // Only check if we have enough history (at least 5 bars)
+    if (recent.length >= 5) {
+      const avg = recent.reduce((sum, v) => sum + v, 0) / recent.length;
+      
+      if (avg > 0 && volume > avg * 10) {
+        console.warn(
+          `⚠️  [VOLUME SPIKE] ${symbol} ${timeframe} seq=${seq} ` +
+          `volume=${volume.toLocaleString()} is ${(volume / avg).toFixed(1)}x ` +
+          `the recent average (${avg.toLocaleString()}) ` +
+          `- possible duplicate bar or auction volume`
+        );
+      }
+    }
+    
+    // Track this volume (keep last 20 bars)
+    recent.push(volume);
+    if (recent.length > 20) {
+      recent.shift();
+    }
   }
 
   /**

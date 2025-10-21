@@ -2,7 +2,7 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import { defineConfig } from "vite";
 
-const USE_HTTPS = true;
+const USE_HTTPS = process.env.VITE_HTTPS === "1";
 const HMR_PROTOCOL = USE_HTTPS ? "wss" : "ws";
 const HMR_CLIENT_PORT = USE_HTTPS ? 443 : 5000;
 

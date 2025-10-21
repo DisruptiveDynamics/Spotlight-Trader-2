@@ -5,6 +5,12 @@ import { execSync } from "child_process";
 const PORTS = [5000, 8080];
 
 function killPort(port: number): void {
+  // Skip on Windows - lsof is Unix-only
+  if (process.platform === "win32") {
+    console.log(`[Cleanup] Skipping port ${port} on Windows (no lsof available)`);
+    return;
+  }
+
   try {
     console.log(`[Cleanup] Checking port ${port}...`);
 

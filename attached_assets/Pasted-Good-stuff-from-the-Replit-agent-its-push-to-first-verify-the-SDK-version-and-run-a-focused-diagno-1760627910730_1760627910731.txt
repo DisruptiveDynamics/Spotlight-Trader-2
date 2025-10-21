@@ -1,0 +1,268 @@
+Good stuff from the Replit agent — its push to first verify the SDK version and run a focused diagnostic is exactly right. I recommend a hybrid approach (Option C): do a small, targeted investigation and quick, type-safe fix first; if the problem recurs or other SDK shapes are required later, add broader robustness. Below is a copy‑and‑paste prompt you can give the Replit agent to run the investigation and make a minimal, safe fix. It:
+
+- Verifies @openai/agents version and types
+- Adds targeted verbose logging around the submission path
+- Adds a small debug endpoint that reproduces the tool-call flow and captures all data
+- Applies a simple, explicit, type-safe submission + structured error fallback (no shotgun)
+- Ensures the timing issues are fixed by awaiting submission before context refresh/continuation
+- Gives exact commands to run and what logs to collect
+
+Copy and paste the whole block below into the Replit agent prompt (exactly as-is).
+
+---- BEGIN PROMPT ----
+Context:
+- The voice tool executes, but returning the tool result to OpenAI fails and triggers an opaque {} error.
+- The repo previously attempted a multi-shape "shotgun" solution. Instead, we will:
+  1) verify installed @openai/agents version and types,
+  2) add detailed logging and a /debug/voice-tool-test endpoint to reproduce the end-to-end flow and capture exact exchange,
+  3) apply a minimal, explicit fix with type-safe checks, structured error fallback, and ensure we await submission before continuing.
+
+Goals:
+- Find the actual failing step (SDK mismatch vs timing vs data issue).
+- Apply a minimal fix so OpenAI receives a clear success or a structured error (not {}).
+- Collect logs to determine whether a larger fallback approach is necessary.
+
+Tasks for you to run (do them in order):
+
+1) Report package.json and installed @openai/agents
+- Print package.json entry and npm list output so we know the exact installed version and resolved dependency tree.
+Commands:
+cat package.json | jq '.dependencies["@openai/agents"]'
+npm ls @openai/agents --depth=0 || true
+
+Paste results back into chat.
+
+2) Add targeted logging in RealtimeVoiceClient.ts
+- Find RealtimeVoiceClient.ts (search repo for the optional-chained call text if necessary).
+- Insert a small logging helper and add logs at these points:
+  - When receiving the function_call request from OpenAI (log event id, tool name, args)
+  - Immediately after tool executes (log return value summary)
+  - Immediately before submitting result back to OpenAI (log the payload)
+  - After submission attempt (log success response or full error)
+  - If submission fails, log both the raw error and the exact object attempted to be submitted
+
+Use the exact helper below (paste into RealtimeVoiceClient.ts near imports):
+
+```typescript name=diagnostic-helpers.ts
+// Diagnostic helpers - paste into RealtimeVoiceClient.ts or a small imported file
+type AnyObj = Record<string, any>;
+
+function shortId() {
+  return Math.random().toString(36).slice(2, 9);
+}
+
+function safeJson(obj: any, len = 2000) {
+  try {
+    const s = JSON.stringify(obj);
+    return s.length > len ? s.slice(0, len) + '...<truncated>' : s;
+  } catch (e) {
+    return String(obj);
+  }
+}
+
+async function sendStructuredErrorToSession(s: AnyObj, ev: AnyObj, err: Error) {
+  try {
+    const payload = {
+      type: 'error',
+      error: {
+        message: 'Tool result submission failed',
+        details: err?.message ?? String(err),
+        eventId: ev?.id ?? ev?.callId ?? null,
+      },
+    };
+    if (typeof s?.response?.create === 'function') {
+      await s.response.create(payload);
+      console.info('[diagnostic] Sent structured error via s.response.create', safeJson(payload));
+    } else if (typeof s?.create === 'function') {
+      await s.create(payload);
+      console.info('[diagnostic] Sent structured error via s.create', safeJson(payload));
+    } else {
+      console.warn('[diagnostic] No session.create available to send structured error', Object.keys(s ?? {}));
+    }
+  } catch (sendErr) {
+    console.error('[diagnostic] Failed to send structured error to session:', sendErr);
+  }
+}
+```
+
+3) Add a small debug endpoint that runs the full flow and prints everything
+- Add an Express route (or your framework equivalent) /debug/voice-tool-test that:
+  - Accepts a body { toolName?: string, input?: any } (optional)
+  - Connects/uses the same RealtimeVoiceClient handler entry point (or calls the same function that handles ev) to trigger a real tool call cycle
+  - Captures and returns detailed logs (the logs created by the helper above)
+- If you can't call the real handler, create a small harness that replicates the same sequence:
+  1. Build a sample ev object as your voice client receives it (include ev.id, tool name, args).
+  2. Call the tool execution method (or a test stub) and capture returned result.
+  3. Attempt to submit result to session using the exact method the code currently calls.
+  4. Return the sequence of captured logs in the HTTP response.
+
+Minimal example Express route (adapt to your server):
+
+```typescript name=debug-route.ts
+import express from 'express';
+import { /* your handler or client import path */ } from './path/to/RealtimeVoiceClient';
+
+const router = express.Router();
+
+router.post('/debug/voice-tool-test', async (req, res) => {
+  const testId = shortId();
+  const { toolName = 'diagnosticTool', input = { test: true } } = req.body ?? {};
+  const logs: any[] = [];
+
+  // Helper logger that pushes entries to the response payload
+  function L(level: 'info' | 'warn' | 'error', msg: string, obj?: any) {
+    const entry = { time: new Date().toISOString(), level, msg, detail: safeJson(obj) };
+    logs.push(entry);
+    if (level === 'error') console.error('[debug]', msg, obj);
+    else if (level === 'warn') console.warn('[debug]', msg, obj);
+    else console.info('[debug]', msg, obj);
+  }
+
+  try {
+    L('info', 'Starting voice-tool-test', { testId, toolName, input });
+
+    // Build a test event that mimics the real event
+    const ev: any = { id: `debug-${testId}`, tool: toolName, args: input };
+
+    // If you have an existing function to handle incoming voice tool requests, call it here.
+    // Example: await handleVoiceToolEvent(sessionObj, ev);
+    // If you don't, exercise the same sequence: call tool, capture result, call submission.
+
+    // TODO: adapt the following to call the real code path
+    L('info', 'Simulating tool invocation (replace with real call if available)', { ev });
+    // const toolResult = await runTool(ev.args);
+    const toolResult = { simulated: true, input };
+
+    L('info', 'Tool execution returned', toolResult);
+
+    // Attempt submission using current code's method (this is the critical test)
+    // Replace `s` with a real session object or a usable mock that matches runtime shape
+    const s: any = globalThis.__diagnostic_session_mock__ ?? {}; // adapt to your runtime
+    try {
+      L('info', 'About to submit result to session', { call_id: ev.id, output: safeJson(toolResult) });
+
+      // Try the same call shape your code currently uses:
+      if (typeof s?.response?.function_call?.output?.create === 'function') {
+        await s.response.function_call.output.create({ call_id: ev.id, output: JSON.stringify(toolResult) });
+        L('info', 'Submitted via s.response.function_call.output.create');
+      } else if (typeof s?.response?.function_call?.create === 'function') {
+        await s.response.function_call.create({ call_id: ev.id, output: JSON.stringify(toolResult) });
+        L('info', 'Submitted via s.response.function_call.create');
+      } else if (typeof s?.response?.create === 'function') {
+        await s.response.create({ type: 'function_call_result', call_id: ev.id, output: JSON.stringify(toolResult) });
+        L('info', 'Submitted via s.response.create(type:function_call_result)');
+      } else {
+        throw new Error('No supported session submission shape found during debug harness');
+      }
+    } catch (submitErr) {
+      L('error', 'Submission attempt failed', submitErr);
+      await sendStructuredErrorToSession(s, ev, submitErr);
+      throw submitErr;
+    }
+
+    L('info', 'Debug cycle completed successfully');
+    res.json({ ok: true, logs });
+  } catch (err) {
+    logs.push({ time: new Date().toISOString(), level: 'error', msg: 'Unhandled debug error', detail: safeJson(err) });
+    res.status(500).json({ ok: false, logs });
+  }
+});
+
+export default router;
+```
+
+4) Minimal, type-safe targeted fix for the problematic submission site
+- In RealtimeVoiceClient.ts, find the line that currently does optional chaining like:
+  await s.response?.function_call?.output?.create({ call_id: ev.id, output: JSON.stringify(result) });
+
+Replace it with an explicit branch that:
+
+- Ensures the payload is JSON-stringified
+- Checks exact method presence (using typeof fn === 'function')
+- Awaits the call (important!)
+- On failure, send a structured error back via sendStructuredErrorToSession and stop further work (do not continue to context refresh nor response continuation)
+- Move context refresh/next-tool calls into the success path
+
+Use the following replacement snippet (paste into the file at the exact place):
+
+```typescript name=submit-replacement-snippet.ts
+// replace optional-chained create(...) with this explicit, minimal fix
+try {
+  const payload = { call_id: ev.id, output: JSON.stringify(result) };
+
+  if (typeof s?.response?.function_call?.output?.create === 'function') {
+    await s.response.function_call.output.create(payload);
+    console.info('[submit] used s.response.function_call.output.create', payload.call_id);
+  } else if (typeof s?.response?.function_call?.create === 'function') {
+    await s.response.function_call.create(payload);
+    console.info('[submit] used s.response.function_call.create', payload.call_id);
+  } else if (typeof s?.response?.create === 'function') {
+    await s.response.create({
+      type: 'function_call_result',
+      tool: ev?.tool ?? 'voice_tool',
+      call_id: payload.call_id,
+      output: payload.output,
+    });
+    console.info('[submit] used s.response.create', payload.call_id);
+  } else {
+    const e = new Error('No supported response submission method on session');
+    console.error('[submit] no supported submission method on session', Object.keys(s ?? {}));
+    await sendStructuredErrorToSession(s, ev, e);
+    throw e;
+  }
+
+  // Only after successful submission: proceed to context refresh / next steps
+  // move the code that was previously at lines ~186 and ~189 here so it's only run on success.
+  // e.g., await refreshContextIfNeeded(); await continueResponse();
+} catch (err) {
+  console.error('[submit] failed to submit tool result', err);
+  await sendStructuredErrorToSession(s, ev, err);
+  throw err; // let upper handler decide, but do not continue flow here
+}
+```
+
+Note:
+- This is intentionally minimal: it checks known shapes (the one your earlier agent said is correct for v0.1.9) and uses type-safe checks (typeof ... === 'function'), so the optional-chaining silent-no-op is avoided.
+- It also ensures we only continue if the submission succeeded (addressing the timing/context refresh bug).
+
+5) Run the debug flow and collect logs
+- Start server in dev mode:
+  npm run dev
+- Trigger the debug endpoint:
+  curl -X POST http://localhost:PORT/debug/voice-tool-test -H "Content-Type: application/json" -d '{"toolName":"theRealTool","input":{"foo":"bar"}}'
+- Capture the full response JSON (returns the logs array) and paste it here.
+
+6) If debug run shows a specific error:
+- If the error is "No supported session submission shape", report the exact session object keys and shape (print Object.keys(s) and anywhere s.response exists). That tells us what shape to call.
+- If the error is a validation/bad request from OpenAI, paste the full error object (not just message).
+- If the debug shows success but the assistant still receives {}, note the last messages returned to OpenAI and paste them.
+
+7) Next steps after we have debug logs:
+- If the submission shape is simply different from what we assumed, replace the submission with the correct call and add a small unit test.
+- If the problem is timing (we were calling other tools before awaiting submit), keep the context/continuation changes (move those calls into the success branch).
+- If the problem is data (payload too big or invalid), truncate or validate the output before submission and add structured error handling.
+
+Commands recap:
+- Print package info:
+  cat package.json | jq '.dependencies["@openai/agents"]'
+  npm ls @openai/agents --depth=0 || true
+- Start server:
+  npm run dev
+- Run debug:
+  curl -X POST http://localhost:PORT/debug/voice-tool-test -H "Content-Type: application/json" -d '{"toolName":"diagnosticTool","input":{"test":true}}'
+
+What to paste back here:
+- Output of package/version checks
+- Full JSON returned by the debug endpoint
+- Any console/server logs that correspond to that run
+- If you change code, paste the modified file snippet or commit diff so I can review
+
+If you want, I can then:
+- Provide the small PR patch with the minimal fix + debug route removed (cleanup) when debugging is complete
+- Or, after diagnostics, propose a follow-up robust solution if required
+
+---- END PROMPT ----
+
+I recommend you run this diagnostic first (Option C: quick focused check + minimal fix). It keeps types and simplicity, ensures we get real data on why OpenAI is returning {} and fixes the timing bugs by awaiting the submission before continuing. Paste the debug output here and I will analyze and produce the exact final code change to merge.
+
+Would you like me to convert the exact replacement snippet into a ready-to-commit patch/PR after you run the debug and paste results?

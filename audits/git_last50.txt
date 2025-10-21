@@ -1,0 +1,50 @@
+8ba339c Improve application stability and data accuracy for trading
+8231a9d Update market status to reflect current trading hours accurately
+0ed8546 Improve market data accuracy and display by filtering invalid entries
+f7feeae Update user profile information and settings on the platform
+78967f6 Transitioned from Plan to Build mode
+1039812 Improve application resilience and debugging capabilities
+72e74fd Improve error handling to prevent application crashes
+459457d Add script to clean up unused network ports automatically
+6db8d3f Improve error handling for API requests and invalid routes
+ef67416 Add global error handlers and graceful shutdown for server stability
+132ae13 Improve server health check endpoints for better monitoring
+c5a7b52 Improve demo login by implementing retry logic for server startup
+a935e16 Add automatic retries for network requests to improve reliability
+e17a469 Update API proxy to use environment variable for server URL
+a34647a Transitioned from Plan to Build mode
+677c229 Improve error handling for user data processing
+a25ad2f Update market data stream to use a dedicated history URL
+d8c317a Update market data fetching to use configured URLs
+cc307ad Improve chart performance by consolidating data fetching
+1d414de Fix issues with chart data not loading or updating correctly
+b29ebb1 Improve voice tool availability and session connection performance
+5643077 Update development server address for client API connections
+4185a81 Improve chart rendering and add type safety to authentication routes
+da9151f Improve application startup and WebSocket communication for better performance
+f08839b Improve server diagnostics and port configuration
+175636b Improve user management and data handling capabilities
+1850831 Improve server performance by enabling response compression
+3cada73 Add database indexes for improved query performance
+1211f89 Improve tool execution timeouts and error handling
+e9830cf Improve historical data fetching for faster chart loading
+3148032 Improve market data streaming performance and resilience
+f7d004c Add a unified ring buffer for managing market data efficiently
+f15dde4 Improve initial data loading by fetching only necessary historical bars
+d8e7836 Improve application startup speed and data loading efficiency
+30f47e2 Fix AI voice assistant to provide real-time stock price data
+a0abff9 Improve AI voice assistant's ability to understand tool names
+16d8175 Update AI voice to use real-time market data instead of mock responses
+44dca6c Add real-time streaming of market data for live trading updates
+0e3cff5 Improve payload truncation to respect byte limits accurately
+f6f4f66 Improve market data synchronization after server restarts
+f70bf5d Improve market data resilience and add tool performance monitoring
+363822a Transitioned from Plan to Build mode
+affd60b Expand real-time data access and fix mock data issues
+921923d Improve WebSocket connection handling and authentication checks
+6f62f4f Improve error handling for market data connections
+296bc0d Extend trading data access and improve data fallback logic
+3878293 Improve market data handling by conditionally using WebSocket
+c24d54e Extend market hours check to include pre-market and after-hours trading
+0850fee Fix mock data pricing and ensure accurate historical data
+c84c2ad Add a way to view and manage user chat history

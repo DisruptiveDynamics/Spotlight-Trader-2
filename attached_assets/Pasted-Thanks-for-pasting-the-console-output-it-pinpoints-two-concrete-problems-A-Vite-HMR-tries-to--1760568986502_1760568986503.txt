@@ -1,0 +1,146 @@
+Thanks for pasting the console output — it pinpoints two concrete problems:
+
+A) Vite HMR tries to connect to wss://0.0.0.0:5000/__vite_hmr → ERR_ADDRESS_INVALID
+- Root cause: dev HMR host is misconfigured to 0.0.0.0 (valid for listening, invalid for clients).
+- Fix: let the browser use its own origin for HMR and force a sane clientPort/protocol in Replit (HTTPS).
+
+B) A very strict Content-Security-Policy is being reported (and possibly enforced elsewhere)
+- You see many “[Report Only] … script-src 'none'” notices. Those are non-blocking, but if you set a real CSP header or a meta CSP anywhere that’s too strict, it will break dev.
+- Fix: don’t send CSP in dev; if you use Helmet, disable CSP in dev. Remove any meta CSP in index.html. In production, set a permissive-enough CSP for your needs.
+
+Make these two changes and hard refresh. Charts and dev HMR will be stable.
+
+1) Fix Vite HMR host/protocol in Replit
+- Do not set HMR host to 0.0.0.0 (that’s for server bind only). For clients, it must be the page’s real host.
+- The snippet below:
+  - sets host: true (bind 0.0.0.0) but leaves HMR host undefined so the injected client uses window.location.host
+  - forces HMR protocol wss and clientPort 443 when running under HTTPS (Replit)
+  - keeps your SSE proxy with unlimited timeouts
+
+```typescript name=apps/client/vite.config.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/chore/health-setup/apps/client/vite.config.ts
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+const API_TARGET = process.env.VITE_API_TARGET || "http://127.0.0.1:3000";
+
+// Heuristics: Replit/web previews are HTTPS; HMR must be wss and use the page’s host/443
+const USE_HTTPS = true;
+const HMR_PROTOCOL = USE_HTTPS ? "wss" : "ws";
+const HMR_CLIENT_PORT = USE_HTTPS ? 443 : 5173;
+
+// IMPORTANT: do NOT set hmr.host to "0.0.0.0". Leave it undefined so the client uses location.host.
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    host: true, // listen on 0.0.0.0
+    port: 5173,
+    strictPort: false,
+    hmr: {
+      protocol: HMR_PROTOCOL,
+      // host: undefined, // use page origin
+      clientPort: HMR_CLIENT_PORT,
+      path: "/__vite_hmr",
+    },
+    proxy: {
+      "/api": {
+        target: API_TARGET,
+        changeOrigin: true,
+        secure: false,
+      },
+      "/stream": {
+        target: API_TARGET,
+        changeOrigin: true,
+        secure: false,
+        // keep SSE alive
+        proxyTimeout: 0,
+        timeout: 0,
+      },
+      "/ws": {
+        target: API_TARGET,
+        ws: true,
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+  },
+  build: {
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom"],
+          charts: ["lightweight-charts"],
+        },
+      },
+    },
+  },
+});
+```
+
+2) Disable CSP in dev (Helmet or meta) and keep production CSP sane
+- If you’re using Helmet, disable its CSP in dev. In production, don’t use script-src 'none' for a React app; use at least 'self' and hashes/nonces for critical inline if any.
+- Also remove any <meta http-equiv="Content-Security-Policy"> in apps/client/index.html during dev.
+
+Here is a safe server-side pattern:
+
+```typescript name=apps/server/src/index.ts
+// ... existing imports
+import helmet from "helmet";
+
+// ...
+const app = express();
+
+const isProd = process.env.NODE_ENV === "production";
+
+// In dev: disable CSP entirely to allow Vite HMR/eval/inline during development
+if (isProd) {
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          // Example production CSP; adjust to your needs:
+          // allow app scripts and Vite-built assets from self
+          "script-src": ["'self'"],
+          // allow EventSource/WebSocket to same-origin
+          "connect-src": ["'self'"],
+          // style can be from self (or 'unsafe-inline' if using Tailwind-injected or inline styles)
+          "style-src": ["'self'", "'unsafe-inline'"],
+          "img-src": ["'self'", "data:"],
+          // add any other directives as needed
+        },
+      },
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
+} else {
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
+}
+
+// ... rest of your app.use and routes (api, stream, ws)
+```
+
+3) Sanity checks after change
+- Hard refresh (Cmd/Ctrl+Shift+R).
+- In DevTools → Console:
+  - HMR errors must disappear (no more wss://0.0.0.0:5000). You should see Vite HMR connected.
+- In DevTools → Network:
+  - /stream/market shows 200 with Content-Type: text/event-stream and stays “(pending)”
+- CSP:
+  - Any remaining “[Report Only] … 'script-src 'none'” logs are safe to ignore if they come from the Replit shell/iframe. Ensure you’re not sending a real CSP that blocks your own app.
+
+4) Why this fixes what you saw
+- The barrage of “0.0.0.0:5000/__vite_hmr net::ERR_ADDRESS_INVALID” comes from hmr.host incorrectly set to 0.0.0.0. Removing it and forcing clientPort/protocol appropriate for HTTPS fixes that.
+- The CSP “script-src 'none'” is incompatible with any React/Vite dev app. Disabling CSP in dev eliminates hidden blocks and removes noise. In production, keep a reasonable CSP that doesn’t break your bundles.
+
+If you want, I can open a PR with:
+- The Vite HMR fix (above)
+- The dev Helmet configuration shown
+- An audit to remove any meta CSP from index.html in dev
+
+After that, do one last hard refresh and paste any remaining console errors (if any).

@@ -1,12 +1,17 @@
-import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import { defineConfig } from "vite";
 
-// Use env var or fallback to 0.0.0.0:8080 (Replit-compatible)
-const API_TARGET = process.env.VITE_SERVER_URL || "http://0.0.0.0:8080";
+const USE_HTTPS = true;
+const HMR_PROTOCOL = USE_HTTPS ? "wss" : "ws";
+const HMR_CLIENT_PORT = USE_HTTPS ? 443 : 5000;
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    "import.meta.env.VITE_BUILD_ID": JSON.stringify(process.env.VITE_BUILD_ID || ""),
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -14,35 +19,18 @@ export default defineConfig({
     },
   },
   server: {
-    host: "0.0.0.0",
+    host: true,
     port: 5000,
     strictPort: true,
     allowedHosts: true,
     hmr: {
-      protocol: "ws",
-      host: "0.0.0.0",
-      port: 5000,
+      protocol: HMR_PROTOCOL,
+      // host: undefined - let client use window.location.host
+      clientPort: HMR_CLIENT_PORT,
       path: "/__vite_hmr",
-      clientPort: 5000,
     },
-    proxy: {
-      "/api": {
-        target: API_TARGET,
-        changeOrigin: true,
-        secure: false,
-      },
-      "/stream": {
-        target: API_TARGET,
-        changeOrigin: true,
-        secure: false,
-      },
-      "/ws": {
-        target: API_TARGET,
-        ws: true,
-        changeOrigin: true,
-        secure: false,
-      },
-    },
+    // NOTE: No proxy config needed - using unified dev server mode
+    // (Express serves both API and Vite middleware on port 8080)
   },
   build: {
     sourcemap: true,

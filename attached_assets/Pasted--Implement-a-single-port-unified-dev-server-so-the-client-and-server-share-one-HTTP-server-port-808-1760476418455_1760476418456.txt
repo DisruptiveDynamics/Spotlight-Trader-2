@@ -1,0 +1,53 @@
+ Implement a single-port unified dev server so the client and server share one HTTP server (port 8080). Replace the Vite proxy approach. Do exactly the following:
+
+Server: add Vite dev middleware to Express (single port)
+In apps/server, modify the dev startup to create a single HTTP server and, when UNIFIED_DEV=1, mount Vite in middleware mode.
+Create a new helper file apps/server/src/dev/unifiedVite.ts that exports async function attachViteMiddleware(app, server) which:
+imports { createServer as createViteServer } from 'vite'
+root: apps/client
+server: { middlewareMode: true, hmr: { server } }
+appType: 'spa'
+app.use(vite.middlewares)
+add SPA fallback for non-/api and non-/ws paths:
+for any GET route that does not start with /api or /ws, read client index.html from apps/client/index.html, run vite.transformIndexHtml, and res.send the result
+In apps/server/src/index.ts (or your main entry), ensure an http.Server is created from Express app (const server = http.createServer(app)), mount your existing API routes under /api, mount any WebSocket upgrades (e.g., /ws/tools) on the same server instance, and if process.env.UNIFIED_DEV === '1' call attachViteMiddleware(app, server), then server.listen(PORT).
+Client: use same-origin relative API URLs
+In apps/client/src/config.ts (or wherever STREAM_URL/HISTORY_URL are defined), ensure the defaults are relative, no host:
+const API_BASE = import.meta.env.VITE_API_BASE || ''
+export const HISTORY_URL = ${API_BASE}/api/history
+export const STREAM_URL = ${API_BASE}/api/stream
+Any other API endpoints should be ${API_BASE}/api/...
+Remove or disable any Vite devServer proxy config in apps/client/vite.config.ts (no longer needed for unified dev). Keep plugin-react and other settings intact.
+Scripts: run only the unified server in dev
+In apps/server/package.json, add:
+"dev:unified": "UNIFIED_DEV=1 PORT=8080 tsx src/index.ts"
+In repo root package.json, change "dev" to run the unified server only:
+"dev": "pnpm --filter @spotlight/server run dev:unified"
+Keep existing build scripts for production; production still builds client to static assets that server can serve.
+WebSocket and SSE remain same-origin
+Ensure your Tool Bridge WS (/ws/tools) and SSE endpoints (/api/stream or similar) are mounted on the same http.Server used above. If WS was using a separate server/port, refactor to re-use the same http.Server so upgrades work under the single port.
+CORS
+Since you’re now same-origin in dev, disable or remove permissive CORS for dev if it’s not needed. Leave it enabled for production if you need cross-origin.
+Dev note
+Add a comment in apps/client/vite.config.ts stating: “Unified dev mode is driven by the server; Vite runs as middleware. This file is still used for plugin config but devServer.proxy is intentionally unused.”
+Acceptance
+With unified dev:
+Visiting the Replit URL (port 8080) should serve the client app (Vite HMR works).
+API requests go to /api/* on the same origin (no proxy).
+The charts load market data, and no ECONNREFUSED occurs.
+Commit message to use: chore(dev): unify dev server (Express + Vite middleware, single port), switch client to relative API URLs, remove Vite proxy
+
+After the agent commits, run these in the Replit shell
+
+Pull deps (in case tsx/vite changes were inferred):
+bash
+pnpm install
+Start unified dev (single port 8080):
+bash
+pnpm run dev
+If you need to run server only (no HMR), you can still do:
+bash
+pnpm --filter @spotlight/server run dev:stable
+Why this fixes it
+
+Replit exposes one port; by unifying, both client and server are on the same HTTP server/port, eliminating the failing proxy hop and any inter-process loopback assumptions. SSE and WebSocket upgrades share the same server, so HMR, tools, and streams coexist cleanly.

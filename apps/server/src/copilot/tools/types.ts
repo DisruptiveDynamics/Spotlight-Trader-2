@@ -5,6 +5,7 @@ export interface GetChartSnapshotParams {
   timeframe: string;
   lookback?: number; // Legacy parameter name
   barCount?: number; // Voice tool parameter name
+  lastSeenHash?: string; // [PHASE-8] For change detection
 }
 
 export interface ChartSnapshot {
@@ -25,6 +26,9 @@ export interface ChartSnapshot {
   };
   volatility: "low" | "medium" | "high";
   regime: "trend-up" | "trend-down" | "chop" | "news";
+  // [PHASE-8] Snapshot hash for change detection
+  snapshotHash?: string;
+  hasChanged?: boolean | undefined; // True if hash differs from lastSeenHash
 }
 
 export interface SubscribeMarketStreamParams {
@@ -223,9 +227,38 @@ export interface VoiceControlResult {
   error?: string;
 }
 
+// [PHASE-6] Micro tools for low-latency data queries
+export interface GetLastPriceParams {
+  symbol: string;
+}
+
+export interface MicroToolResult {
+  symbol: string;
+  value: number;
+  ts: number;
+}
+
+export interface GetLastVWAPParams {
+  symbol: string;
+}
+
+export interface GetLastEMAParams {
+  symbol: string;
+  period: number;
+}
+
 export type ToolHandler<TParams = unknown, TResult = unknown> = (
   params: TParams,
 ) => Promise<TResult>;
+
+// Re-export watchlist tool types
+export type {
+  WatchSymbolParams,
+  WatchSymbolResult,
+  UnwatchSymbolParams,
+  UnwatchSymbolResult,
+  ListWatchedResult,
+} from "../tools/watchlist";
 
 export interface ToolRegistry {
   get_chart_snapshot: ToolHandler<GetChartSnapshotParams, ChartSnapshot>;
@@ -242,4 +275,10 @@ export interface ToolRegistry {
   speak: ToolHandler<SpeakParams, VoiceControlResult>;
   mute: ToolHandler<void, VoiceControlResult>;
   unmute: ToolHandler<void, VoiceControlResult>;
+  get_last_price: ToolHandler<GetLastPriceParams, MicroToolResult>;
+  get_last_vwap: ToolHandler<GetLastVWAPParams, MicroToolResult>;
+  get_last_ema: ToolHandler<GetLastEMAParams, MicroToolResult>;
+  watch_symbol: ToolHandler<import("../tools/watchlist").WatchSymbolParams, import("../tools/watchlist").WatchSymbolResult>;
+  unwatch_symbol: ToolHandler<import("../tools/watchlist").UnwatchSymbolParams, import("../tools/watchlist").UnwatchSymbolResult>;
+  list_watched: ToolHandler<void, import("../tools/watchlist").ListWatchedResult>;
 }

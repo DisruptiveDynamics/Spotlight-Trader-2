@@ -4,6 +4,7 @@
  * Converts Float32 audio to PCM16 format for transmission
  */
 
+/* global AudioWorkletProcessor, registerProcessor */
 class MicProcessor extends AudioWorkletProcessor {
   process(inputs) {
     const input = inputs[0];

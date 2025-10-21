@@ -1,0 +1,12 @@
+file,line,tag,summary,quick_fix_possible
+README.md,166,TODO,Dynamic OG images per symbol/timeframe,no
+attached_assets/Pasted-You-are-a-Staff-Frontend-UX-engineer-Integrate-the-Spot-Light-Trader-brand-across-the-client-app-wi-1760052343916_1760052343916.txt,91,TODO,Include TODO for dynamic symbol/timeframe snapshots,no
+apps/server/src/agent/tools.ts,92,TODO,Load from your existing rules store when ready,yes
+apps/server/src/backtest/engine.ts,202,TODO,Add 5m and 15m presets when aggregation is implemented,yes
+apps/server/src/journals/eod.ts,61,TODO,Link to actual trades when available,yes
+attached_assets/Pasted-You-are-a-senior-full-stack-engineer-Apply-a-reliability-patch-to-fix-Polygon-not-authorized--1760109418946_1760109418946.txt,36,TODO,Use holidays as closed for now (holiday calendar integration),no
+attached_assets/Pasted-Here-s-a-single-senior-level-Replit-Agent-prompt-you-can-copy-paste-It-scaffolds-the-SDK-audio-S-1760365924378_1760365924378.txt,115,TODO,Use your existing aggregator,no
+attached_assets/Pasted-Here-s-a-single-senior-level-Replit-Agent-prompt-you-can-copy-paste-It-scaffolds-the-SDK-audio-S-1760365924378_1760365924378.txt,220,TODO,Call your ring buffer / Polygon cache,no
+apps/client/src/index.css,34,TODO,Implement light theme tokens,yes
+apps/client/src/features/chart/hooks/useChartContext.ts,70,TODO,Wire up from signals service,yes
+apps/client/src/features/coach/PresenceBubble.tsx,393,TODO,Implement text-based API endpoint for coach,yes

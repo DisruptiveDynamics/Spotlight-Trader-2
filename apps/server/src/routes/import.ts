@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { nanoid } from "nanoid";
+import { z } from "zod";
+
 import { db } from "../db/index.js";
 import { userRules, userRuleVersions, coachMemories, coachProfiles } from "../db/schema.js";
 import { requireUser, AuthRequest } from "../middleware/requireUser.js";
-import { z } from "zod";
 
 const router: Router = Router();
 

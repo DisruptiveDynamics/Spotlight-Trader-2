@@ -1,5 +1,5 @@
-import { useCallback } from "react";
 import type { InsightJournalEntry } from "@spotlight/shared";
+import { useCallback } from "react";
 
 export function useInsightJournal() {
   const saveInsight = useCallback(

@@ -1,7 +1,8 @@
 import { Router, Response } from "express";
+
 import { getFlags, updateFlags } from "../flags/store";
-import { requireUser } from "../middleware/requireUser";
 import { requireAdmin, AuthenticatedRequest } from "../middleware/requireAdmin";
+import { requireUser } from "../middleware/requireUser";
 
 export const flagsRouter: Router = Router();
 

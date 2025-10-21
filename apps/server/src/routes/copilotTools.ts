@@ -1,6 +1,8 @@
-import { Router, type Request, type Router as ExpressRouter } from "express";
-import { toolHandlers } from "../copilot/tools/handlers";
+import { Router, type Request, type Response, type Router as ExpressRouter } from "express";
+
 import { copilotBroadcaster } from "../copilot/broadcaster";
+import { requirePin } from "../middleware/requirePin";
+import { toolHandlers } from "../copilot/tools/handlers";
 import type {
   GetChartSnapshotParams,
   SubscribeMarketStreamParams,
@@ -16,7 +18,7 @@ import type {
 
 const router = Router();
 
-router.post("/get_chart_snapshot", async (req, res) => {
+router.post("/get_chart_snapshot", requirePin, async (req: Request, res: Response) => {
   try {
     const params = req.body as GetChartSnapshotParams;
     const result = await toolHandlers.get_chart_snapshot(params);
@@ -27,7 +29,7 @@ router.post("/get_chart_snapshot", async (req, res) => {
   }
 });
 
-router.post("/subscribe_market_stream", async (req, res) => {
+router.post("/subscribe_market_stream", requirePin, async (req: Request, res: Response) => {
   try {
     const params = req.body as SubscribeMarketStreamParams;
     const result = await toolHandlers.subscribe_market_stream(params);
@@ -38,7 +40,7 @@ router.post("/subscribe_market_stream", async (req, res) => {
   }
 });
 
-router.post("/propose_callout", async (req, res) => {
+router.post("/propose_callout", requirePin, async (req: Request, res: Response) => {
   try {
     const params = req.body as ProposeCalloutParams;
     const result = await toolHandlers.propose_callout(params);
@@ -49,7 +51,7 @@ router.post("/propose_callout", async (req, res) => {
   }
 });
 
-router.post("/propose_entry_exit", async (req, res) => {
+router.post("/propose_entry_exit", requirePin, async (req: Request, res: Response) => {
   try {
     const params = req.body as ProposeEntryExitParams;
     const result = await toolHandlers.propose_entry_exit(params);
@@ -60,7 +62,7 @@ router.post("/propose_entry_exit", async (req, res) => {
   }
 });
 
-router.post("/evaluate_rules", async (req, res) => {
+router.post("/evaluate_rules", requirePin, async (req: Request, res: Response) => {
   try {
     const params = req.body as EvaluateRulesParams;
     const result = await toolHandlers.evaluate_rules(params);
@@ -71,7 +73,7 @@ router.post("/evaluate_rules", async (req, res) => {
   }
 });
 
-router.post("/log_journal_event", async (req, res) => {
+router.post("/log_journal_event", requirePin, async (req: Request, res: Response) => {
   try {
     const params = req.body as LogJournalEventParams;
     const result = await toolHandlers.log_journal_event(params);
@@ -82,7 +84,7 @@ router.post("/log_journal_event", async (req, res) => {
   }
 });
 
-router.post("/summarize_session", async (req, res) => {
+router.post("/summarize_session", requirePin, async (req: Request, res: Response) => {
   try {
     const params = req.body as SummarizeSessionParams;
     const result = await toolHandlers.summarize_session(params);
@@ -93,7 +95,7 @@ router.post("/summarize_session", async (req, res) => {
   }
 });
 
-router.post("/get_pattern_summary", async (req, res) => {
+router.post("/get_pattern_summary", requirePin, async (req: Request, res: Response) => {
   try {
     const params = req.body as GetPatternSummaryParams;
     const result = await toolHandlers.get_pattern_summary(params);
@@ -104,7 +106,7 @@ router.post("/get_pattern_summary", async (req, res) => {
   }
 });
 
-router.post("/get_recommended_risk_box", async (req, res) => {
+router.post("/get_recommended_risk_box", requirePin, async (req: Request, res: Response) => {
   try {
     const params = req.body as GetRecommendedRiskBoxParams;
     const result = await toolHandlers.get_recommended_risk_box(params);
@@ -115,7 +117,7 @@ router.post("/get_recommended_risk_box", async (req, res) => {
   }
 });
 
-router.post("/generate_trade_plan", async (req, res) => {
+router.post("/generate_trade_plan", requirePin, async (req: Request, res: Response) => {
   try {
     const params = req.body as GenerateTradePlanParams;
     const result = await toolHandlers.generate_trade_plan(params);
@@ -126,7 +128,7 @@ router.post("/generate_trade_plan", async (req, res) => {
   }
 });
 
-router.post("/test/trigger-callout", async (req, res) => {
+router.post("/test/trigger-callout", requirePin, async (req: Request, res: Response) => {
   try {
     const result = await toolHandlers.propose_callout({
       kind: "watch",
@@ -146,12 +148,12 @@ router.post("/test/trigger-callout", async (req, res) => {
   }
 });
 
-router.get("/callouts/stream", (req: Request, res) => {
+router.get("/callouts/stream", requirePin, (req: Request, res: Response) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
-  const userId = "demo-user";
+  const userId = (req as any).userId;
   copilotBroadcaster.addClient(userId, res);
 
   const heartbeat = setInterval(() => {

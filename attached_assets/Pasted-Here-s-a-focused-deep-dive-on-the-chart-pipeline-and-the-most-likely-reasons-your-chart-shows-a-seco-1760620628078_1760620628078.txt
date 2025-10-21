@@ -1,0 +1,133 @@
+Here’s a focused deep dive on the chart pipeline and the most likely reasons your chart shows a second of wick movement and then freezes, plus concrete checks and fixes you can run now.
+
+What the code shows (relevant pieces)
+- Server SSE stream
+  - apps/server/src/stream/sse.ts sets up an SSE endpoint that:
+    - Accepts symbols (default SPY), timeframe (default 1m), optional sinceSeq for gap backfill.
+    - Immediately writes a bootstrap event, then an epoch event, then asynchronously writes bars (seed or backfill) via BackpressureController.
+    - Sends “bar” events shaped from getHistory() results (and presumably from a live event bus for ongoing updates).
+- Client market streaming
+  - apps/client/src/lib/marketStream.ts manages:
+    - lastSeq tracking for dedupe/gap recovery.
+    - cold start seed and reconnect backfill: on open, if lastSeq > 0 it fetches /api/history with sinceSeq, then applies bars with seq > lastSeq.
+    - A backfillGap routine that maps history responses to a Bar with seq = floor(bar_end / 60000), sorts, then applies.
+  - It uses EventSource to connect to STREAM_URL and dispatches CustomEvents for status.
+
+Why you see “a second of movement then freeze”
+Based on that architecture and your symptoms, these are the highest-probability culprits:
+
+1) Sequence mismatch between SSE bars and REST backfill
+- Client backfill maps seq as floor(bar_end/60000). If SSE “bar” events carry a different seq definition (e.g., a server-side monotonic counter or another time bucket), your lastSeq gating will reject further updates after the first second.
+- Result: initial movement, then client filters out subsequent bars as “not newer,” so the chart appears frozen.
+
+2) Epoch/restart not handled (or handled late)
+- The server includes epoch headers and can emit an “epoch” event. If the client doesn’t reset lastSeq when the server restarts (or switches sources), you’ll miss the first new bar after restart and gap-fill logic won’t trigger, causing stalls.
+
+3) SSE connection idle timeout without heartbeat
+- On some proxies (Replit/NGINX/CDN), SSE needs periodic events to avoid idle close. Your stream sends bootstrap/epoch and bars, but if there are no deltas for a while or backpressure pauses, the connection can be silently dropped. Without a lightweight heartbeat event every few seconds, the client may not fire error/close promptly and appear “stuck.”
+
+4) Backpressure stall on the server
+- BackpressureController buffers SSE writes. If its threshold is hit and not drained promptly, further “bar” events won’t flush, starving the client. That manifests as a freeze after a few updates.
+
+5) Reconnect/gap-fill edge case
+- On reconnect, the client fetches history with sinceSeq=lastSeq, then updates only bars with bar.seq > lastSeq. If sinceSeq or returned bar.seq aren’t aligned with the SSE definition, the dedupe filter can block updates permanently.
+
+How to isolate fast (shell and browser)
+- Sanity: SSE signals arrive continuously
+  - While the server is running:
+    - curl -N "http://127.0.0.1:4000/realtime/sse?symbols=SPY" | awk '/^event:/ {print strftime(), $0} /^data:/ {print $0}'
+  - Expect to see:
+    - event: bootstrap
+    - event: epoch
+    - event: bar (repeated over time)
+  - If you stop seeing “bar” for long periods during RTH while your server logs show bars, suspect backpressure or dropped connection.
+
+- Validate seq alignment between REST and SSE
+  - Get two most recent history bars and inspect seq:
+    - curl -fsS "http://127.0.0.1:4000/api/history?symbol=SPY&timeframe=1m&limit=2" | jq .
+  - While the SSE stream runs, log the last bar’s seq from the “bar” events:
+    - In the browser console, temporarily:
+      window.__barSeqs = [];
+      const es = new EventSource(`${STREAM_URL}?symbols=SPY`);
+      es.addEventListener('bar', (e) => {
+        const d = JSON.parse(e.data);
+        console.log('SSE bar seq', d.seq, d.bar_end || d.barEnd);
+        window.__barSeqs.push(d.seq);
+      });
+  - Compare the SSE d.seq values to floor(bar_end/60000) for the same bar. They must match. If they don’t, that’s your freeze.
+
+- Watch reconnect and epoch behavior
+  - Temporarily throttle/drops (e.g., stop/start server) and verify the client:
+    - Receives an “epoch” event (if emitted).
+    - Resets lastSeq appropriately (either to 0 to force seed or to server-sent sinceSeq anchor).
+    - Issues a history gap fill and resumes receiving “bar”.
+
+- Check for backpressure logs on the server
+  - Run with verbose logs:
+    - DEBUG="SSE*,History*,Market*" LOG_LEVEL=debug
+  - Look for warnings indicating write buffer limits or slow clients.
+
+Targeted remedies you can apply now
+Server-side
+- Add a 10–15s heartbeat event to keep proxies from closing idle SSE:
+  - In sseMarketStream, setInterval(() => bpc.write("ping", { ts: Date.now() }), 10000);
+  - “ping” payload is tiny and harmless; the client can ignore it.
+- Ensure a single seq definition across SSE and REST
+  - If getHistory returns bars with bar_end in ms, enforce seq = Math.floor(bar_end / 60000) everywhere (history mapper, SSE publish).
+  - Do not mix server-local counters or different bucketing math for SSE vs REST.
+- Make backpressure visible and resilient
+  - Log when BackpressureController applies throttling and when it clears.
+  - Lower the threshold or flush at smaller chunks if stalls occur.
+- Emit an explicit “epoch” event on restart/source-switch, and document the client’s expected reset behavior (e.g., client must drop lastSeq and reseed).
+
+Client-side
+- Harden lastSeq handling
+  - Always set lastSeq = Math.max(lastSeq, bar.seq).
+  - On “epoch” event: reset lastSeq to 0 and trigger a seed fetch for the active symbol/timeframe.
+- Ensure reconnect is reliable and gap fill aligns with seq
+  - On EventSource error/close, back off and reconnect; when reconnecting, include sinceSeq if lastSeq > 0; otherwise do a cold seed. After the fetch, only filter bars with bar.seq > lastSeq using the same seq definition as SSE.
+- Ignore “ping” events
+  - Register a no-op listener for ping to avoid clutter and confirm the connection is live.
+
+Minimal code adjustments (illustrative)
+- Heartbeat on the server (SSE):
+```typescript
+// inside sseMarketStream after flushHeaders
+const heartbeat = setInterval(() => {
+  try { bpc.write("ping", { ts: Date.now() }); } catch {}
+}, 10000);
+req.on("close", () => clearInterval(heartbeat));
+```
+
+- Defensive lastSeq updates (client):
+```typescript
+// when processing an incoming bar
+if (bar.seq > lastSeq) {
+  lastSeq = bar.seq;
+  listeners.bar.forEach(fn => fn(bar));
+} else {
+  // still allow equal seq if this is an in-progress bar update (optional, if you stream partials)
+  // otherwise, ignore to prevent backtracking
+}
+```
+
+- Epoch handling (client):
+```typescript
+es.addEventListener("epoch", (e) => {
+  // server restarted or source changed; reset and reseed
+  lastSeq = 0;
+  // trigger a seed fetch for current symbol/timeframe
+  // (reuse your existing seed/backfill code path)
+});
+```
+
+Runbook: step-by-step to pin it down
+1) With the server running, curl the SSE endpoint and verify you see bootstrap → epoch → bar, and later ping every 10–15s.
+2) In the browser console, log incoming bar.seq and confirm it moves forward once per minute (for 1m) and matches floor(bar_end/60000).
+3) Stop and restart the API; verify the client receives an epoch event, resets, fetches seed, and resumes bar updates.
+4) If freezes persist:
+   - Inspect backpressure or memory warnings on the server.
+   - Temporarily drop the backpressure threshold to ensure frequent flushes and see if the problem disappears.
+   - Confirm REST history sinceSeq returns bars whose seq is strictly greater than the lastSeq you sent.
+
+If you want me to narrow this further with your exact runtime, I can give you precise curl and logging commands to run and then interpret the outputs you paste back.

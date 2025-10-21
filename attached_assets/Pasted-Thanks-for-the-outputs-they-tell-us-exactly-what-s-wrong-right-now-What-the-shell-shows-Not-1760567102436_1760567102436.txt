@@ -1,0 +1,69 @@
+Thanks for the outputs — they tell us exactly what’s wrong right now.
+
+What the shell shows
+- Nothing is listening on 3000 or 5173, so every curl to /, /api/history, and /stream returns “Connection refused.”
+- Your Polygon REST key is present and working (200 OK), so upstream data isn’t the blocker.
+- Conclusion: the dev servers (Express and Vite) aren’t running in Replit yet, or the server isn’t binding to the correct port.
+
+Quickest path to green
+1) Start the server on the correct port (Replit requires using $PORT and 0.0.0.0)
+- Ensure your Express entry binds like this (do not hardcode 3000):
+  - const PORT = Number(process.env.PORT) || 3000;
+  - app.listen(PORT, "0.0.0.0", () => ...)
+- If you’re not sure, run:
+  - grep -R "listen(" apps/server/src -n
+  - If it isn’t using process.env.PORT and "0.0.0.0", update it.
+
+2) Start both processes in two Shell tabs
+- Install deps:
+  - pnpm install
+- Tab A (server):
+  - pnpm dlx tsx apps/server/src/index.ts
+  - If you have a dev script: pnpm -w run dev:server or cd apps/server && pnpm run dev
+- Tab B (client):
+  - pnpm --dir apps/client vite --host
+  - If you have a dev script: pnpm -w run dev:client or cd apps/client && pnpm run dev
+- Replit tip: Vite must listen on 0.0.0.0 (the --host flag) and the server must listen on $PORT, or Replit won’t expose the port.
+
+3) Set env vars in Replit
+- Make sure these exist in the Secrets panel (or .env if you’re running locally):
+  - POLYGON_API_KEY: your 32-char key (you already have this)
+  - APP_PIN: your 6-digit PIN (if you added PIN auth)
+  - APP_AUTH_SECRET: any random secret string
+
+4) Re-run the quick checks
+- History:
+  - curl -sS -i "http://127.0.0.1:${PORT:-3000}/api/history?symbol=SPY&timeframe=1m&limit=3" | sed -n '1,60p'
+- SSE (direct to server):
+  - curl -svN --no-buffer --max-time 12 "http://127.0.0.1:${PORT:-3000}/stream/market?symbols=SPY" 2>&1 | sed -n '1,120p'
+- If you enabled PIN auth, do the cookies.txt flow first:
+  - curl -sS -i -c cookies.txt -H "Content-Type: application/json" -X POST "http://127.0.0.1:${PORT:-3000}/api/auth/pin" --data "{\"pin\":\"123456\"}"
+  - curl -svN --no-buffer --max-time 12 -b cookies.txt "http://127.0.0.1:${PORT:-3000}/stream/market?symbols=SPY" 2>&1 | sed -n '1,120p'
+
+If the server still won’t start
+- Show me your server start logs:
+  - In Tab A, what prints when you run pnpm dlx tsx apps/server/src/index.ts?
+- Confirm the listen call is correct:
+  - Share the line that calls app.listen(...).
+- Confirm Vite proxy config for /stream is present (helps in the browser later, but not needed for curl direct-to-server):
+  - It should resemble:
+    - "/stream": { target: API_TARGET, changeOrigin: true, secure: false, proxyTimeout: 0, timeout: 0 }
+
+Optional: make “Run” in Replit start both servers
+- If you want one-click Run, add a root package.json script "dev" that runs both:
+  - "dev:server": "tsx apps/server/src/index.ts"
+  - "dev:client": "vite --host"
+  - "dev": "run-p dev:server dev:client"
+- Then set .replit to run pnpm dev.
+- If those scripts don’t exist yet, I can generate a PR that adds them and ensures the server binds to $PORT.
+
+Why this will fix it
+- Your Polygon key and REST call already work.
+- All failures are “Connection refused,” which only happen when no process is bound to the port.
+- Starting the server on $PORT and Vite on 0.0.0.0, plus running both processes, will make /api and /stream reachable. Once those are live, your charts and the voice tools can function.
+
+Run those start commands now and paste:
+- The server’s first 20 lines of output
+- The result of the curl SSE check (first ~50 lines)
+
+I’ll then give line-level fixes if we see any auth or SSE header issues.

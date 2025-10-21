@@ -1,27 +1,47 @@
-import type { Request, Response } from "express";
-import { eventBus } from "@server/market/eventBus";
 import { getHistory } from "@server/history/service";
-import { BackpressureController } from "./backpressure";
+import { getMarketSource, getMarketReason } from "@server/market/bootstrap";
+import { eventBus } from "@server/market/eventBus";
 import {
   recordSSEConnection,
   recordSSEDisconnection,
   recordSSEEvent,
   recordSSEBackpressure,
 } from "@server/metrics/registry";
-import { getMarketSource, getMarketReason } from "@server/market/bootstrap";
+import type { Request, Response } from "express";
+
+import { BackpressureController } from "./backpressure";
 import { getEpochId, getEpochStartMs } from "./epoch"; // [RESILIENCE] Server restart detection
+import { MicrobarBatcher } from "./microbatcher"; // [PHASE-5] SSE micro-batching
 
 export async function sseMarketStream(req: Request, res: Response) {
   const symbolsParam = (req.query.symbols as string) || "SPY";
   const symbols = symbolsParam.split(",").map((s) => s.trim().toUpperCase());
   const timeframe = (req.query.timeframe as string) || "1m"; // Allow client to specify timeframe
-  const sinceSeq = req.query.sinceSeq ? parseInt(req.query.sinceSeq as string, 10) : undefined;
+  
+  // [CONFIG] Feature flags for SSE streaming
+  const SSE_BUFFER_CAP = Number(process.env.SSE_BUFFER_CAP ?? 1000);
+  const SSE_TICKS_ENABLED = (process.env.FF_SSE_TICKS ?? "off").toLowerCase() === "on";
+  
+  // Parse sinceSeq from query param OR Last-Event-ID header (SSE standard)
+  const querySeq = req.query.sinceSeq ? parseInt(req.query.sinceSeq as string, 10) : undefined;
+  const lastEventId = req.headers["last-event-id"] ? parseInt(req.headers["last-event-id"] as string, 10) : undefined;
+  const sinceSeq = querySeq ?? lastEventId ?? undefined;
+  
+  // [RESILIENCE] Track per-connection watermark to prevent seq regressions
+  let lastSentSeq = sinceSeq ?? 0;
+  
+  if (sinceSeq !== undefined) {
+    console.log(`[SSE] Client resume: sinceSeq=${sinceSeq}, symbols=${symbols.join(",")}`);
+  }
 
   // [RESILIENCE] Include epoch info in headers for client restart detection
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
+  res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Vary", "Origin");
   res.setHeader("X-Market-Source", getMarketSource());
   res.setHeader("X-Market-Reason", getMarketReason());
   res.setHeader("X-Epoch-Id", getEpochId());
@@ -31,7 +51,7 @@ export async function sseMarketStream(req: Request, res: Response) {
   const userId = (req as any).userId || "anonymous";
   recordSSEConnection(userId);
 
-  const bpc = new BackpressureController(res, 100);
+  const bpc = new BackpressureController(res, SSE_BUFFER_CAP);
 
   // [PERFORMANCE] Send bootstrap event immediately (non-blocking)
   bpc.write("bootstrap", {
@@ -56,24 +76,41 @@ export async function sseMarketStream(req: Request, res: Response) {
       symbols.map(async (symbol) => {
         try {
           const backfill = await getHistory({ symbol, timeframe: timeframe as any, sinceSeq });
-          for (const bar of backfill) {
+          
+          // [RESILIENCE] Emit bars strictly > sinceSeq in ascending order
+          const barsToSend = backfill
+            .filter((bar) => bar.seq > sinceSeq)
+            .sort((a, b) => a.seq - b.seq);
+          
+          if (barsToSend.length > 0) {
+            console.log(`[SSE] Backfilling ${barsToSend.length} bars (seq ${barsToSend[0]!.seq} → ${barsToSend[barsToSend.length - 1]!.seq})`);
+          }
+          
+          for (const bar of barsToSend) {
             bpc.write(
               "bar",
               {
                 symbol: bar.symbol,
-                timeframe: bar.timeframe,
+                timeframe,
                 seq: bar.seq,
                 bar_start: bar.bar_start,
                 bar_end: bar.bar_end,
-                ohlcv: bar.ohlcv,
+                ohlcv: {
+                  o: bar.open,
+                  h: bar.high,
+                  l: bar.low,
+                  c: bar.close,
+                  v: bar.volume,
+                },
               },
               String(bar.seq),
             );
+            lastSentSeq = Math.max(lastSentSeq, bar.seq);
           }
         } catch (err) {
           console.error(`Failed to fetch backfill for ${symbol}:`, err);
         }
-      })
+      }),
     ).catch((err) => {
       console.error("Backfill error:", err);
     });
@@ -88,57 +125,148 @@ export async function sseMarketStream(req: Request, res: Response) {
               "bar",
               {
                 symbol: bar.symbol,
-                timeframe: bar.timeframe,
+                timeframe,
                 seq: bar.seq,
                 bar_start: bar.bar_start,
                 bar_end: bar.bar_end,
-                ohlcv: bar.ohlcv,
+                ohlcv: {
+                  o: bar.open,
+                  h: bar.high,
+                  l: bar.low,
+                  c: bar.close,
+                  v: bar.volume,
+                },
               },
               String(bar.seq),
             );
+            lastSentSeq = Math.max(lastSentSeq, bar.seq);
           }
         } catch (err) {
           console.error(`Failed to fetch seed for ${symbol}:`, err);
         }
-      })
+      }),
     ).catch((err) => {
       console.error("Seed fetch error:", err);
     });
   }
 
-  const listeners: Array<{ event: string; handler: (data: any) => void }> = [];
+  interface TradingSignal {
+    id: string;
+    symbol: string;
+    direction: string;
+    confidence: number;
+    ts: Date | number;
+  }
 
-  const alertHandler = (signal: any) => {
+  interface MicrobarData {
+    symbol: string;
+    ts: number;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+  }
+
+  interface BarData {
+    symbol: string;
+    timeframe: string;
+    seq: number;
+    bar_start: number;
+    bar_end: number;
+    ohlcv: {
+      o: number;
+      h: number;
+      l: number;
+      c: number;
+      v: number;
+    };
+  }
+
+  interface TickData {
+    ts: number;
+    price: number;
+    size: number;
+    side?: "buy" | "sell" | "unknown";
+  }
+
+  type EventHandler = (data: TradingSignal | MicrobarData | BarData | TickData) => void;
+  const listeners: Array<{ event: string; handler: EventHandler }> = [];
+
+  const alertHandler = (signal: TradingSignal) => {
     recordSSEEvent("alert");
     bpc.write("alert", {
       id: signal.id,
       symbol: signal.symbol,
       direction: signal.direction,
       confidence: signal.confidence,
-      timestamp: signal.ts,
+      timestamp: signal.ts instanceof Date ? signal.ts.getTime() : signal.ts,
     });
   };
 
-  eventBus.on("signal:new", alertHandler);
-  listeners.push({ event: "signal:new", handler: alertHandler });
+  eventBus.on("signal:new", alertHandler as any);
+  listeners.push({ event: "signal:new", handler: alertHandler as EventHandler });
+
+  // [TIMEFRAME-SWITCH] Listen for bar:reset events when user switches timeframes
+  const barResetHandler = (data: any) => {
+    recordSSEEvent("bar_reset");
+    bpc.write("bar:reset", {
+      symbol: data.symbol,
+      timeframe: data.timeframe,
+      bars: data.bars,
+    });
+    console.log(`[SSE] Sent bar:reset for ${data.symbol} ${data.timeframe}: ${data.bars.length} bars`);
+  };
+
+  eventBus.on("bar:reset", barResetHandler as any);
+  listeners.push({ event: "bar:reset", handler: barResetHandler as any });
+
+  // [PHASE-5] Create batcher per symbol (aggregate up to 5 microbars or 20ms)
+  const batchers = new Map<string, MicrobarBatcher>();
 
   for (const symbol of symbols) {
-    const microbarHandler = (data: any) => {
-      recordSSEEvent("microbar");
-      bpc.write("microbar", {
-        symbol: data.symbol,
-        ts: data.ts,
-        ohlcv: {
-          open: data.open,
-          high: data.high,
-          low: data.low,
-          close: data.close,
-          volume: data.volume,
-        },
-      });
+    // [PHASE-5] Create batcher with flush callback
+    const batcher = new MicrobarBatcher(
+      (batch) => {
+        recordSSEEvent("microbar_batch");
+        bpc.write("microbar_batch", batch);
+      },
+      5, // maxBatchSize
+      20, // maxDelayMs
+    );
+    batchers.set(symbol, batcher);
+
+    const microbarHandler = (data: MicrobarData) => {
+      // [PHASE-5] Push to batcher instead of immediate write
+      const symbolBatcher = batchers.get(symbol);
+      if (symbolBatcher) {
+        symbolBatcher.push(data);
+      } else {
+        // Fallback: send immediately if batcher not found (shouldn't happen)
+        recordSSEEvent("microbar");
+        bpc.write("microbar", {
+          symbol: data.symbol,
+          ts: data.ts,
+          ohlcv: {
+            open: data.open,
+            high: data.high,
+            low: data.low,
+            close: data.close,
+            volume: data.volume,
+          },
+        });
+      }
     };
 
-    const barHandler = (data: any) => {
+    const barHandler = (data: BarData) => {
+      // [RESILIENCE] Prevent seq regressions - only emit bars > lastSentSeq
+      if (data.seq <= lastSentSeq) {
+        if (process.env.NODE_ENV === "development") {
+          console.log(`[SSE] Dropped bar seq=${data.seq} (lastSentSeq=${lastSentSeq})`);
+        }
+        return;
+      }
+      
       recordSSEEvent("bar");
       bpc.write(
         "bar",
@@ -152,40 +280,59 @@ export async function sseMarketStream(req: Request, res: Response) {
         },
         String(data.seq),
       );
-    };
-
-    // Tick streaming for real-time "tape" feel
-    const tickHandler = (tick: any) => {
-      recordSSEEvent("tick");
-      bpc.write("tick", {
-        symbol,
-        ts: tick.ts,
-        price: tick.price,
-        size: tick.size,
-        side: tick.side, // 'buy' | 'sell' for color coding
-      });
+      
+      // Update watermark
+      lastSentSeq = Math.max(lastSentSeq, data.seq);
     };
 
     const barEventKey = `bar:new:${symbol}:${timeframe}`;
 
-    eventBus.on(`microbar:${symbol}` as const, microbarHandler);
-    eventBus.on(barEventKey as any, barHandler);
-    eventBus.on(`tick:${symbol}` as const, tickHandler);
+    eventBus.on(`microbar:${symbol}` as const, microbarHandler as any);
+    eventBus.on(barEventKey as any, barHandler as any);
 
     listeners.push(
-      { event: `microbar:${symbol}`, handler: microbarHandler },
-      { event: barEventKey, handler: barHandler },
-      { event: `tick:${symbol}`, handler: tickHandler },
+      { event: `microbar:${symbol}`, handler: microbarHandler as EventHandler },
+      { event: barEventKey, handler: barHandler as EventHandler },
     );
+
+    // [CONFIG] Tick streaming (disabled by default for stability)
+    if (SSE_TICKS_ENABLED) {
+      const tickHandler = (tick: TickData) => {
+        recordSSEEvent("tick");
+        bpc.write("tick", {
+          symbol,
+          ts: tick.ts,
+          price: tick.price,
+          size: tick.size,
+          side: tick.side,
+        });
+      };
+      
+      eventBus.on(`tick:${symbol}` as const, tickHandler as any);
+      listeners.push({ event: `tick:${symbol}`, handler: tickHandler as EventHandler });
+    }
   }
 
   let lastDropped = 0;
 
+  // [RESILIENCE] Send SSE heartbeat every 15s to prevent proxy idle timeout
+  // Uses standard SSE comment format (`: \n\n`) for maximum compatibility
   const heartbeat = setInterval(() => {
-    res.write(":\n\n");
-    const stats = bpc.getStats();
-    recordSSEBackpressure(stats.buffered, stats.dropped, lastDropped);
-    lastDropped = stats.dropped;
+    try {
+      // Send standard SSE heartbeat comment (prevents proxy buffering/timeout)
+      res.write(": heartbeat\n\n");
+      
+      // Monitor backpressure for observability
+      const stats = bpc.getStats();
+      if (stats.dropped > lastDropped) {
+        const dropped = stats.dropped - lastDropped;
+        console.warn(`[SSE] Backpressure: ${dropped} events dropped (buffer cap: ${SSE_BUFFER_CAP})`);
+        lastDropped = stats.dropped;
+      }
+      recordSSEBackpressure(stats.buffered, stats.dropped, lastDropped);
+    } catch (err) {
+      console.warn("[SSE] Heartbeat write failed:", err);
+    }
   }, 15000);
 
   req.on("close", () => {
@@ -193,6 +340,9 @@ export async function sseMarketStream(req: Request, res: Response) {
     listeners.forEach(({ event, handler }) => {
       eventBus.off(event as any, handler);
     });
+    // [PHASE-5] Destroy all batchers on disconnect
+    batchers.forEach((batcher) => batcher.destroy());
+    batchers.clear();
     bpc.destroy();
     recordSSEDisconnection(userId);
   });

@@ -1,6 +1,6 @@
-import sharp from "sharp";
 import { readFileSync } from "fs";
 import { join } from "path";
+import sharp from "sharp";
 
 const brandDir = join(process.cwd(), "public/brand");
 const logoMarkSvg = readFileSync(join(brandDir, "logo-mark.svg"));

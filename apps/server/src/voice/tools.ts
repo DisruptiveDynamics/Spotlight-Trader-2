@@ -1,12 +1,16 @@
-import { z } from "zod";
 import { validateEnv } from "@shared/env";
-import { getChartSnapshot } from "../copilot/tools/handlers";
-import { db } from "../db";
-import { rules, journalEvents, signals } from "../db/schema";
 import { desc, eq } from "drizzle-orm";
-import { retrieveTopK } from "../memory/store";
+import { nanoid } from "nanoid";
+import { z } from "zod";
+
 import { bars1m } from "../chart/bars1m";
+import { copilotBroadcaster } from "../copilot/broadcaster";
+import { getChartSnapshot } from "../copilot/tools/handlers";
+import { watchSymbol, unwatchSymbol, listWatched, isWatched } from "../copilot/tools/watchlist";
+import { db } from "../db";
+import { rules, journalEvents, signals, callouts } from "../db/schema";
 import { getSessionVWAPForSymbol } from "../indicators/vwap";
+import { retrieveTopK } from "../memory/store";
 
 const env = validateEnv(process.env);
 
@@ -56,30 +60,61 @@ function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => T): Promise<
   });
 }
 
+/**
+ * Auto-subscribe helper: Ensures a symbol is subscribed before accessing its data.
+ * This allows the voice agent to query ANY symbol without explicitly calling watch_symbol first.
+ * 
+ * @param symbol - The symbol to ensure is subscribed
+ * @returns Promise that resolves when subscription is confirmed (or if already subscribed)
+ */
+async function ensureSymbolSubscribed(symbol: string): Promise<void> {
+  const upperSymbol = symbol.toUpperCase();
+  
+  // Check if already watched (fast path)
+  if (isWatched(upperSymbol)) {
+    return;
+  }
+  
+  // Auto-subscribe with 500 bars of history
+  try {
+    await watchSymbol({ symbol: upperSymbol, seedLimit: 500 });
+    console.log(`🔄 Auto-subscribed ${upperSymbol} for voice agent data access`);
+  } catch (error) {
+    // Subscription failed, but don't throw - let the tool return stale/empty data
+    console.warn(`⚠️ Auto-subscribe failed for ${upperSymbol}:`, error);
+  }
+}
+
 export const voiceTools = {
-  async get_chart_snapshot(input: unknown, userId: string) {
+  async get_chart_snapshot(input: unknown, _userId: string) {
     const params = z
       .object({
         symbol: symbolSchema,
         timeframe: timeframeSchema.default("1m"),
-        barCount: z.number().int().min(1).max(100).optional().default(20),
+        barCount: z.number().int().min(1).max(200).nullish().default(50),
       })
       .parse(input);
 
-    // Clamp bar count defensively (cap at 100, default 20)
-    const barCount = Math.max(1, Math.min(params.barCount ?? 20, 100));
+    // Normalize symbol to uppercase for consistent data access
+    const symbol = params.symbol.toUpperCase();
+
+    // Auto-subscribe to symbol if not already watched
+    await ensureSymbolSubscribed(symbol);
+
+    // Clamp bar count defensively (cap at 200, default 50)
+    const barCount = Math.max(1, Math.min(params.barCount ?? 50, 200));
 
     const exec = async () =>
-      cache5s(`snap:${params.symbol}:${params.timeframe}:${barCount}`, async () => {
+      cache5s(`snap:${symbol}:${params.timeframe}:${barCount}`, async () => {
         return getChartSnapshot({
-          symbol: params.symbol,
+          symbol,
           timeframe: params.timeframe,
           barCount,
         });
       });
 
     return withTimeout(exec(), env.TOOL_TIMEOUT_MS, () => ({
-      symbol: params.symbol,
+      symbol,
       timeframe: params.timeframe,
       bars: [],
       indicators: {},
@@ -91,8 +126,14 @@ export const voiceTools = {
     }));
   },
 
-  async get_last_price(input: unknown, userId: string) {
-    const { symbol } = z.object({ symbol: symbolSchema }).parse(input);
+  async get_last_price(input: unknown, _userId: string) {
+    const params = z.object({ symbol: symbolSchema }).parse(input);
+
+    // Normalize symbol to uppercase for consistent data access
+    const symbol = params.symbol.toUpperCase();
+
+    // Auto-subscribe to symbol if not already watched
+    await ensureSymbolSubscribed(symbol);
 
     const exec = async () =>
       cache5s(`price:${symbol}`, async () => {
@@ -113,8 +154,14 @@ export const voiceTools = {
     }));
   },
 
-  async get_last_vwap(input: unknown, userId: string) {
-    const { symbol } = z.object({ symbol: symbolSchema }).parse(input);
+  async get_last_vwap(input: unknown, _userId: string) {
+    const params = z.object({ symbol: symbolSchema }).parse(input);
+
+    // Normalize symbol to uppercase for consistent data access
+    const symbol = params.symbol.toUpperCase();
+
+    // Auto-subscribe to symbol if not already watched
+    await ensureSymbolSubscribed(symbol);
 
     const exec = async () =>
       cache5s(`vwap:${symbol}`, async () => {
@@ -135,15 +182,25 @@ export const voiceTools = {
     }));
   },
 
-  async get_last_ema(input: unknown, userId: string) {
-    const { symbol, period } = z
+  async get_last_ema(input: unknown, _userId: string) {
+    const params = z
       .object({
         symbol: symbolSchema,
-        period: z.number().int().refine((p) => [9, 21, 50, 200].includes(p), {
-          message: "EMA period must be 9, 21, 50, or 200",
-        }),
+        period: z
+          .number()
+          .int()
+          .refine((p) => [9, 21, 50, 200].includes(p), {
+            message: "EMA period must be 9, 21, 50, or 200",
+          }),
       })
       .parse(input);
+
+    // Normalize symbol to uppercase for consistent data access
+    const symbol = params.symbol.toUpperCase();
+    const period = params.period;
+
+    // Auto-subscribe to symbol if not already watched
+    await ensureSymbolSubscribed(symbol);
 
     const exec = async () =>
       cache5s(`ema:${symbol}:${period}`, async () => {
@@ -166,7 +223,7 @@ export const voiceTools = {
     }));
   },
 
-  async get_market_regime(input: unknown, userId: string) {
+  async get_market_regime(input: unknown, _userId: string) {
     const params = z
       .object({
         symbol: symbolSchema,
@@ -174,14 +231,20 @@ export const voiceTools = {
       })
       .parse(input);
 
+    // Normalize symbol to uppercase for consistent data access
+    const symbol = params.symbol.toUpperCase();
+
+    // Auto-subscribe to symbol if not already watched
+    await ensureSymbolSubscribed(symbol);
+
     const snapshot = await getChartSnapshot({
-      symbol: params.symbol,
+      symbol,
       timeframe: params.timeframe,
       barCount: 100,
     });
 
     return {
-      symbol: params.symbol,
+      symbol,
       regime: snapshot.regime,
       volatility: snapshot.volatility,
       indicators: snapshot.indicators,
@@ -192,7 +255,7 @@ export const voiceTools = {
   async get_recent_journal(input: unknown, userId: string) {
     const params = z
       .object({
-        limit: z.number().int().min(1).max(50).optional().default(10),
+        limit: z.number().int().min(1).max(50).nullish().default(10),
       })
       .parse(input);
 
@@ -201,7 +264,7 @@ export const voiceTools = {
       .from(journalEvents)
       .where(eq(journalEvents.userId, userId))
       .orderBy(desc(journalEvents.timestamp))
-      .limit(params.limit);
+      .limit(params.limit ?? 10);
 
     return {
       count: events.length,
@@ -221,7 +284,7 @@ export const voiceTools = {
   async get_active_rules(input: unknown, userId: string) {
     const params = z
       .object({
-        limit: z.number().int().min(1).max(50).optional().default(20),
+        limit: z.number().int().min(1).max(50).nullish().default(20),
       })
       .parse(input);
 
@@ -229,7 +292,7 @@ export const voiceTools = {
       .select()
       .from(rules)
       .where(eq(rules.ownerUserId, userId))
-      .limit(params.limit);
+      .limit(params.limit ?? 20);
 
     return {
       count: userRulesData.length,
@@ -243,8 +306,8 @@ export const voiceTools = {
   async get_recent_signals(input: unknown, userId: string) {
     const params = z
       .object({
-        limit: z.number().int().min(1).max(50).optional().default(10),
-        symbol: symbolSchema.optional(),
+        limit: z.number().int().min(1).max(50).nullish().default(10),
+        symbol: symbolSchema.nullish(),
       })
       .parse(input);
 
@@ -253,7 +316,7 @@ export const voiceTools = {
       .from(signals)
       .where(eq(signals.userId, userId))
       .orderBy(desc(signals.ts))
-      .limit(params.limit);
+      .limit(params.limit ?? 10);
 
     return {
       count: signalsData.length,
@@ -273,11 +336,11 @@ export const voiceTools = {
     const params = z
       .object({
         query: z.string().min(1),
-        limit: z.number().int().min(1).max(20).optional().default(5),
+        limit: z.number().int().min(1).max(20).nullish().default(5),
       })
       .parse(input);
 
-    const results = await retrieveTopK(userId, params.query, params.limit, 10, 0.1, false);
+    const results = await retrieveTopK(userId, params.query, params.limit ?? 5, 10, 0.1, false);
 
     const playbookEntries = results.filter((r) => r.kind === "playbook");
 
@@ -295,11 +358,11 @@ export const voiceTools = {
     const params = z
       .object({
         query: z.string().min(1),
-        limit: z.number().int().min(1).max(20).optional().default(5),
+        limit: z.number().int().min(1).max(20).nullish().default(5),
       })
       .parse(input);
 
-    const results = await retrieveTopK(userId, params.query, params.limit, 10, 0.1, false);
+    const results = await retrieveTopK(userId, params.query, params.limit ?? 5, 10, 0.1, false);
 
     const glossaryEntries = results.filter((r) => r.kind === "glossary");
 
@@ -311,6 +374,116 @@ export const voiceTools = {
         createdAt: r.createdAt,
       })),
     };
+  },
+
+  async get_memory(input: unknown, userId: string) {
+    const params = z
+      .object({
+        query: z.string().min(1),
+        kind: z.enum(["playbook", "glossary", "postmortem", "knowledge", "all"]).nullish().default("all"),
+        limit: z.number().int().min(1).max(10).nullish().default(5),
+      })
+      .parse(input);
+
+    const excludeKnowledge = params.kind !== "knowledge" && params.kind !== "all";
+    const results = await retrieveTopK(userId, params.query, params.limit ?? 5, 10, 0.1, excludeKnowledge);
+
+    const filteredResults = params.kind === "all" 
+      ? results 
+      : results.filter((r) => r.kind === params.kind);
+
+    return {
+      count: filteredResults.length,
+      memories: filteredResults.map((r: any) => ({
+        kind: r.kind,
+        content: r.text,
+        score: r.score,
+        tags: r.tags || [],
+        createdAt: r.createdAt,
+      })),
+    };
+  },
+
+  async get_recent_callouts(_input: unknown, userId: string) {
+    const callouts = copilotBroadcaster.getRecentCallouts(userId);
+    return {
+      count: callouts.length,
+      callouts: callouts.map((c) => ({
+        id: c.id,
+        kind: c.kind,
+        setupTag: c.setupTag,
+        rationale: c.rationale,
+        qualityGrade: c.qualityGrade,
+        urgency: c.urgency,
+        timestamp: c.timestamp,
+      })),
+    };
+  },
+
+  async respond_to_callout(input: unknown, userId: string) {
+    const params = z
+      .object({
+        calloutId: z.string(),
+        action: z.enum(["accept", "reject"]),
+        reason: z.string().nullish(),
+      })
+      .parse(input);
+
+    const recentCallouts = copilotBroadcaster.getRecentCallouts(userId);
+    const callout = recentCallouts.find((c) => c.id === params.calloutId);
+
+    if (!callout) {
+      return { success: false, error: "Callout not found in recent list" };
+    }
+
+    try {
+      if (params.action === "accept") {
+        await db.update(callouts).set({ accepted: true }).where(eq(callouts.id, params.calloutId));
+      } else {
+        await db
+          .update(callouts)
+          .set({ accepted: false, rejectedReason: params.reason || "Rejected via voice" })
+          .where(eq(callouts.id, params.calloutId));
+      }
+
+      await db.insert(journalEvents).values({
+        id: nanoid(),
+        userId,
+        type: "decision",
+        symbol: callout.setupTag.split("_")[0] || callout.setupTag,
+        timeframe: "5m",
+        timestamp: new Date(),
+        decision: params.action,
+        reasoning: params.reason || `${params.action}ed via voice`,
+      });
+
+      copilotBroadcaster.removeCallout(userId, params.calloutId);
+
+      return { success: true, action: params.action };
+    } catch (err) {
+      console.error("Failed to respond to callout:", err);
+      return { success: false, error: "Database update failed" };
+    }
+  },
+
+  async watch_symbol(input: unknown, _userId: string) {
+    const params = z
+      .object({
+        symbol: symbolSchema,
+        seedLimit: z.number().int().min(50).max(1000).nullish().default(500),
+      })
+      .parse(input);
+
+    return watchSymbol({ symbol: params.symbol, seedLimit: params.seedLimit ?? 500 });
+  },
+
+  async unwatch_symbol(input: unknown, _userId: string) {
+    const params = z.object({ symbol: symbolSchema }).parse(input);
+    return unwatchSymbol({ symbol: params.symbol });
+  },
+
+  async list_watched(_input: unknown, _userId: string) {
+    return listWatched();
   },
 };
 
@@ -425,6 +598,87 @@ export const toolSchemas = [
         limit: { type: "integer", minimum: 1, maximum: 20, description: "Max results" },
       },
       required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function" as const,
+    name: "get_memory",
+    description: "Search your knowledge base for relevant memories across playbook, glossary, postmortems, and uploaded knowledge. Use this to recall past conversations, lessons learned, and user preferences.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "What to search for in your memories" },
+        kind: { 
+          type: "string", 
+          enum: ["playbook", "glossary", "postmortem", "knowledge", "all"],
+          description: "Type of memory to search (default: all)" 
+        },
+        limit: { type: "integer", minimum: 1, maximum: 10, description: "Max results (default: 5)" },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function" as const,
+    name: "get_recent_callouts",
+    description: "Get recent trading callouts and setup alerts from the copilot. Use this when the user asks 'what are you seeing' or wants to know about recent market opportunities.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function" as const,
+    name: "respond_to_callout",
+    description: "Accept or reject a trading callout. Use this when the user decides to take or pass on a setup.",
+    parameters: {
+      type: "object",
+      properties: {
+        calloutId: { type: "string", description: "ID of the callout to respond to" },
+        action: { type: "string", enum: ["accept", "reject"], description: "Accept or reject the callout" },
+        reason: { type: "string", description: "Optional reason for the decision" },
+      },
+      required: ["calloutId", "action"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function" as const,
+    name: "watch_symbol",
+    description: "Add a symbol to the proactive watchlist for real-time monitoring. This subscribes to live data and seeds historical bars for the AI coach to provide insights and alerts.",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Stock symbol to watch (e.g., AAPL, TSLA)" },
+        seedLimit: { type: "integer", minimum: 50, maximum: 1000, description: "Number of historical bars to seed (default: 500)" },
+      },
+      required: ["symbol"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function" as const,
+    name: "unwatch_symbol",
+    description: "Remove a symbol from the proactive watchlist. The subscription will remain active for a TTL period before expiring.",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Stock symbol to unwatch" },
+      },
+      required: ["symbol"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function" as const,
+    name: "list_watched",
+    description: "List all symbols currently on the proactive watchlist for monitoring.",
+    parameters: {
+      type: "object",
+      properties: {},
       additionalProperties: false,
     },
   },

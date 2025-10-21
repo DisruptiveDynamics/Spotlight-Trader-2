@@ -1,46 +1,53 @@
+import { validateEnv } from "@shared/env";
+import compression from "compression";
+import cookieParser from "cookie-parser";
 import express from "express";
 import { createServer } from "http";
-import cookieParser from "cookie-parser";
-import compression from "compression";
-import { validateEnv } from "@shared/env";
+
+import { proactiveCoachingEngine } from "./coach/proactiveCoaching";
 import { setupSecurity } from "./config/security";
-import { initializeMarketPipeline } from "./wiring";
-import { getEpochInfo } from "./stream/epoch"; // [OBS] For health endpoint
-import { liveness, readiness, healthz } from "./health";
-import { errorHandler, notFound } from "./middleware/error";
-import { setupVoiceProxy } from "./realtime/voiceProxy";
-import { setupVoiceTokenRoute } from "./routes/voiceToken";
-import { setupToolsBridge } from "./voice/toolsBridge";
+import { triggerManager } from "./copilot/triggers/manager";
+import { loadFlags } from "./flags/store";
+import { liveness, readiness, healthz, toolsHealth } from "./health";
+import { startEodScheduler } from "./journals/eod";
+import { initializeLearningLoop } from "./learning/loop";
+import { rateLimit } from "./middleware/rateLimit";
+import { adminRouter } from "./routes/admin";
+import { backtestRouter } from "./routes/backtest";
+import { epochRouter } from "./routes/epoch";
+import { feedbackRouter } from "./routes/feedback";
+import { flagsRouter } from "./routes/flags";
+import insightRouter from "./routes/insight";
+import journalsRouter from "./routes/journals";
 import { setupNexaKnowledgeRoutes } from "./routes/nexaKnowledge";
 import { setupPreferencesRoutes } from "./routes/preferences";
 import { rulesRouter } from "./routes/rules";
-import journalsRouter from "./routes/journals";
 import memoryRouter from "./routes/memory";
-import insightRouter from "./routes/insight";
-import { flagsRouter } from "./routes/flags";
-import { feedbackRouter } from "./routes/feedback";
-import { backtestRouter } from "./routes/backtest";
 import { signalsRouter } from "./routes/signals";
 import { metricsRouter } from "./routes/metrics";
-import { adminRouter } from "./routes/admin";
-import authRouter from "./routes/auth";
+import { pinAuthRouter } from "./routes/pinAuth";
 import exportRouter from "./routes/export";
 import importRouter from "./routes/import";
 import coachSettingsRouter from "./routes/coachSettings";
 import { copilotToolsRouter } from "./routes/copilotTools";
 import copilotActionsRouter from "./routes/copilotActions";
-import voicePreviewRouter from "./routes/voicePreview";
 import triggerTestRouter from "./routes/triggerTest";
-import { requireUser } from "./middleware/requireUser";
-import { rateLimit } from "./middleware/rateLimit";
-import { startEodScheduler } from "./journals/eod";
-import { initializeLearningLoop } from "./learning/loop";
-import { loadFlags } from "./flags/store";
-import { triggerManager } from "./copilot/triggers/manager";
+import voicePreviewRouter from "./routes/voicePreview";
+import { voiceDebugRouter } from "./routes/voiceDebug";
+import replayRouter from "./routes/replay";
+import metricsPromRouter from "./routes/metricsProm";
+import diagRouter from "./routes/diag";
+import symbolsRouter from "./routes/symbols";
+import { requirePin } from "./middleware/requirePin";
 import { initializeMarketSource } from "./market/bootstrap";
+import { errorHandler, notFound } from "./middleware/error";
+import { setupVoiceProxy } from "./realtime/voiceProxy";
+import { setupVoiceTokenRoute } from "./routes/voiceToken";
+import { getEpochInfo } from "./stream/epoch"; // [OBS] For health endpoint
 import { initializeTelemetryBridge } from "./telemetry/bridge";
 import { telemetryBus } from "./telemetry/bus";
-import { proactiveCoachingEngine } from "./coach/proactiveCoaching";
+import { setupToolsBridge } from "./voice/toolsBridge";
+import { initializeMarketPipeline } from "./wiring";
 
 const env = validateEnv(process.env);
 const app = express();
@@ -50,8 +57,20 @@ const server = createServer(app);
 server.keepAliveTimeout = 75000; // 75 seconds
 server.headersTimeout = 80000; // 80 seconds
 
-// [PERFORMANCE] Enable gzip compression for all responses
-app.use(compression());
+// [PERFORMANCE] Enable gzip compression for all responses EXCEPT SSE streams
+// SSE requires unbuffered streaming, compression would buffer events
+app.use(
+  compression({
+    filter: (req, res) => {
+      // Never compress Server-Sent Events (SSE) - they require unbuffered streaming
+      if (req.path.startsWith("/stream/") || req.path.startsWith("/realtime/sse")) {
+        return false;
+      }
+      // Use default compression filter for everything else
+      return compression.filter(req, res);
+    },
+  }),
+);
 
 app.use(express.json());
 app.use(cookieParser());
@@ -69,6 +88,7 @@ app.get("/health", (_req, res) => {
 app.get("/api/livez", liveness);
 app.get("/api/readyz", readiness);
 app.get("/api/healthz", healthz);
+app.get("/health/tools", toolsHealth);
 
 // Legacy health endpoints for compatibility
 app.get("/api/health", (_req, res) => {
@@ -86,11 +106,35 @@ app.get("/api/voice/health", (_req, res) => {
   res.json({ ok: true, timestamp: Date.now() });
 });
 
-app.use("/api/auth", authRouter);
-app.use("/auth", authRouter);
+// Quote tool HTTP probe (for testing)
+app.get("/tools/quote", async (_req, res) => {
+  try {
+    const symbol = (_req.query.symbol as string) || "SPY";
+    const { getLastPrice } = await import("./market/quote.js");
+    const result = getLastPrice(symbol);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: { code: "INTERNAL_ERROR", message: err.message } });
+  }
+});
 
+// Voice debugging routes (public - for diagnostic testing)
+app.use("/debug", voiceDebugRouter);
+
+// Observability endpoints (public - no auth for monitoring)
+app.use("/api/metrics", metricsPromRouter); // Prometheus format
+app.use("/api/diag", diagRouter); // Diagnostic snapshot
+
+// PIN auth routes (public - no middleware)
+app.use("/api/auth", pinAuthRouter);
+app.use("/auth", pinAuthRouter);
+
+// Public epoch endpoint (no auth required - used for client restart detection)
+app.use("/api", epochRouter);
+
+// All routes open - personal app, no auth needed
 app.use("/api/flags", flagsRouter);
-app.use("/api/metrics", metricsRouter);
+app.use("/api/metrics/json", metricsRouter);
 app.use("/api/admin", adminRouter);
 
 initializeMarketPipeline(app);
@@ -115,6 +159,8 @@ app.use("/api/copilot", copilotToolsRouter);
 app.use("/api/copilot", copilotActionsRouter);
 app.use("/api/voice", voicePreviewRouter);
 app.use("/api/triggers", triggerTestRouter);
+app.use("/api/replay", replayRouter);
+app.use("/api/symbols", symbolsRouter);
 
 initializeLearningLoop();
 startEodScheduler();
@@ -127,18 +173,26 @@ triggerManager.initialize(sessionStartMs);
 proactiveCoachingEngine.setupMarketMonitoring(telemetryBus);
 console.log("✅ Proactive coaching engine initialized");
 
-// Error middleware - must be last
-app.use(notFound); // 404 handler
-app.use(errorHandler); // Global error handler
-
 const PORT = Number(process.env.PORT ?? 8080);
 
 // Initialize market source (Polygon auth check with simulator fallback)
 await initializeMarketSource();
 
+// Unified Dev Mode: Attach Vite middleware (BEFORE error handlers)
+if (process.env.UNIFIED_DEV === "1") {
+  const { attachViteMiddleware } = await import("./dev/unifiedVite.js");
+  await attachViteMiddleware(app, server);
+}
+
+// Error middleware - must be last
+app.use(notFound); // 404 handler
+app.use(errorHandler); // Global error handler
+
 server.listen(PORT, "0.0.0.0", () => {
   const proto = env.NODE_ENV === "production" ? "wss" : "ws";
+  const mode = process.env.UNIFIED_DEV === "1" ? "unified dev (Express + Vite)" : "API only";
   console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
+  console.log(`   Mode: ${mode}`);
   console.log(`   Environment: ${env.NODE_ENV}`);
   console.log(`   Log level: ${env.LOG_LEVEL}`);
   console.log(`   Routes: /health (GET), /realtime/sse (SSE), /ws/realtime (WS), /ws/tools (WS)`);

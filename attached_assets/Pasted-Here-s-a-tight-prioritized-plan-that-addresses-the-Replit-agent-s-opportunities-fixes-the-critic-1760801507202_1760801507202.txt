@@ -1,0 +1,302 @@
+Here’s a tight, prioritized plan that addresses the Replit agent’s “opportunities,” fixes the critical 400 from Polygon (time parameter), validates multi-timeframe rollups, and cleans up the last sources of bar duplication and voice instability. I’ve included ready-to-apply file blocks where appropriate.
+
+Top priorities for this week
+1) Fix Polygon timestamp parsing 400s (unblock real data, stop synthetic fallback)
+2) Verify 2m/5m/10m/15m/30m/1h rollups are wired (server-side from 1m buffer)
+3) Eliminate duplicate/stale sequences at the SSE/client boundary
+4) Integrate voice auto-reconnect wrapper in the actual voice client path
+5) Safari auth cookie hardening + reduce HMR-induced auth churn in dev
+6) Consolidate metrics and add labels; instrument ring-buffer sizes/evictions
+7) Reduce log noise under LOG_LEVEL; move chatty messages to debug
+
+1) Polygon timestamp fix (stop status=400 and mock fallback)
+Root cause: v2 aggregates endpoint expects from/to as date “YYYY-MM-DD” or Unix ms in path segments; using full ISO in path (“T..Z”) causes 400. Change history fetch to pass numeric ms in the path, not ISO strings.
+
+```typescript name=apps/server/src/history/service.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/history/service.ts
+// Replace the URL construction inside fetchPolygonHistory (or equivalent) to use ms-in-path.
+// Also add better log context so 400s are obvious and actionable.
+
+async function fetchPolygonHistory(
+  symbol: string,
+  timeframe: Timeframe,
+  limit: number,
+  before?: number,
+): Promise<Bar[]> {
+  const toMs = before ?? Date.now();
+  const timeframeMs = timeframeToMs(timeframe);
+  const fromMs = toMs - limit * timeframeMs;
+
+  const multiplier = timeframeToMultiplier(timeframe);
+  // Use ms in the path, not full ISO strings (which cause 400)
+  const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/minute/${fromMs}/${toMs}`;
+  const params = new URLSearchParams({
+    adjusted: "true",
+    sort: "asc",
+    limit: String(Math.min(limit, 50000)),
+    apiKey: env.POLYGON_API_KEY,
+  });
+
+  try {
+    const res = await fetch(`${url}?${params.toString()}`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    const status = res.status;
+    const raw = await res.text().catch(() => "");
+
+    if (!res.ok) {
+      console.warn(`[history] Polygon aggregates error ${status} url=${url} q=${params.toString().replace(env.POLYGON_API_KEY, "****")} body=${raw.slice(0, 300)}...`);
+      return [];
+    }
+
+    let data: PolygonAggResponse | null = null;
+    try {
+      data = JSON.parse(raw) as PolygonAggResponse;
+    } catch (e) {
+      console.warn(`[history] Polygon parse error ${status} body=${raw.slice(0, 300)}...`);
+      return [];
+    }
+
+    if (!data?.results?.length) {
+      console.warn(`[history] Polygon empty results symbol=${symbol} fromMs=${fromMs} toMs=${toMs} status=${status}`);
+      return [];
+    }
+
+    const bars: Bar[] = data.results.map((agg) => {
+      const bar_start = agg.t; // ms
+      const bar_end = bar_start + timeframeMs;
+      const seq = Math.floor(bar_start / timeframeMs);
+      return {
+        symbol,
+        timeframe,
+        seq,
+        bar_start,
+        bar_end,
+        ohlcv: { o: agg.o, h: agg.h, l: agg.l, c: agg.c, v: agg.v },
+      };
+    });
+
+    return bars;
+  } catch (err) {
+    console.warn(`[history] Polygon request failed:`, err);
+    return [];
+  }
+}
+```
+
+2) Verify and wire multi-timeframe rollups (server-side from 1m)
+You already have rollupFrom1m() in apps/server/src/chart/rollups.ts. Ensure the history endpoint does:
+- timeframe === "1m" → return native 1m (REST or buffer)
+- timeframe !== "1m" → fetch 1m bars (compute enough input minutes = limit × multiplier), then rollupFrom1m(…, timeframe), and slice to requested limit.
+
+If getHistory is the main entry, wire it like this:
+
+```typescript name=apps/server/src/history/service.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/history/service.ts
+import { rollupFrom1m } from "@server/chart/rollups";
+
+// ...
+export async function getHistory(query: {
+  symbol: string;
+  timeframe?: Timeframe;
+  limit?: number;
+  before?: number;
+  sinceSeq?: number;
+}) {
+  const { symbol, timeframe = "1m", limit = 1000, before, sinceSeq } = query;
+
+  // Fast path gap fill from ring if sinceSeq provided (unchanged)
+  if (sinceSeq !== undefined) {
+    const cached = ringBuffer.getSinceSeq(symbol, sinceSeq);
+    if (cached?.length) {
+      return cached.map((b) => ({
+        symbol,
+        timeframe,
+        seq: b.seq,
+        bar_start: b.bar_start,
+        bar_end: b.bar_end,
+        ohlcv: { o: b.open, h: b.high, l: b.low, c: b.close, v: b.volume ?? 0 },
+      }));
+    }
+  }
+
+  // Always source 1m from REST, then roll up if needed
+  const multiplier = timeframeToMultiplier(timeframe);
+  const neededMinutes = limit * multiplier;
+  const oneMinuteBars = await fetchPolygonHistory(symbol, "1m", neededMinutes, before);
+
+  if (timeframe === "1m") {
+    return oneMinuteBars.slice(-limit);
+  }
+
+  const rolled = rollupFrom1m(oneMinuteBars, timeframe);
+  return rolled.slice(-limit);
+}
+```
+
+Then verify quickly:
+- curl "http://localhost:5000/api/history?symbol=SPY&timeframe=5m&limit=20"
+- curl "http://localhost:5000/api/history?symbol=SPY&timeframe=15m&limit=20"
+
+3) Eliminate duplicate/stale sequences at SSE/client boundary
+Ensure:
+- Server writes id=seq in SSE (you already do via bpc.write with String(bar.seq))
+- On reconnect, server seeds only bars with seq > Last-Event-ID
+- Client ignores incoming bars with seq <= lastSeq
+
+Add a small helper and seed filter on the server:
+
+```typescript name=apps/server/src/stream/lastEventId.ts
+export function parseLastEventId(header?: string | null): number | undefined {
+  if (!header) return undefined;
+  const n = Number(header);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+```
+
+Patch SSE handler to honor Last-Event-ID when seeding:
+
+```typescript name=apps/server/src/stream/sse.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/stream/sse.ts
+// Inside stream handler before seeding
+import { parseLastEventId } from "./lastEventId";
+
+// ...
+const lastId = parseLastEventId(req.headers["last-event-id"] as string | undefined);
+
+if (seedOnConnect) {
+  await Promise.all(
+    symbols.map(async (symbol) => {
+      try {
+        const seed = await getHistory({ symbol, timeframe: timeframe as any });
+        for (const bar of seed) {
+          if (lastId !== undefined && bar.seq <= lastId) continue; // filter duplicates
+          bpc.write(
+            "bar",
+            {
+              symbol: bar.symbol,
+              timeframe: bar.timeframe,
+              seq: bar.seq,
+              bar_start: bar.bar_start,
+              bar_end: bar.bar_end,
+              ohlcv: bar.ohlcv,
+            },
+            String(bar.seq),
+          );
+        }
+      } catch (err) {
+        console.error(`Failed to fetch seed for ${symbol}:`, err);
+      }
+    }),
+  );
+}
+```
+
+Harden client dedupe (use your actual path: hooks/useMarketStream.ts or lib/marketStream.ts):
+
+```typescript name=apps/client/src/lib/marketStream.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/client/src/lib/marketStream.ts
+// Before delivering a bar, ignore stale/duplicate by seq
+if (b.seq <= lastSeq) {
+  // optionally log once per minute to avoid spam
+  return;
+}
+lastSeq = b.seq;
+listeners.bar.forEach((fn) => fn(b));
+```
+
+4) Voice auto-reconnect: ensure wrapper is actually used
+You already have a solid voiceWS.ts wrapper. Make sure your OpenAI Realtime voice client instantiates it and routes audio/control through it. The wrapper must be the single WebSocket transport for voice.
+
+- Where to check: the module that connects to the voice WS (OpenAI Realtime). Replace raw new WebSocket(...) with createVoiceWS(...).
+- Test: toggle network offline for 20s; expect reconnect without user action and resume of audio/control.
+
+5) Safari/iPad cookies and HMR churn
+Centralize cookie issuance with SameSite=None; Secure; 24h maxAge. Use HTTPS in prod/tunnel. In dev Safari, either disable HMR full reloads or persist auth across reloads.
+
+```typescript name=apps/server/src/auth/setAuthCookie.ts
+import { Response } from "express";
+
+export function setAuthCookie(res: Response, token: string) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const isProd = process.env.NODE_ENV === "production";
+  res.cookie("sid", token, {
+    httpOnly: true,
+    secure: isProd,   // must be true under HTTPS
+    sameSite: "none", // required for iOS Safari cross-site
+    maxAge: dayMs,
+    path: "/",
+  });
+}
+```
+
+- In your auth route(s), replace res.cookie(...) with setAuthCookie(res, token).
+- For HMR: consider server.hmr = false for iPad dev sessions, or persist auth store in localStorage and don’t clear it on HMR in dev.
+
+6) Metrics consolidation with labels
+Unify metrics under a module and add labels (userId, symbol, timeframe). Expose Prometheus /api/metrics for ops, and keep JSON summaries for the HUD.
+
+```typescript name=apps/server/src/routes/metricsProm.ts
+import { Router } from "express";
+import client from "prom-client";
+
+const router = Router();
+client.collectDefaultMetrics({ prefix: "spotlight_" });
+
+export const sseConnections = new client.Gauge({ name: "spotlight_sse_connections", help: "active SSE connections" });
+export const sseDropped = new client.Counter({
+  name: "spotlight_sse_dropped_total",
+  help: "SSE messages dropped due to backpressure",
+  labelNames: ["symbol", "timeframe"],
+});
+export const polygonEmpty = new client.Counter({
+  name: "spotlight_polygon_empty_total",
+  help: "Polygon empty results",
+  labelNames: ["symbol", "timeframe"],
+});
+export const ringSize = new client.Gauge({
+  name: "spotlight_ring_size",
+  help: "Ring buffer size",
+  labelNames: ["symbol"],
+});
+
+router.get("/metrics", async (_req, res) => {
+  try {
+    res.set("Content-Type", client.register.contentType);
+    res.end(await client.register.metrics());
+  } catch {
+    res.status(500).send("metrics error");
+  }
+});
+
+export default router;
+```
+
+Then:
+- Increment polygonEmpty.labels(symbol, timeframe).inc() where history returns empty.
+- Update sseConnections on connect/close.
+- Update ringSize per symbol when buffers change.
+
+7) Ring buffer bounds + metrics
+- Ensure capacity meets your largest rollup ask. If you need to render 1h with 100 bars, you need at least 6000 minutes (too big for pure memory). Keep ring ~5k and fetch older via REST when needed. Expose ringSize metric.
+- If you have a smaller per-symbol buffer elsewhere (300 bars), raise to at least 1500 for 15m rollups if you plan on reconstructing 100 bars locally without REST.
+
+8) Log noise reduction
+- Change chatty informational logs like “📊 Using 100 bars from ring buffer” to logger.debug and gate by env.LOG_LEVEL.
+- Keep warnings for real problems only (e.g., Polygon 400/429, resume failures, drift reconciliations).
+
+Quick verify sequence
+- Polygon 400: curl one 1m request with now±N mins and confirm status=200 and data.results>0.
+- Rollups: curl 5m/15m history endpoints and check clean boundaries (times align on ET bucket starts).
+- SSE duplicates: open chart, restart server, see Last-Event-ID resume; ensure no duplicate/stale warnings, and no infinite resync loop.
+- Voice: simulate network flap; verify auto-reconnect and continued audio/control.
+- Safari: run via HTTPS tunnel, confirm SameSite=None; Secure in devtools, persist across reloads.
+
+What I can do next
+- If you want, I can open a PR with:
+  - Polygon timestamp fix
+  - SSE Last-Event-ID seed filter
+  - Client dedupe guard
+  - Cookie helper
+  - MetricsProm route + simple wiring
+- Then a follow-up PR to verify rollups are called by history and to wire ring size metrics.
+
+Tell me if you want me to proceed with a branch like fix/polygon-time+dedupe, or prefer I extend to include metrics + cookie helper in the same branch.

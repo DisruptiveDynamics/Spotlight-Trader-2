@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
 import { useChartState } from "../../state/chartState";
 import type { Timeframe, Layout, ChartStyle } from "../../state/chartState";
 
@@ -33,6 +34,25 @@ export function Toolbar({ status = "live" }: ToolbarProps) {
   const [showSymbolDropdown, setShowSymbolDropdown] = useState(false);
   const [showStudies, setShowStudies] = useState(false);
   const [emaInput, setEmaInput] = useState("");
+  const [currentDate, setCurrentDate] = useState("");
+
+  // Update date/time every minute (Eastern Time)
+  useEffect(() => {
+    const updateDate = () => {
+      const now = new Date();
+      const etDate = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      }).format(now);
+      setCurrentDate(etDate);
+    };
+
+    updateDate();
+    const interval = setInterval(updateDate, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, []);
 
   // Popular symbols for quick access
   const popularSymbols = [
@@ -347,6 +367,13 @@ export function Toolbar({ status = "live" }: ToolbarProps) {
             </button>
           ))}
         </div>
+
+        {/* Date Display (Eastern Time) */}
+        {currentDate && (
+          <div className="px-2 py-1 text-xs font-mono text-gray-400 bg-gray-800 rounded border border-gray-700">
+            {currentDate} ET
+          </div>
+        )}
 
         {/* Status Pill */}
         <div className={`px-2 py-1 text-xs font-mono rounded border ${statusColors[status]}`}>

@@ -1,0 +1,220 @@
+````markdown
+name=SPOTLIGHT TRADER — REPLIT AGENT PROMPT (PHASED, SAFE, OPTIMIZED DELIVERY)
+You are a senior full‑stack engineer operating inside a pnpm monorepo (apps/server, apps/client, packages/shared). Your job: deliver rock‑solid market data correctness, smooth streaming, and actionable dashboard UX without breaking existing flows. Use small, typed commits, feature flags, and keep everything revert‑safe.
+
+Non‑negotiables
+- TypeScript strict, no implicit anys, pass lint/typecheck/build at every step.
+- Small, isolated commits per scope: server:market, server:history, server:voice, client:chart, client:ui, shared:types, infra:env.
+- Feature flags guard new behavior; defaults maintain current UX unless specified.
+- No noisy refactors. No dead code. No commented-out blocks.
+- Backwards-compatible APIs. Ask if something is ambiguous before changing a contract.
+
+Monorepo context
+- apps/server: Express, SSE for market, Polygon integration, tools/agent, triggers, rules, journal.
+- apps/client: React, lightweight-charts, Zustand, Tailwind.
+- packages/shared: flags, types, indicators.
+
+Top outcomes (in order)
+1) Data correctness: subscribe to T.* and AM.*; reconcile closed 1m with official AM minute; consistent session filtering (RTH vs RTH+EXT).
+2) Streaming smoothness: microbar updates for the forming minute over SSE; client applies updates via rAF—no stalls.
+3) Volume UX: bottom histogram + 20‑SMA overlay by default; keep raw volume as default; optional Relative Volume behind a flag.
+4) Voice “super monitor”: watchlist tools to watch/unwatch symbols and stream callouts from triggers.
+5) Dashboard cards usable: Coach, Rules, Journal cards open actionable panels (MVP).
+6) Mobile pass: toolbar collapse into drawers on small screens; 1x1 layout default; touch targets.
+
+Environment and flags
+- Add or confirm:
+  - apps/server/.env
+    - POLYGON_API_KEY=...
+    - POLYGON_WS_URL=wss://socket.polygon.io
+    - POLYGON_REST_BASE=https://api.polygon.io
+    - MARKET_STREAM_PROVIDER=polygon
+    - SESSION=RTH            # or RTH_EXT
+    - TOOL_TIMEOUT_MS=1500
+    - HISTORY_INIT_LIMIT=500
+  - packages/shared/src/flags.ts (ensure export const flags = { ... }):
+    - voiceViaProxy: true
+    - timeframeServerSource: true
+    - timeframeRollups: true
+    - marketAudit: false
+    - relVolume: false                # new optional toggle for relative volume
+    - enableCoachPanels: true         # controls right-rail cards becoming interactive
+- Never hardcode API keys; use validateEnv.
+
+PHASE 0 — Baseline sanity (no behavior change)
+- Print on server start: port, market source, SESSION, WS URL, REST base.
+- Add /health and /ready if missing.
+- Confirm CSP/connect-src allows /api, /stream, /ws endpoints.
+
+Acceptance:
+- Server boots. Logs show env summary. /ready returns JSON.
+
+PHASE 1 — Polygon AM subscription + reconciliation (CRITICAL)
+Goal: authoritative minute accuracy to eliminate volume/close drift.
+
+Edits:
+- apps/server/src/market/polygonWs.ts
+  - Subscribe to T.SYMBOL and AM.SYMBOL on subscribe/resubscribe; unsubscribe both.
+  - handleMessage: parse msg.ev === "AM" and emit eventBus.emit(`am:${sym}`, amBar) where amBar = { symbol, timeframe:"1m", seq, bar_start: msg.s, bar_end: msg.e, ohlcv:{o,h,l,c,v} }.
+  - Do NOT enable mock ticks in production outside hours; prefer “cold” mode (history + static) when WS is unavailable.
+- apps/server/src/market/barBuilder.ts (or equivalent aggregator)
+  - Listen for `am:${symbol}`; when AM for a just-closed minute arrives, overwrite/confirm the latest closed 1m bar in the authoritative path. Ensure monotonic seq and idempotent dedupe by bar_end.
+  - Use exchange timestamps for bucketing.
+
+Acceptance:
+- Subscribed symbols receive T and AM.
+- When AM arrives, the stored closed minute matches Polygon official OHLCV/volume.
+- Log once per minute on reconcile (debug level).
+
+PHASE 2 — Session policy (RTH vs RTH+EXT) applied consistently
+Goal: prevent session mixing to reduce perceived volume spikes.
+
+Edits:
+- apps/server/src/history/service.ts
+  - After fetching REST, filter bars by SESSION (America/New_York) with RTH 09:30–16:00 if SESSION=RTH; pass‑through if RTH_EXT.
+  - Always request adjusted=true; follow next_url until requested limit/timeframe is satisfied (respect rate limits).
+- Live aggregation:
+  - Ensure barBuilder ignores/filters minutes outside the permitted session if SESSION=RTH.
+- apps/client/src/lib/history.ts
+  - No change to API shape; maintain mapping to lightweight-charts candles.
+
+Acceptance:
+- /api/history returns bars filtered per SESSION.
+- Live stream respects SESSION as well.
+
+PHASE 3 — Microbar streaming + client rAF smoothing
+Goal: no stalls; smooth wick/close animation during the open minute.
+
+Edits:
+- SSE bridge (apps/server, likely sseMarketStream)
+  - Forward event: "microbar" 2–3x/sec for the in-progress minute per symbol.
+  - event: "bar" remains for closed minutes.
+- apps/client/src/features/chart/ChartView.tsx and/or Pane.tsx
+  - Maintain queues for “bar” and “microbar”.
+  - Apply “bar” updates immediately; apply “microbar” in requestAnimationFrame loop to update last candle’s high/low/close (without closing it).
+  - Clean unmount (cancel rAF, close SSE).
+
+Acceptance:
+- Visible smooth updates during minute formation.
+- No double-finalization of candles.
+- No leaks on navigation.
+
+PHASE 4 — Volume UX: histogram + 20‑SMA overlay (default)
+Goal: TOS‑style volume clarity.
+
+Edits:
+- apps/client/src/features/chart/Pane.tsx
+  - Add Histogram series at bottom (scaleMargins {top:0.8, bottom:0}); color per candle direction.
+  - Add volume SMA(20) as a line overlay on the same scale.
+  - Feature flag for Relative Volume view (flags.relVolume). Keep OFF by default.
+
+Acceptance:
+- Volume rendered at bottom with SMA line.
+- Looks correct across TFs. Toggle for relVolume guarded by flag.
+
+PHASE 5 — Voice “super monitor” tools (watch symbols, proactive)
+Goal: Nexa can watch symbols and produce callouts even if not the active pane.
+
+Edits:
+- apps/server/src/copilot/tools/watchlist.ts (new)
+  - watch_symbol(symbol): backfill 1m (500 bars) via getHistory; emit to eventBus so bars1m/ring receive; subscribe WS (T+AM); attach triggers if required; return { ok, symbol }.
+  - unwatch_symbol(symbol): unsubscribe; detach triggers; return { ok }.
+  - list_watched(): { symbols: string[] }.
+- Register tools with voice/copilot tools registry; update prompt to encourage “Watch NVDA, AAPL” flows.
+- Ensure getChartSnapshot tools already source from bars1m/rollups (they do).
+
+Acceptance:
+- Tool calls succeed and update server state.
+- Triggers fire callouts for watched symbols.
+
+PHASE 6 — Make dashboard cards actionable (Coach, Rules, Journal)
+Goal: minimal but functional panels; don’t overbuild.
+
+Edits:
+- apps/client (new right-rail panels or drawers)
+  - Coach card:
+    - Opens panel with: mic toggle (proxy to OpenAI Realtime), recent tool outputs, watched symbols list, “+ Watch current symbol”, file/URL upload inputs (see below).
+  - Rules card:
+    - Lists rules from GET /rules; enable/disable; basic search filter; “Create from template” (VWAP reclaim, ORB, EMA pullback) via POST /rules.
+  - Journal card:
+    - Quick entry (symbol, side, size, reason); list with filter; voice “quick log” button.
+- Backend routes (if not present):
+  - Knowledge upload (MVP): POST /api/coach/knowledge/upload (multipart for PDF/text), POST /api/coach/knowledge/youtube ({ url }) → store embeddings; list via GET /api/coach/knowledge.
+  - Reuse existing memory stack referenced in repo (pdf-parse, youtube-transcript, embeddings). Keep minimal and flag‑guarded.
+- Feature flag enableCoachPanels controls visibility.
+
+Acceptance:
+- Clicking cards opens panels and actions work end‑to‑end with graceful errors.
+- Uploads visible in a simple list (title, type, date).
+
+PHASE 7 — Mobile pass (quick ergonomics)
+Goal: usable on phone without friction.
+
+Edits:
+- apps/client
+  - 1x1 layout on small screens by default.
+  - Toolbar collapses: symbol input + timeframe buttons remain; “Studies” and advanced actions move into a drawer.
+  - Larger touch targets (>=44px); sticky mic button in Coach panel.
+
+Acceptance:
+- No horizontal scroll; interactive controls accessible; charts fit; panels are drawers.
+
+PHASE 8 — Tests, diagnostics, docs
+- Smoke tests:
+  - History fetch (RTH vs RTH_EXT) returns consistent counts; adjusted=true verified in logs.
+  - WS connects; AM events received; reconciliation replaces closed minute values.
+  - SSE emits microbar + bar; client updates smoothly.
+  - Tools: watch_symbol adds symbol; triggers produce callout; unwatch works.
+- Logging:
+  - One‑line reconciliation log per minute (debug).
+  - Market source/SESSION headers on /api/market/status (already present; update if needed).
+- Docs:
+  - Update README or docs/ with SESSION policy, AM reconciliation, microbar behavior, and Coach/Rules/Journal panels.
+
+Acceptance criteria (must all pass)
+- Bars’ OHLCV match Polygon AM official data for closed minutes (spot‑check on active symbols).
+- Volume spikes are reasonable (no drift artifacts); pre/post mixing only when SESSION=RTH_EXT.
+- No simulated ticks in production off-hours; charts static but accurate; REST backfill works.
+- Smooth minute formation with microbars; no stalls or flicker; no memory leaks on nav.
+- Coach panel can watch/unwatch and shows current watched symbols; triggers emit at least one callout on test sequences.
+- Rules panel can list/enable/disable rules.
+- Journal panel logs and lists entries.
+- Client and server pass typecheck and lint; build succeeds.
+
+Guardrails and style
+- Never block on history in SSE connect handler; send bootstrap/seed events asynchronously.
+- Use America/New_York for session logic; floor minutes deterministically.
+- When merging REST + ring buffer data, dedupe by bar_end and prefer official AM bars over tick‑rolled.
+- Keep buffers capped (5k) and prune FIFO.
+- Rate-limit REST paging; log backoffs on WS reconnect.
+
+If anything is ambiguous, ask before changing public contracts.
+
+CHECKLIST (tick each commit)
+- [ ] Server boots with env log; /ready ok.
+- [ ] T+AM subscribe/unsubscribe/resubscribe; AM emitted and reconciled.
+- [ ] SESSION filter applied REST + WS; tests for RTH and RTH_EXT.
+- [ ] SSE emits microbars; client rAF updates last candle smoothly.
+- [ ] Volume histogram + 20‑SMA overlay; default on; relVolume flag off.
+- [ ] watch_symbol/unwatch/list_watched tools added and registered.
+- [ ] Coach/Rules/Journal panels open and perform MVP actions.
+- [ ] Mobile layout sane; toolbar collapses.
+- [ ] Lint/typecheck/build green; minimal logs; docs updated.
+
+File map (for your reference; implement where these live)
+- apps/server/src/market/polygonWs.ts — T+AM subscribe/handle; no mock in prod off‑hours.
+- apps/server/src/market/barBuilder.ts — AM reconciliation + microbar emit cadence.
+- apps/server/src/history/service.ts — adjusted=true; session filter; next_url paging.
+- apps/server/src/realtime/sse.ts (or wiring) — forward microbar + bar events.
+- apps/server/src/copilot/tools/watchlist.ts — new watch/unwatch/list tools.
+- apps/server/src/routes/knowledge.ts — minimal upload endpoints (flag‑guarded).
+- apps/client/src/features/chart/Pane.tsx — volume histogram + SMA; microbar updates (if Pane owns chart), responsive tweaks.
+- apps/client/src/features/cards/{Coach,Rules,Journal}.tsx — panels/drawers with MVP actions.
+- packages/shared/src/flags.ts — add relVolume, enableCoachPanels.
+- README.md / docs — document changes.
+
+Deliverables
+- Series of small commits with clear scopes.
+- Short summary in each commit describing user-visible change and risk.
+- Final validation notes: brief list confirming each Acceptance item passed with screenshots or logs where applicable.
+````

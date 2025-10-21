@@ -20,7 +20,7 @@ export interface Microbar {
 
 export type Timeframe = "1m" | "2m" | "5m" | "10m" | "15m" | "30m" | "1h";
 
-export interface Bar {
+export interface MarketBarEvent {
   symbol: string;
   timeframe: Timeframe;
   seq: number;
@@ -35,12 +35,30 @@ export interface Bar {
   };
 }
 
+// Adapter: Convert nested MarketBarEvent to flat shared Bar
+export function toSharedBar(event: MarketBarEvent): import("@shared/types").Bar {
+  return {
+    symbol: event.symbol,
+    timestamp: event.bar_start,
+    open: event.ohlcv.o,
+    high: event.ohlcv.h,
+    low: event.ohlcv.l,
+    close: event.ohlcv.c,
+    volume: event.ohlcv.v,
+    seq: event.seq,
+    bar_start: event.bar_start,
+    bar_end: event.bar_end,
+  };
+}
+
 import type { EvaluatedRule, Signal } from "@shared/types/rules";
 
 type EventMap = {
   [key: `tick:${string}`]: Tick;
   [key: `microbar:${string}`]: Microbar;
-  [key: `bar:new:${string}:${Timeframe}`]: Bar;
+  [key: `am:${string}`]: MarketBarEvent;
+  [key: `bar:new:${string}:${Timeframe}`]: MarketBarEvent;
+  "bar:reset": { symbol: string; timeframe: Timeframe; bars: import("@shared/types").Bar[] };
   "rule:evaluated": EvaluatedRule;
   "signal:new": Signal;
   "signal:approved": Signal;

@@ -3,8 +3,8 @@
  * Protects admin-only routes
  */
 
-import { Request, Response, NextFunction } from "express";
 import { validateEnv } from "@shared/env";
+import { Request, Response, NextFunction } from "express";
 
 const env = validateEnv(process.env);
 

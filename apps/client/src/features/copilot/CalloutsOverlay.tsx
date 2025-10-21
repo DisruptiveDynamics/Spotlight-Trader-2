@@ -28,7 +28,7 @@ export function CalloutsOverlay() {
         eventSourceRef.current.close();
       }
 
-      const eventSource = new EventSource("/api/copilot/callouts/stream");
+      const eventSource = new EventSource("/api/copilot/callouts/stream", { withCredentials: true });
       eventSourceRef.current = eventSource;
 
       eventSource.onopen = () => {

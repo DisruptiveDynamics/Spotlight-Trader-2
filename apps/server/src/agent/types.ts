@@ -1,5 +1,3 @@
-import type { Request, Response } from "express";
-
 export type ChartPoint = { t: number; o: number; h: number; l: number; c: number; v?: number };
 export type ChartSnapshot = {
   symbol: string;

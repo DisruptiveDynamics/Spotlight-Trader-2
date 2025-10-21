@@ -1,0 +1,205 @@
+Unused files (43)
+apps/client/public/worklets/micProcessor.js              
+apps/client/scripts/generate-icons.ts                    
+apps/client/src/agent/coachClient.ts                     
+apps/client/src/components/BacktestPanel.tsx             
+apps/client/src/components/SignalFeedback.tsx            
+apps/client/src/components/VWAPControls.tsx              
+apps/client/src/features/alerts/AlertsPanel.tsx          
+apps/client/src/features/auth/AuthGate.tsx               
+apps/client/src/features/chart/ChartView.tsx             
+apps/client/src/features/chart/useLastSeq.ts             
+apps/client/src/features/coach/KnowledgeUploadModal.tsx  
+apps/client/src/features/coach/MemoryViewer.tsx          
+apps/client/src/features/coach/NexaMenu.tsx              
+apps/client/src/features/coach/VoiceSelector.tsx         
+apps/client/src/features/journal/JournalView.tsx         
+apps/client/src/features/memory/MemoryPanel.tsx          
+apps/client/src/features/rules/RulesBrowser.tsx          
+apps/client/src/lib/sseBatch.ts                          
+apps/client/src/perf/fps.ts                              
+apps/client/src/perf/scheduler.ts                        
+apps/client/src/perf/vitals.ts                           
+apps/client/src/services/AudioCapture.ts                 
+apps/client/src/services/AudioManager.ts                 
+apps/client/src/services/IdleDetector.ts                 
+apps/client/src/services/VoiceCoach.ts                   
+apps/client/src/voice/VAD.ts                             
+apps/client/vitest.setup.ts                              
+apps/server/src/agent/context.ts                         
+apps/server/src/agent/index.ts                           
+apps/server/src/agent/proactive.ts                       
+apps/server/src/agent/router.ts                          
+apps/server/src/agent/state.ts                           
+apps/server/src/agent/tools.ts                           
+apps/server/src/agent/types.ts                           
+apps/server/src/coach/composeAdvice.ts                   
+apps/server/src/coach/guards/index.ts                    
+apps/server/src/coach/pipeline.ts                        
+apps/server/src/copilot/contracts.ts                     
+apps/server/src/copilot/triggers/config.ts               
+apps/server/src/market/buffer.ts                         
+packages/config/theme.ts                                 
+packages/shared/src/flags.ts                             
+test/setup.client.ts                                     
+Unused dependencies (18)
+@tanstack/react-query             apps/client/package.json:20:6    
+@testing-library/jest-dom         apps/client/package.json:21:6    
+classnames                        apps/client/package.json:23:6    
+framer-motion                     apps/client/package.json:24:6    
+mathjs                            apps/client/package.json:26:6    
+react-markdown                    apps/client/package.json:29:6    
+web-vitals                        apps/client/package.json:30:6    
+@types/pdf-parse                  apps/server/package.json:25:6    
+pino                              apps/server/package.json:40:6    
+pino-pretty                       apps/server/package.json:41:6    
+resend                            apps/server/package.json:42:6    
+@openai/agents                    package.json:56:6                
+get-tsconfig                      package.json:61:6                
+jsonwebtoken                      package.json:62:6                
+pdf-parse                         package.json:63:6                
+@typescript-eslint/eslint-plugin  packages/config/package.json:19:6
+@typescript-eslint/parser         packages/config/package.json:20:6
+prettier                          packages/config/package.json:23:6
+Unused devDependencies (9)
+@testing-library/dom         package.json:30:6                
+@testing-library/react       package.json:31:6                
+@testing-library/user-event  package.json:32:6                
+@types/jsonwebtoken          package.json:33:6                
+@vitest/coverage-v8          package.json:37:6                
+esbuild                      package.json:39:6                
+husky                        package.json:45:6                
+ws                           package.json:53:6                
+@spotlight/config            packages/shared/package.json:28:6
+Unlisted binaries (1)
+vite  package.json
+Unresolved imports (2)
+eslint-import-resolver-typescript  .eslintrc.cjs
+eslint-jsonc                       .eslintrc.cjs
+Unused exports (50)
+API_BASE                              apps/client/src/config.ts:2:14                      
+isMarketHours               function  apps/client/src/lib/history.ts:87:17                
+isPremarket                 function  apps/client/src/lib/history.ts:108:17               
+isAfterHours                function  apps/client/src/lib/history.ts:119:17               
+TF_PRESETS                            apps/client/src/lib/marketStream.ts:403:14          
+loadHistoryPreset           function  apps/client/src/lib/marketStream.ts:413:23          
+fetchHistory                          apps/client/src/lib/marketStream.ts:430:9           
+retry                       function  apps/client/src/lib/retry.ts:8:23                   
+hotkeyManager                         apps/client/src/services/HotkeyManager.ts:230:14    
+useFlagsStore                         apps/client/src/state/flags.ts:39:14                
+useFlag                     function  apps/client/src/state/flags.ts:103:17               
+getOrCreateAudioContext     function  apps/client/src/voice/ios.ts:36:17                  
+isIOSUnlocked               function  apps/client/src/voice/ios.ts:43:17                  
+getTimeframeState           function  apps/server/src/chart/switchTimeframe.ts:163:17     
+CoachAdvisor                class     apps/server/src/coach/advisor.ts:8:14               
+appearsToClaimMarketNumber  function  apps/server/src/coach/responseGuard.ts:5:17         
+buildSessionContext         function  apps/server/src/coach/sessionContext.ts:19:23       
+TraderPatternDetector       class     apps/server/src/coach/traderPatternDetector.ts:15:14
+RulesSentinel               class     apps/server/src/copilot/sentinel/index.ts:28:14     
+subscribeMarketStream       function  apps/server/src/copilot/tools/handlers.ts:184:23    
+proposeEntryExit            function  apps/server/src/copilot/tools/handlers.ts:232:23    
+evaluateRules               function  apps/server/src/copilot/tools/handlers.ts:263:23    
+logJournalEvent             function  apps/server/src/copilot/tools/handlers.ts:270:23    
+summarizeSession            function  apps/server/src/copilot/tools/handlers.ts:304:23    
+getPatternSummary           function  apps/server/src/copilot/tools/handlers.ts:316:23    
+getRecommendedRiskBox       function  apps/server/src/copilot/tools/handlers.ts:337:23    
+generateTradePlan           function  apps/server/src/copilot/tools/handlers.ts:364:23    
+getFlags                              apps/server/src/flags.ts:8:9                        
+updateFlags                           apps/server/src/flags.ts:8:19                       
+loadFlags                             apps/server/src/flags.ts:8:32                       
+resetFlags                            apps/server/src/flags.ts:8:43                       
+ifFlag                      function  apps/server/src/flags.ts:17:17                      
+getAllFlags                 function  apps/server/src/flags.ts:28:17                      
+resetFlags                  function  apps/server/src/flags/store.ts:103:23               
+setServerReady              function  apps/server/src/health.ts:6:17                      
+runEodForUser               function  apps/server/src/journals/eod.ts:194:23              
+getJournalLinks             function  apps/server/src/journals/service.ts:121:23          
+estimateTokens              function  apps/server/src/knowledge/chunker.ts:95:17          
+generateEmbedding           function  apps/server/src/knowledge/embedder.ts:14:23         
+getMarketHours              function  apps/server/src/market/marketHours.ts:13:17         
+isMarketOpen                function  apps/server/src/market/marketHours.ts:53:17         
+MockTickGenerator           class     apps/server/src/market/mockTickGenerator.ts:16:14   
+PolygonWebSocket            class     apps/server/src/market/polygonWs.ts:9:14            
+retrieveKnowledge           function  apps/server/src/memory/knowledgeRetrieval.ts:18:23  
+RiskGovernor                class     apps/server/src/risk/governor.ts:17:14              
+RuleEvaluator               class     apps/server/src/rules/evaluator.ts:81:14            
+RuleRegistry                class     apps/server/src/rules/registry.ts:7:14              
+RulesEngineService          class     apps/server/src/rules/service.ts:6:14               
+SignalsService              class     apps/server/src/signals/service.ts:7:14             
+toolSchemas                           apps/server/src/voice/tools.ts:320:14               
+Unused exported types (74)
+AuthSnapshot             interface  apps/client/src/auth/authStorage.ts:3:18           
+HistoryCandle            interface  apps/client/src/lib/history.ts:6:18                
+Ohlcv                    type       apps/client/src/lib/marketStream.ts:3:13           
+SSEStatus                type       apps/client/src/lib/marketStream.ts:28:13          
+TimeframePreset          type       apps/client/src/lib/marketStream.ts:411:13         
+RetryOptions             interface  apps/client/src/lib/retry.ts:1:18                  
+VwapSettings             interface  apps/client/src/state/chartState.ts:8:18           
+BollingerSettings        interface  apps/client/src/state/chartState.ts:13:18          
+ChartOverlays            interface  apps/client/src/state/chartState.ts:18:18          
+ActiveChart              interface  apps/client/src/state/chartState.ts:26:18          
+ChartState               interface  apps/client/src/state/chartState.ts:31:18          
+CoachSettings            interface  apps/client/src/state/coachSettings.ts:4:18        
+Flags                    interface  apps/client/src/state/flags.ts:8:18                
+User                     interface  apps/server/src/auth/models.ts:11:18               
+Session                  interface  apps/server/src/auth/models.ts:17:18               
+MagicLink                interface  apps/server/src/auth/models.ts:24:18               
+BacktestInput            interface  apps/server/src/backtest/engine.ts:21:18           
+BacktestTrigger          interface  apps/server/src/backtest/engine.ts:29:18           
+BacktestResult           interface  apps/server/src/backtest/engine.ts:38:18           
+GoldenTestCase           interface  apps/server/src/backtest/fixtures.ts:137:18        
+SnapshotContext          interface  apps/server/src/coach/ensureMarketContext.ts:4:18  
+NowFn                    type       apps/server/src/coach/guards/freshnessGuard.ts:1:13
+ToolCaller               type       apps/server/src/coach/guards/freshnessGuard.ts:2:13
+ToolCaller               type       apps/server/src/coach/guards/noDataGuard.ts:4:13   
+Rule                     interface  apps/server/src/copilot/sentinel/index.ts:1:18     
+RuleContext              interface  apps/server/src/copilot/sentinel/index.ts:6:18     
+RuleResult               interface  apps/server/src/copilot/sentinel/index.ts:17:18    
+CircuitBreaker           interface  apps/server/src/copilot/sentinel/index.ts:22:18    
+SetVoiceParams           interface  apps/server/src/copilot/tools/types.ts:213:18      
+SpeakParams              interface  apps/server/src/copilot/tools/types.ts:217:18      
+VoiceControlResult       interface  apps/server/src/copilot/tools/types.ts:221:18      
+ToolHandler              type       apps/server/src/copilot/tools/types.ts:226:13      
+ToolRegistry             interface  apps/server/src/copilot/tools/types.ts:230:18      
+TriggerState             type       apps/server/src/copilot/triggers/base.ts:1:13      
+Flags                    type       apps/server/src/flags.ts:9:14                      
+FeatureFlag              type       apps/server/src/flags.ts:12:13                     
+Flags                    interface  apps/server/src/flags/store.ts:10:18               
+SignalSummary            interface  apps/server/src/journals/eod.ts:8:18               
+EodSummary               interface  apps/server/src/journals/eod.ts:18:18              
+TradeSide                type       apps/server/src/journals/model.ts:1:13             
+TradeScale               interface  apps/server/src/journals/model.ts:3:18             
+TradeTape                interface  apps/server/src/journals/model.ts:9:18             
+TradeRegime              type       apps/server/src/journals/model.ts:15:13            
+TextChunk                interface  apps/server/src/knowledge/chunker.ts:1:18          
+EmbeddingResult          interface  apps/server/src/knowledge/embedder.ts:5:18         
+PDFExtractionResult      interface  apps/server/src/knowledge/pdf.ts:5:18              
+UploadResult             interface  apps/server/src/knowledge/uploader.ts:10:18        
+YouTubeTranscriptResult  interface  apps/server/src/knowledge/youtube.ts:3:18          
+FeedbackInput            interface  apps/server/src/learning/loop.ts:40:18             
+PolygonHealthResult      interface  apps/server/src/market/polygon/health.ts:3:18      
+SessionType              type       apps/server/src/market/session.ts:1:13             
+SessionStatus            interface  apps/server/src/market/session.ts:3:18             
+KnowledgeChunk           interface  apps/server/src/memory/knowledgeRetrieval.ts:5:18  
+Memory                   interface  apps/server/src/memory/store.ts:9:18               
+MemoryWithScore          interface  apps/server/src/memory/store.ts:18:18              
+RateLimitOptions         interface  apps/server/src/middleware/rateLimit.ts:11:18      
+VoiceTokenPayload        interface  apps/server/src/realtime/auth.ts:6:18              
+VoiceTool                interface  apps/server/src/realtime/voiceTools.ts:3:18        
+VoiceToolHandlers        type       apps/server/src/realtime/voiceTools.ts:241:13      
+RiskGovernorConfig       interface  apps/server/src/risk/governor.ts:11:18             
+TelemetryEventType       type       apps/server/src/telemetry/types.ts:3:13            
+BarNewEvent              interface  apps/server/src/telemetry/types.ts:25:18           
+BarUpdateEvent           interface  apps/server/src/telemetry/types.ts:29:18           
+TickEvent                interface  apps/server/src/telemetry/types.ts:39:18           
+VwapIndicator            interface  apps/server/src/telemetry/types.ts:45:18           
+EmaIndicator             interface  apps/server/src/telemetry/types.ts:51:18           
+RsiIndicator             interface  apps/server/src/telemetry/types.ts:56:18           
+AtrIndicator             interface  apps/server/src/telemetry/types.ts:61:18           
+SessionLevels            interface  apps/server/src/telemetry/types.ts:66:18           
+VolatilityBucket         type       apps/server/src/telemetry/types.ts:72:13           
+VolatilityEvent          interface  apps/server/src/telemetry/types.ts:74:18           
+BreadthEvent             interface  apps/server/src/telemetry/types.ts:80:18           
+TimeframeChangedEvent    interface  apps/server/src/telemetry/types.ts:88:18           
+SymbolChangedEvent       interface  apps/server/src/telemetry/types.ts:93:18           
+Configuration hints (2)

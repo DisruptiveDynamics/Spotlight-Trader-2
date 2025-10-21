@@ -14,6 +14,56 @@ export interface VoiceTool {
 export const VOICE_COPILOT_TOOLS: VoiceTool[] = [
   {
     type: "function",
+    name: "get_last_price",
+    description: "Get the latest price for a symbol from the market cache or provider",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: {
+          type: "string",
+          description: "The trading symbol (e.g., SPY, QQQ, NVDA)",
+        },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
+    type: "function",
+    name: "get_last_vwap",
+    description: "Get the current session VWAP for a symbol (ultra-low latency)",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: {
+          type: "string",
+          description: "The trading symbol (e.g., SPY, QQQ, NVDA)",
+        },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
+    type: "function",
+    name: "get_last_ema",
+    description: "Get the latest EMA value for a symbol at a specific period (ultra-low latency)",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: {
+          type: "string",
+          description: "The trading symbol (e.g., SPY, QQQ, NVDA)",
+        },
+        period: {
+          type: "number",
+          description: "EMA period (e.g., 9, 21, 50, 200)",
+          enum: [9, 21, 50, 200],
+        },
+      },
+      required: ["symbol", "period"],
+    },
+  },
+  {
+    type: "function",
     name: "get_chart_snapshot",
     description:
       "Get current chart data including OHLCV bars, indicators, session stats, volatility, and market regime for analysis",
@@ -29,8 +79,10 @@ export const VOICE_COPILOT_TOOLS: VoiceTool[] = [
           description: "The chart timeframe (e.g., 1m, 5m, 15m, 1h, 1d)",
         },
         barCount: {
-          type: "number",
+          type: ["number", "null"],
           description: "Number of bars to return (default 50, max 200)",
+          minimum: 1,
+          maximum: 200,
         },
       },
       required: ["symbol", "timeframe"],

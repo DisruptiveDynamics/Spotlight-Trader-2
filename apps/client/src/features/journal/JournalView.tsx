@@ -1,354 +1,181 @@
 import { useState, useEffect } from "react";
 
-interface Journal {
+interface JournalEntry {
   id: string;
-  userId: string;
   date: string;
-  markdown: string;
+  content: string | Record<string, unknown>;
+  created_at: string;
 }
 
-interface Trade {
-  id: string;
-  symbol: string;
-  side: "long" | "short";
-  entryPrice?: number;
-  exitPrice?: number;
-  outcomePnl?: number;
-  regime?: "trend" | "range" | "news" | "illiquid";
-  tape?: {
-    volumeZ?: number;
-    spreadBp?: number;
-    uptickDelta?: number;
-  };
-  notes?: string;
+interface JournalViewProps {
+  isOpen: boolean;
+  onClose: () => void;
 }
 
-export function JournalView() {
-  const [journals, setJournals] = useState<Journal[]>([]);
-  const [selectedJournal, setSelectedJournal] = useState<Journal | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [noteText, setNoteText] = useState("");
-  const [tradeData, setTradeData] = useState<Partial<Trade>>({
-    symbol: "SPY",
-    side: "long",
-  });
-  const [isTradeMode, setIsTradeMode] = useState(false);
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [eodPreview, setEodPreview] = useState<{ summary: any; markdown: string } | null>(null);
+export function JournalView({ isOpen, onClose }: JournalViewProps) {
+  const [journals, setJournals] = useState<JournalEntry[]>([]);
+  const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
+  const [filterDate, setFilterDate] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchJournals();
-  }, []);
+    if (isOpen) {
+      fetchJournals();
+    }
+  }, [isOpen, filterDate]);
 
   const fetchJournals = async () => {
+    setIsLoading(true);
+    setError(null);
     try {
-      const response = await fetch("/api/journals");
+      const queryParams = filterDate ? `?date=${filterDate}` : "";
+      const response = await fetch(`/api/journals${queryParams}`);
+      
+      if (!response.ok) {
+        throw new Error("Failed to fetch journals");
+      }
+      
       const data = await response.json();
       setJournals(data.journals || []);
-    } catch (error) {
-      console.error("Failed to fetch journals:", error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load journals");
+      console.error("Journal fetch error:", err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleSaveNote = async () => {
+  const formatContent = (content: string | Record<string, unknown>): string => {
+    if (typeof content === "string") {
+      return content;
+    }
+    return JSON.stringify(content, null, 2);
+  };
+
+  const formatDate = (dateStr: string): string => {
     try {
-      const content = isTradeMode ? tradeData : noteText;
-
-      await fetch("/api/journals", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          [isTradeMode ? "tradeJson" : "text"]: content,
-        }),
+      const date = new Date(dateStr);
+      return date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
       });
-
-      setIsModalOpen(false);
-      setNoteText("");
-      setTradeData({ symbol: "SPY", side: "long" });
-      fetchJournals();
-    } catch (error) {
-      console.error("Failed to save journal:", error);
+    } catch {
+      return dateStr;
     }
   };
 
-  const handlePreviewEod = async () => {
-    try {
-      const response = await fetch("/api/journals/eod/preview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      const data = await response.json();
-      setEodPreview(data);
-      setIsPreviewOpen(true);
-    } catch (error) {
-      console.error("Failed to preview EOD:", error);
-    }
-  };
-
-  const groupByDate = (journals: Journal[]) => {
-    const grouped: Record<string, Journal[]> = {};
-    journals.forEach((journal) => {
-      if (!grouped[journal.date]) {
-        grouped[journal.date] = [];
-      }
-      grouped[journal.date]!.push(journal);
-    });
-    return grouped;
-  };
-
-  const groupedJournals = groupByDate(journals);
-  const sortedDates = Object.keys(groupedJournals).sort((a, b) => b.localeCompare(a));
+  if (!isOpen) return null;
 
   return (
-    <div className="flex h-full gap-4">
-      <div className="w-1/3 border-r border-gray-700 pr-4">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Journal Entries</h2>
-          <div className="flex gap-2">
-            <button
-              onClick={() => {
-                setIsModalOpen(true);
-                setIsTradeMode(false);
-              }}
-              className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              + Note
-            </button>
-            <button
-              onClick={handlePreviewEod}
-              className="px-3 py-1 text-sm bg-purple-500 text-white rounded hover:bg-purple-600"
-            >
-              Preview EOD
-            </button>
-          </div>
+    <div className="fixed inset-y-0 right-0 w-2/3 max-w-4xl bg-gray-900 border-l border-gray-700 shadow-2xl z-50 flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 border-b border-gray-700 bg-gray-800">
+        <div className="flex items-center gap-3">
+          <div className="w-2 h-2 bg-green-500 rounded-full" />
+          <h2 className="text-lg font-semibold text-white">Trading Journal</h2>
         </div>
-
-        {sortedDates.length === 0 ? (
-          <p className="text-gray-400 text-sm">No journal entries</p>
-        ) : (
-          <div className="space-y-4">
-            {sortedDates.map((date) => (
-              <div key={date}>
-                <h3 className="text-sm font-medium text-gray-300 mb-2">{date}</h3>
-                <div className="space-y-2">
-                  {(groupedJournals[date] || []).map((journal) => (
-                    <div
-                      key={journal.id}
-                      className={`p-3 border rounded cursor-pointer transition-colors ${
-                        selectedJournal?.id === journal.id
-                          ? "border-blue-500 bg-blue-900/20"
-                          : "border-gray-600 hover:border-gray-500"
-                      }`}
-                      onClick={() => setSelectedJournal(journal)}
-                    >
-                      <div className="text-sm text-gray-300 line-clamp-2">
-                        {journal.markdown.slice(0, 100)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          <input
+            type="date"
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-white focus:outline-none focus:border-blue-500"
+            placeholder="Filter by date"
+          />
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white transition-colors px-2"
+            aria-label="Close journal"
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
-      <div className="flex-1">
-        {selectedJournal ? (
-          <div className="bg-gray-800 p-6 rounded-lg">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">{selectedJournal.date}</h3>
-              <div className="flex gap-2">
+      {/* Content */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Entries List */}
+        <div className="w-1/3 border-r border-gray-700 overflow-y-auto">
+          {isLoading ? (
+            <div className="p-4 text-center text-gray-400">
+              <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mx-auto" />
+              <p className="mt-2 text-sm">Loading journals...</p>
+            </div>
+          ) : error ? (
+            <div className="p-4 text-center">
+              <p className="text-red-400 text-sm">{error}</p>
+              <button
+                onClick={fetchJournals}
+                className="mt-2 px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+              >
+                Retry
+              </button>
+            </div>
+          ) : journals.length === 0 ? (
+            <div className="p-4 text-center text-gray-400 text-sm">
+              <p>No journal entries found</p>
+              {filterDate && (
                 <button
-                  onClick={async () => {
-                    if (confirm("Delete this journal entry?")) {
-                      await fetch(`/api/journals/${selectedJournal.id}`, { method: "DELETE" });
-                      setSelectedJournal(null);
-                      fetchJournals();
-                    }
-                  }}
-                  className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600"
+                  onClick={() => setFilterDate("")}
+                  className="mt-2 text-blue-400 hover:text-blue-300 underline"
                 >
-                  Delete
+                  Clear filter
                 </button>
+              )}
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-700">
+              {journals.map((entry) => (
                 <button
-                  onClick={() => setSelectedJournal(null)}
-                  className="text-gray-400 hover:text-white"
+                  key={entry.id}
+                  onClick={() => setSelectedEntry(entry)}
+                  className={`w-full text-left p-4 transition-colors hover:bg-gray-800 ${
+                    selectedEntry?.id === entry.id ? "bg-gray-800 border-l-4 border-blue-500" : ""
+                  }`}
                 >
-                  ✕
+                  <div className="text-xs text-gray-400 mb-1">{formatDate(entry.created_at)}</div>
+                  <div className="text-sm text-white font-medium mb-1">
+                    {entry.date}
+                  </div>
+                  <div className="text-xs text-gray-300 line-clamp-2">
+                    {formatContent(entry.content).substring(0, 100)}...
+                  </div>
                 </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Entry Detail */}
+        <div className="flex-1 overflow-y-auto">
+          {selectedEntry ? (
+            <div className="p-6">
+              <div className="mb-4 pb-4 border-b border-gray-700">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-lg font-semibold text-white">{selectedEntry.date}</h3>
+                  <span className="text-xs text-gray-400">{formatDate(selectedEntry.created_at)}</span>
+                </div>
+              </div>
+
+              <div className="prose prose-invert max-w-none">
+                <pre className="bg-gray-800 p-4 rounded text-sm text-gray-200 whitespace-pre-wrap font-mono overflow-x-auto">
+                  {formatContent(selectedEntry.content)}
+                </pre>
               </div>
             </div>
-            <div className="prose prose-invert max-w-none">
-              <pre className="whitespace-pre-wrap text-gray-300">{selectedJournal.markdown}</pre>
+          ) : (
+            <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+              <div className="text-center">
+                <p>Select an entry to view details</p>
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-gray-500">Select a journal entry to view details</p>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 p-6 rounded-lg w-full max-w-2xl">
-            <h3 className="text-lg font-semibold mb-4 text-white">
-              {isTradeMode ? "Add Trade" : "Add Note"}
-            </h3>
-
-            <div className="mb-4">
-              <button
-                onClick={() => setIsTradeMode(!isTradeMode)}
-                className="text-sm text-blue-400 hover:text-blue-300"
-              >
-                Switch to {isTradeMode ? "Note" : "Trade"} Mode
-              </button>
-            </div>
-
-            {isTradeMode ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">Symbol</label>
-                    <input
-                      type="text"
-                      value={tradeData.symbol || ""}
-                      onChange={(e) => setTradeData({ ...tradeData, symbol: e.target.value })}
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">Side</label>
-                    <select
-                      value={tradeData.side}
-                      onChange={(e) =>
-                        setTradeData({ ...tradeData, side: e.target.value as "long" | "short" })
-                      }
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-                    >
-                      <option value="long">Long</option>
-                      <option value="short">Short</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">
-                      Entry Price
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={tradeData.entryPrice || ""}
-                      onChange={(e) =>
-                        setTradeData({ ...tradeData, entryPrice: parseFloat(e.target.value) })
-                      }
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">
-                      Exit Price
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={tradeData.exitPrice || ""}
-                      onChange={(e) =>
-                        setTradeData({ ...tradeData, exitPrice: parseFloat(e.target.value) })
-                      }
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">P&L</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={tradeData.outcomePnl || ""}
-                      onChange={(e) =>
-                        setTradeData({ ...tradeData, outcomePnl: parseFloat(e.target.value) })
-                      }
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">Regime</label>
-                    <select
-                      value={tradeData.regime || ""}
-                      onChange={(e) =>
-                        setTradeData({
-                          ...tradeData,
-                          regime: e.target.value as "trend" | "range" | "news" | "illiquid",
-                        })
-                      }
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-                    >
-                      <option value="">Select regime</option>
-                      <option value="trend">Trend</option>
-                      <option value="range">Range</option>
-                      <option value="news">News</option>
-                      <option value="illiquid">Illiquid</option>
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">Notes</label>
-                  <textarea
-                    value={tradeData.notes || ""}
-                    onChange={(e) => setTradeData({ ...tradeData, notes: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white h-32"
-                  />
-                </div>
-              </div>
-            ) : (
-              <textarea
-                value={noteText}
-                onChange={(e) => setNoteText(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white h-64"
-                placeholder="Write your journal entry..."
-              />
-            )}
-
-            <div className="flex justify-end gap-2 mt-4">
-              <button
-                onClick={() => {
-                  setIsModalOpen(false);
-                  setNoteText("");
-                  setTradeData({ symbol: "SPY", side: "long" });
-                }}
-                className="px-4 py-2 text-gray-300 hover:text-white"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveNote}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isPreviewOpen && eodPreview && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 p-6 rounded-lg w-full max-w-4xl max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">End of Day Summary Preview</h3>
-              <button
-                onClick={() => setIsPreviewOpen(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="prose prose-invert max-w-none">
-              <pre className="whitespace-pre-wrap text-gray-300">{eodPreview.markdown}</pre>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

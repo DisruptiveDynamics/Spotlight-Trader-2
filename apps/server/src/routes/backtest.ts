@@ -1,16 +1,18 @@
 import { Router } from "express";
+import type { Request, Response } from "express";
 import { z } from "zod";
+
 import { runBacktest, getBacktestPresets, BacktestValidationError } from "../backtest/engine";
-import { ruleRegistry } from "../rules/registry";
 import { isEnabled } from "../flags";
-import { AuthRequest } from "../middleware/requireUser.js";
+import { requirePin } from "../middleware/requirePin";
+import { ruleRegistry } from "../rules/registry";
 
 export const backtestRouter: Router = Router();
 
 const BacktestSchema = z
   .object({
     symbol: z.string().min(1, "Symbol is required"),
-    timeframe: z.enum(["1m"]), // Only 1m supported for now
+    timeframe: z.enum(["1m"]),
     start: z.string(),
     end: z.string(),
     ruleIds: z.array(z.string()).min(1, "At least one rule ID is required"),
@@ -26,24 +28,17 @@ const BacktestSchema = z
     },
   );
 
-/**
- * POST /api/backtest/run
- * Run a backtest with specified parameters
- */
-backtestRouter.post("/run", async (req: AuthRequest, res) => {
+backtestRouter.post("/run", requirePin, async (req: Request, res: Response) => {
   if (!isEnabled("enableBacktest")) {
     return res.status(403).json({ error: "Backtest feature is disabled" });
   }
 
   try {
-    // Validate input schema
     const parsed = BacktestSchema.parse(req.body);
-    const userId = req.user!.userId;
+    const userId = (req as any).userId;
 
-    // Fetch rules
-    const rules = await Promise.all(parsed.ruleIds.map((id) => ruleRegistry.getRule(userId, id)));
-
-    const validRules = rules.filter((r) => r !== null);
+    const allRules = await ruleRegistry.getActiveRules(userId);
+    const validRules = allRules.filter((r) => parsed.ruleIds.includes(r.id));
 
     if (validRules.length === 0) {
       return res.status(400).json({ error: "No valid rules found for the provided IDs" });
@@ -59,7 +54,6 @@ backtestRouter.post("/run", async (req: AuthRequest, res) => {
 
     res.json(result);
   } catch (error) {
-    // Distinguish validation errors from runtime errors
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         error: "Invalid request parameters",
@@ -80,11 +74,7 @@ backtestRouter.post("/run", async (req: AuthRequest, res) => {
   }
 });
 
-/**
- * GET /api/backtest/presets
- * Get common backtest presets
- */
-backtestRouter.get("/presets", (_req, res) => {
+backtestRouter.get("/presets", requirePin, async (_req: Request, res: Response) => {
   const presets = getBacktestPresets();
   res.json({ presets });
 });

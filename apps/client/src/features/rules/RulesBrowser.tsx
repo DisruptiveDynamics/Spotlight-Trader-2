@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
 import type { Rule, EvaluatedRule } from "@shared/types/rules";
+import { useState, useEffect } from "react";
 
 export function RulesBrowser() {
   const [rules, setRules] = useState<Rule[]>([]);

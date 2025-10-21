@@ -1,13 +1,15 @@
-import { telemetryBus } from "../../telemetry/bus";
-import { copilotBroadcaster } from "../broadcaster";
-import { VwapReclaimTrigger, VwapRejectTrigger } from "./vwapReclaim";
-import { OrbTrigger } from "./orb";
-import { EmaPullbackTrigger } from "./emaPullback";
+// TODO: Integrate copilotBroadcaster for trigger notifications
+// import { copilotBroadcaster } from "../broadcaster";
 import { ringBuffer } from "@server/cache/ring";
-import type { Bar } from "@server/market/eventBus";
 import type { Candle } from "@shared/indicators";
-import { proposeCallout } from "../tools/handlers";
+import type { Bar } from "@shared/types";
+
+import { EmaPullbackTrigger } from "./emaPullback";
+import { OrbTrigger } from "./orb";
+import { VwapReclaimTrigger, VwapRejectTrigger } from "./vwapReclaim";
+import { telemetryBus } from "../../telemetry/bus";
 import type { TelemetryEvent } from "../../telemetry/types";
+import { proposeCallout } from "../tools/handlers";
 
 interface TriggerSet {
   vwapReclaim: VwapReclaimTrigger;
@@ -81,7 +83,7 @@ class TriggerManager {
     };
   }
 
-  private async processNewBar(symbol: string, bar: Bar): Promise<void> {
+  private async processNewBar(symbol: string, _bar: Bar): Promise<void> {
     const triggers = this.ensureTriggers(symbol);
 
     const recentBars = ringBuffer.getRecent(symbol, 30);

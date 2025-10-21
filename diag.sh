@@ -18,7 +18,7 @@ NODE_OPTIONS="--trace-warnings --unhandled-rejections=strict"
 
 # Start API only (isolate server); adjust filter if your workspace name differs
 ( export DEBUG LOG_LEVEL NODE_OPTIONS API_PORT WEB_PORT
-  pnpm --filter @app/api dev 2>&1 | tee "${LOG_FILE}" ) &
+  pnpm --filter @spotlight/server dev 2>&1 | tee "${LOG_FILE}" ) &
 API_PID=$!
 
 sleep 3

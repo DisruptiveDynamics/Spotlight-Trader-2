@@ -1,0 +1,54 @@
+ TRADER — PHASE 1: DATA CORRECTNESS (AM AGG + SESSION)
+You are a senior real-time systems engineer. Implement official minute reconciliation and consistent session policy. Small, typed commits behind flags where helpful. Keep behavior backward-compatible except for data accuracy.
+
+Guardrails
+- America/New_York for bucketing.
+- Never mutate finalized bars after closure; AM overwrites only by replacing the stored closed minute record.
+- On reconnects, gap-fill via REST with adjusted=true and next_url paging.
+
+Tasks
+1) Polygon AM subscription + handler
+- apps/server/src/market/polygonWs.ts
+  - Subscribe to both T.SYMBOL and AM.SYMBOL in subscribe(), unsubscribe(), and resubscribe().
+  - In handleMessage(), add case for ev === "AM" and emit:
+    eventBus.emit(`am:${msg.sym}`, {
+      symbol: msg.sym,
+      timeframe: "1m",
+      bar_start: msg.s,
+      bar_end: msg.e,
+      ohlcv: { o: msg.o, h: msg.h, l: msg.l, c: msg.c, v: msg.v },
+      seq: Math.floor(msg.s / 60000)     // or monotonic sequence
+    });
+
+2) Minute-close reconciliation in bar builder
+- apps/server/src/market/barBuilder.ts (or the component that finalizes 1m bars)
+  - Listen for am:${symbol}.
+  - On AM for a closed minute (match by bar_end or start-of-minute key):
+    - If a tick-rolled bar exists for that minute: replace OHLCV with AM values; keep or bump seq deterministically.
+    - If no bar exists (gap): insert the AM bar.
+    - Log a debug line if |v_diff|/AM.v > 10% to catch drift.
+  - Ensure finalized bars are not mutated elsewhere; reconciliation is the only write after close.
+
+3) Session policy (RTH vs RTH_EXT)
+- Add env SESSION=RTH (default) | RTH_EXT.
+- apps/server/src/history/service.ts:
+  - Enforce session filter after REST fetch: RTH is 09:30–16:00 ET only; RTH_EXT includes pre/post.
+  - Always request adjusted=true; follow next_url; respect rate limits.
+  - Normalize timestamps to ET-aligned minute.
+- Live path (barBuilder):
+  - If SESSION=RTH, ignore minutes outside RTH when finalizing or streaming rolled bars. If RTH_EXT, include pre/post.
+
+4) REST/WS consistency and gap-fill
+- If WS reconnects, backfill from last closed minute via REST before resuming live; merge and dedupe by bar_end; prefer official AM.
+
+Acceptance
+- For SPY (and one tech name), closed minute OHLCV/volume match Polygon AM exactly (spot-check last 30m).
+- /api/history returns bars filtered by SESSION consistently with live stream.
+- On reconnect, missing minutes are backfilled, monotonically sequenced; no duplicates.
+- Logs include a single reconciliation debug line per closed minute when AM arrives.
+
+Commit hygiene
+- Separate commits: (1) AM subscribe/handler, (2) barBuilder reconciliation, (3) session filter in history, (4) session policy in live path.
+
+Notes
+- Do not enable mock ticks in production off-hours. Respect FLAG_USE_MOCK_TICKS strictly.

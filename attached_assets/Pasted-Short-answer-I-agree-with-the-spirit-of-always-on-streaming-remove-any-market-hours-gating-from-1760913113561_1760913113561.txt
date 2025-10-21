@@ -1,0 +1,124 @@
+Short answer
+- I agree with the spirit of “always-on” streaming: remove any market-hours gating from the Polygon WebSocket. Connect 24/7 and let Polygon’s stream be the source of truth; if there are no trades, it will simply be silent.
+- Do not delete OnDemand replay; keep it as a dev/test tool behind a flag. It’s invaluable for deterministic repros and coach tuning. Remove mock tick generation from all default paths.
+- Keep REST backfill for history and gap-fill logic. Add a clear “Connected (idle)” state when no trades arrive, instead of generating mock bars.
+
+Why this is the correct balance for elite intraday use
+- Equities are not truly 24/7. The WS can remain connected 24/7, but it will be silent when the venue doesn’t trade (overnights/weekends/halts). Your pipeline should handle “no events” gracefully without falling back to synthetics.
+- Replay is a power tool for coaching/rules QA and demo, but should not be in the production data path. Keep it behind a flag and off by default.
+- Removing the time-based connection guard eliminates the root cause you’re seeing (client blocked from ever connecting off-hours), while preserving reliability via REST backfill and lossless resume.
+
+Targeted changes to apply now
+- Remove time-based WebSocket gating. Always connect to Polygon WS regardless of ET hour.
+- Remove mock tick generator from default runtime. Keep it for rare diagnostics only, behind an explicit feature flag.
+- Keep Replay Mode but gate it behind FF_REPLAY so it never “accidentally” drives production charts.
+- Surface “Connected (idle)” in the UI if no live messages for N minutes, and keep heartbeats so users know the pipeline is alive.
+- Retain REST backfill as bootstrap and gap-fill.
+
+Suggested patches
+Below are focused file changes to implement this posture (based on repo structure we’ve discussed). They’re additive and safe; adjust imports to match your tree.
+
+```typescript name=apps/server/src/market/bootstrap.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/market/bootstrap.ts
+// Always-on market source bootstrap (no market-hours gating)
+import { logger } from "@server/logger";
+import { initializePolygonStream } from "./polygon/stream";
+import { loadFlags } from "@server/flags/store";
+
+export async function initializeMarketSource() {
+  const flags = loadFlags();
+
+  try {
+    // Remove any time-based checks; connect unconditionally.
+    await initializePolygonStream({
+      // Subscribe both A.* (1m aggregates) and T.* (trades) for authoritative reconcile.
+      channels: (process.env.STREAM_SUBSCRIBE_CHANNELS ?? "A,T").split(","),
+      session: process.env.SESSION ?? "RTH_EXT", // default extended hours
+    });
+    logger.info({ channels: process.env.STREAM_SUBSCRIBE_CHANNELS ?? "A,T" }, "Polygon stream connected (always-on)");
+  } catch (err) {
+    logger.error({ err }, "Failed to initialize Polygon stream");
+    // Keep retry/backoff at the stream layer; do not gate by time.
+  }
+
+  // Ensure Replay Mode is OFF by default in prod; opt-in via FF_REPLAY
+  if (flags.FF_REPLAY === "on") {
+    logger.warn("Replay Mode enabled by flag (dev/test only)");
+    // Do not auto-start; only respond to explicit /api/replay/* calls
+  }
+}
+```
+
+```typescript name=apps/server/src/market/time.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/market/time.ts
+// Keep utilities for UI/session shading only. Do NOT gate stream connection on these values.
+export function isEtMarketOpenNow() {
+  // Existing logic if you need it for UI
+  return true; // never used to block connectivity
+}
+```
+
+```typescript name=apps/server/src/market/mockTickGenerator.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/market/mockTickGenerator.ts
+// Ensure not used by default. Guard start() with an explicit flag.
+const ENABLED = process.env.FF_MOCK === "on";
+export function startMockIfFlagged(...) {
+  if (!ENABLED) return;
+  // existing start logic...
+}
+```
+
+```typescript name=apps/client/src/lib/marketStream.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/client/src/lib/marketStream.ts
+// Surface "Connected (idle)" when no live bars for N minutes, instead of generating mocks.
+let lastLiveAt = Date.now();
+const idleMs = Number(import.meta.env.VITE_MARKET_IDLE_MS ?? 5 * 60_000);
+
+function emitStatus(state: SSEStatus) {
+  listeners.status.forEach((fn) => fn(state));
+}
+
+es.addEventListener("bar", (e) => {
+  const b = JSON.parse((e as MessageEvent).data) as Bar;
+  lastLiveAt = Date.now();
+  // existing dedupe by seq...
+});
+
+setInterval(() => {
+  const idle = Date.now() - lastLiveAt;
+  if (idle > idleMs && currentState === "live") {
+    emitStatus("idle"); // UI shows Connected (idle)
+  }
+}, 30_000);
+```
+
+Keep REST backfill/gap-fill
+- No change needed if your getHistory and sinceSeq gap-fill are already in place. They bootstrap charts even when the stream had been silent.
+
+Optional improvements to ship immediately
+- Observability
+  - Add symbol/timeframe labels to Prometheus counters (polygon_empty_total, sse_dropped_total).
+  - Add ringSize and ringEvictions metrics per symbol.
+  - Demote chatty logs to debug behind LOG_LEVEL.
+- Performance
+  - Add rollup cache per timeframe, invalidated on 1m close (fast 5m/15m).
+  - Coalesce inflight Polygon REST requests per symbol/range.
+
+UX notes for traders
+- Show a visible status pill: LIVE, RECONNECTING, IDLE (no trades), REPLAY.
+- In IDLE, keep charts static but allow history fetch. When a new trade arrives, status flips to LIVE.
+- For SPY/QQQ on weekends/holidays, you’ll see IDLE with last close — this is expected and honest.
+
+Why not delete Replay entirely?
+- It’s a high-value dev/test feature for coach QA, deterministic bug repros, and demos. Keep it behind FF_REPLAY, but don’t remove it. It doesn’t touch the production path.
+
+Acceptance checklist
+- Server connects to Polygon WS regardless of local time or ET session; no time gates remain.
+- Replay does not auto-start; mock generator never runs unless FF_MOCK=on.
+- UI shows “Connected (idle)” if no bars for idleMs, not synthetic bars.
+- History bootstrap works at any hour; SSE resume uses Last-Event-ID; no duplicates.
+- Metrics have labels; logs are quiet at info level.
+
+If you’d like, I can open a PR to:
+- Remove time-based WS gating in the market bootstrap.
+- Gate mocks and replay behind flags (no prod path).
+- Add “idle” status logic client-side.
+- Demote noisy logs and add labeled metrics.
+
+Do you want me to proceed with a branch like fix/always-on-stream+idle-state?

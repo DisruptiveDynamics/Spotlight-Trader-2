@@ -1,10 +1,43 @@
 import { websocketClient } from "@polygon.io/client-js";
 import { validateEnv } from "@shared/env";
+
 import { eventBus } from "./eventBus";
-import { isExtendedHoursActive } from "./marketHours";
-import { mockTickGenerator } from "./mockTickGenerator";
 
 const env = validateEnv(process.env);
+
+// Polygon WebSocket message types (module-level)
+interface PolygonStatusMessage {
+  ev: "status" | "error";
+  status?: string;
+  message?: string;
+}
+
+interface PolygonTradeMessage {
+  ev: "T";
+  sym: string;
+  t: number;
+  p: number;
+  s: number;
+}
+
+interface PolygonAggregateMessage {
+  ev: "AM";
+  sym: string;
+  s: number; // bar start timestamp (ms)
+  e: number; // bar end timestamp (ms)
+  o: number; // open
+  h: number; // high
+  l: number; // low
+  c: number; // close
+  v: number; // volume
+}
+
+type PolygonMessage = PolygonStatusMessage | PolygonTradeMessage | PolygonAggregateMessage;
+
+interface WebSocketEvent {
+  data?: string;
+  response?: string;
+}
 
 export class PolygonWebSocket {
   private ws: ReturnType<typeof websocketClient> | null = null;
@@ -20,22 +53,11 @@ export class PolygonWebSocket {
 
   async connect() {
     try {
-      // Check if ANY extended hours trading is active (pre-market, regular, or after-hours)
-      // Polygon WebSocket provides real-time data 4 AM - 8 PM ET
-      const extendedHoursActive = isExtendedHoursActive();
-
-      if (!extendedHoursActive) {
-        console.log(`🌙 Outside extended hours (4 AM-8 PM ET) - WebSocket unavailable, using REST API + mock ticks`);
-        this.useMockData = false; // Don't block REST API - just means we need mock ticks
-        this.useWebSocket = false;
-        this.isConnected = true;
-        this.resubscribe(); // Start mock tick generators (bars will use REST API for history)
-        return;
-      }
-
-      // Stock Advanced plan uses real-time feed
+      // [ALWAYS-ON] Connect to Polygon 24/7 regardless of market hours
+      // The WebSocket will be silent when there's no trading activity
+      // This removes time-based gating and lets Polygon be the source of truth
       const wsUrl = "wss://socket.polygon.io";
-      console.log(`📡 Connecting to Polygon real-time feed (extended hours active)`);
+      console.log(`📡 Connecting to Polygon real-time feed (always-on 24/7)`);
 
       this.useMockData = false;
       this.useWebSocket = true;
@@ -51,27 +73,20 @@ export class PolygonWebSocket {
           this.lastMessageTime = Date.now();
           this.startHeartbeat();
 
-          // Stop mock generators when switching to real WebSocket data
-          if (this.useWebSocket) {
-            this.subscribedSymbols.forEach(symbol => {
-              mockTickGenerator.stop(symbol);
-            });
-          }
-
           // Manually send auth message (library not doing it automatically)
           ws.send(JSON.stringify({ action: "auth", params: env.POLYGON_API_KEY }));
 
           this.resubscribe();
         };
 
-        ws.onmessage = (event: any) => {
+        ws.onmessage = (event: WebSocketEvent) => {
           this.lastMessageTime = Date.now();
 
           try {
             const response = event.data || event.response;
             if (!response) return;
-            const messages = JSON.parse(response);
-            messages.forEach((msg: any) => this.handleMessage(msg));
+            const messages = JSON.parse(response) as unknown[];
+            messages.forEach((msg) => this.handleMessage(msg as PolygonMessage));
           } catch (err) {
             console.error("Failed to parse Polygon message:", err);
           }
@@ -94,46 +109,62 @@ export class PolygonWebSocket {
     }
   }
 
-  private handleMessage(msg: any) {
+  private handleMessage(msg: PolygonMessage) {
     if (msg.ev === "status") {
       console.log("Polygon status:", msg.message);
-      
+
       // Detect TRUE authentication failures only (not benign errors)
-      const authFailed = msg.status === "auth_failed" || 
-                        (msg.status === "error" && msg.message && (
-                          msg.message.toLowerCase().includes("authentication") ||
-                          msg.message.toLowerCase().includes("unauthorized") ||
-                          msg.message.toLowerCase().includes("invalid api key")
-                        ));
-      
+      const authFailed =
+        msg.status === "auth_failed" ||
+        (msg.status === "error" &&
+          msg.message &&
+          (msg.message.toLowerCase().includes("authentication") ||
+            msg.message.toLowerCase().includes("unauthorized") ||
+            msg.message.toLowerCase().includes("invalid api key")));
+
       if (authFailed) {
-        console.error("❌ Polygon authentication failed - falling back to mock data");
+        console.error("❌ Polygon authentication failed");
+        console.log(`💡 Use OnDemand replay (/api/replay/start) to test with historical data`);
         this.useMockData = true;
         this.useWebSocket = false;
         this.isConnected = false;
-        
-        // Close WebSocket and start mock generators
+
+        // Close WebSocket
         if (this.ws) {
           (this.ws as any).close();
           this.ws = null;
         }
-        
-        // Start mock generators for all subscribed symbols
-        this.subscribedSymbols.forEach(symbol => {
-          mockTickGenerator.start(symbol);
-        });
       }
       return;
     }
 
     if (msg.ev === "T") {
       console.log(`📊 Tick: ${msg.sym} $${msg.p} (${msg.s} shares)`);
-      const tick: any = {
+      const tick = {
         ts: msg.t,
         price: msg.p,
         size: msg.s,
       };
       eventBus.emit(`tick:${msg.sym}` as const, tick);
+    }
+
+    if (msg.ev === "AM") {
+      console.log(`📈 Official AM: ${msg.sym} close=$${msg.c} vol=${msg.v}`);
+      // Emit official aggregate minute for reconciliation
+      eventBus.emit(`am:${msg.sym}` as const, {
+        symbol: msg.sym,
+        timeframe: "1m" as const,
+        bar_start: msg.s,
+        bar_end: msg.e,
+        ohlcv: {
+          o: msg.o,
+          h: msg.h,
+          l: msg.l,
+          c: msg.c,
+          v: msg.v,
+        },
+        seq: Math.floor(msg.s / 60000),
+      });
     }
   }
 
@@ -141,16 +172,17 @@ export class PolygonWebSocket {
     this.subscribedSymbols.add(symbol);
 
     if (this.useMockData || !this.useWebSocket) {
-      // Start mock tick generator for this symbol (auth failed OR outside extended hours)
-      mockTickGenerator.start(symbol);
+      // No live data available (auth failed OR outside extended hours)
+      // Use OnDemand replay instead for testing
       return;
     }
 
     if (this.isConnected && this.ws) {
+      // Subscribe to both ticks (T) and official minute aggregates (AM)
       (this.ws as any).send(
         JSON.stringify({
           action: "subscribe",
-          params: `T.${symbol}`,
+          params: `T.${symbol},AM.${symbol}`,
         }),
       );
     }
@@ -160,16 +192,16 @@ export class PolygonWebSocket {
     this.subscribedSymbols.delete(symbol);
 
     if (this.useMockData || !this.useWebSocket) {
-      // Stop mock tick generator (auth failed OR outside extended hours)
-      mockTickGenerator.stop(symbol);
+      // No live data to unsubscribe from
       return;
     }
 
     if (this.isConnected && this.ws) {
+      // Unsubscribe from both ticks (T) and official minute aggregates (AM)
       (this.ws as any).send(
         JSON.stringify({
           action: "unsubscribe",
-          params: `T.${symbol}`,
+          params: `T.${symbol},AM.${symbol}`,
         }),
       );
     }
@@ -177,16 +209,14 @@ export class PolygonWebSocket {
 
   private resubscribe() {
     if (this.useMockData || !this.useWebSocket) {
-      // Start mock generators for all subscribed symbols (auth failed OR outside extended hours)
-      for (const symbol of this.subscribedSymbols) {
-        mockTickGenerator.start(symbol);
-      }
+      // No live data available - use OnDemand replay for testing
       return;
     }
 
     if (this.subscribedSymbols.size > 0 && this.ws) {
+      // Subscribe to both ticks (T) and official minute aggregates (AM) for all symbols
       const params = Array.from(this.subscribedSymbols)
-        .map((sym) => `T.${sym}`)
+        .flatMap((sym) => [`T.${sym}`, `AM.${sym}`])
         .join(",");
       (this.ws as any).send(
         JSON.stringify({
@@ -239,10 +269,6 @@ export class PolygonWebSocket {
 
   close() {
     this.stopHeartbeat();
-
-    if (this.useMockData) {
-      mockTickGenerator.stopAll();
-    }
 
     if (this.ws) {
       (this.ws as any).close();

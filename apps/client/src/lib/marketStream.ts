@@ -1,10 +1,17 @@
+import { perfMetrics } from "@shared/perf/metrics";
+import { reconcileBars } from "@shared/utils/barHash";
+import { logger } from "@shared/utils/logger";
+
 import { STREAM_URL, HISTORY_URL } from "../config";
+import { useAuthStore } from "../stores/authStore";
 
 export type Ohlcv = { o: number; h: number; l: number; c: number; v: number };
 
+export type Timeframe = "1m" | "2m" | "5m" | "10m" | "15m" | "30m" | "1h";
+
 export type Bar = {
   symbol: string;
-  timeframe: "1m";
+  timeframe: Timeframe;
   seq: number;
   bar_start: number;
   bar_end: number;
@@ -31,11 +38,53 @@ export type SSEStatus =
   | "degraded_ws"
   | "replaying_gap"
   | "live"
+  | "idle"
   | "error";
 
 interface MarketSSEOptions {
   sinceSeq?: number;
   maxReconnectDelay?: number;
+  timeframe?: string;
+}
+
+/**
+ * Parse timeframe string to milliseconds
+ * Examples: "1m" -> 60000, "5m" -> 300000, "1h" -> 3600000
+ */
+function parseTimeframeMs(tf: string): number {
+  const match = tf.match(/^(\d+)([mh])$/);
+  if (!match) return 60000; // Default to 1 minute
+  
+  const value = parseInt(match[1], 10);
+  const unit = match[2];
+  
+  if (unit === "m") return value * 60 * 1000;
+  if (unit === "h") return value * 60 * 60 * 1000;
+  return 60000;
+}
+
+// Runtime type guards for SSE payloads
+function isFiniteNumber(n: any): n is number {
+  return typeof n === "number" && Number.isFinite(n);
+}
+
+function isBarPayload(b: any): b is Bar {
+  return (
+    b &&
+    isFiniteNumber(b.seq) &&
+    isFiniteNumber(b.bar_end) &&
+    b.ohlcv &&
+    ["o", "h", "l", "c"].every((k) => isFiniteNumber(b.ohlcv[k]))
+  );
+}
+
+function isMicroPayload(m: any): m is Micro {
+  return (
+    m &&
+    isFiniteNumber(m.ts) &&
+    m.ohlcv &&
+    ["o", "h", "l", "c"].every((k) => isFiniteNumber(m.ohlcv[k]))
+  );
 }
 
 export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
@@ -47,21 +96,32 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
   let isManualClose = false;
   let currentState: SSEStatus = "connecting";
   let processingPromise = Promise.resolve();
-  
+
   // [RESILIENCE] Track server epoch for restart detection
   let currentEpochId: string | null = null;
-  
+
   // [RESILIENCE] Track duplicate rejections to force resync
   let duplicateRejections: number[] = []; // Timestamps of rejections
+
+  // [IDLE-STATE] Track last live bar to detect idle markets (no trading activity)
+  let lastLiveBarAt = Date.now();
+  const IDLE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+  // [GUARD] Prevent infinite resync loops - only allow one resync at a time
+  let resyncInFlight = false;
+  let lastResyncAt = 0;
+  const MIN_RESYNC_INTERVAL_MS = 2000; // Debounce: minimum 2s between resyncs
 
   const maxReconnectDelay = opts?.maxReconnectDelay || 30000;
 
   const listeners = {
     bar: [] as ((b: Bar) => void)[],
+    barReset: [] as ((bars: Bar[]) => void)[],
     microbar: [] as ((m: Micro) => void)[],
     tick: [] as ((t: Tick) => void)[],
     status: [] as ((s: SSEStatus) => void)[],
     gap: [] as ((detected: { expected: number; received: number }) => void)[],
+    epoch: [] as ((e: { epochId: string; epochStartMs: number }) => void)[],
   };
 
   const emitStatus = (status: SSEStatus) => {
@@ -69,50 +129,106 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     listeners.status.forEach((fn) => fn(status));
   };
 
+  // [PHASE-5] Track local bars for reconciliation (last 10 bars)
+  const localBars: Bar[] = [];
+  const MAX_LOCAL_BARS = 10;
+
   // [RESILIENCE] Soft reset and resync when server restarts or sequence is stale
   const performResync = async (reason: string) => {
+    // [GUARD] Prevent concurrent resyncs and rapid successive calls
+    const now = Date.now();
+    const timeSinceLastResync = now - lastResyncAt;
+    
+    if (resyncInFlight) {
+      logger.warn(`⏳ Resync already in progress, ignoring request (${reason})`);
+      return;
+    }
+    
+    if (timeSinceLastResync < MIN_RESYNC_INTERVAL_MS) {
+      logger.warn(`⏸️ Resync debounced: ${timeSinceLastResync}ms < ${MIN_RESYNC_INTERVAL_MS}ms (${reason})`);
+      return;
+    }
+    
+    resyncInFlight = true;
+    lastResyncAt = now;
+    
     try {
-      console.log(`🔄 Performing resync (${reason})`);
-      
+      logger.info(`🔄 Performing resync (${reason})`);
+
+      // [PHASE-5] Track reconnect event
+      perfMetrics.recordReconnectEvent();
+
       // [RESILIENCE] Emit resync event for debounced splash overlay
       window.dispatchEvent(new CustomEvent("market:resync-start", { detail: { reason } }));
-      
+
       emitStatus("replaying_gap");
-      
+
       const symbol = symbols[0] || "SPY";
+      const timeframe = opts?.timeframe || "1m";
+      const timeframeMs = parseTimeframeMs(timeframe);
+      
+      // [PHASE-5] Fetch last 10 bars for reconciliation (reduced from 50)
       const params = new URLSearchParams({
         symbol,
-        timeframe: "1m",
-        limit: "50", // Fetch 50-bar snapshot for resync
+        timeframe,
+        limit: "10", // Fetch 10-bar snapshot for reconciliation
       });
-      
+
       const res = await fetch(`${HISTORY_URL}?${params.toString()}`);
       if (!res.ok) {
         throw new Error(`Resync failed: ${res.status} ${res.statusText}`);
       }
-      
+
       const rawBars = await res.json();
-      
-      // Transform and emit bars
-      const bars: Bar[] = rawBars.map((b: any) => ({
-        symbol: b.symbol || symbol,
-        timeframe: b.timeframe || "1m",
-        seq: Math.floor(b.bar_end / 60000),
-        bar_start: b.bar_end - 60000,
-        bar_end: b.bar_end,
-        ohlcv: b.ohlcv,
-      })).sort((a: Bar, b: Bar) => a.seq - b.seq);
-      
-      // Update lastSeq to highest from snapshot
-      if (bars.length > 0) {
-        lastSeq = bars[bars.length - 1]!.seq;
-        console.log(`✅ Resynced ${bars.length} bars, lastSeq now: ${lastSeq}`);
+
+      // Transform server bars (generalized for any timeframe)
+      const serverBars: Bar[] = rawBars
+        .map((b: any) => ({
+          symbol: b.symbol || symbol,
+          timeframe: (b.timeframe || timeframe) as Timeframe,
+          seq: Math.floor(b.bar_end / timeframeMs),
+          bar_start: b.bar_start || (b.bar_end - timeframeMs),
+          bar_end: b.bar_end,
+          ohlcv: b.ohlcv,
+        }))
+        .sort((a: Bar, b: Bar) => a.seq - b.seq);
+
+      // [PHASE-5] Reconcile using hash comparison
+      const { toUpdate, toAdd, reconciled } = reconcileBars(localBars, serverBars);
+
+      if (reconciled > 0) {
+        perfMetrics.recordBarReconciled(reconciled);
         
-        bars.forEach((bar) => {
+        const minSeq = Math.min(...[...toUpdate, ...toAdd].map((b) => b.seq));
+        const maxSeq = Math.max(...[...toUpdate, ...toAdd].map((b) => b.seq));
+        
+        logger.info(`✅ Recovered ${reconciled} bars (seq ${minSeq}→${maxSeq})`);
+        
+        // Emit only reconciled bars (diffs)
+        [...toUpdate, ...toAdd].forEach((bar) => {
           listeners.bar.forEach((fn) => fn(bar));
         });
       }
-      
+
+      // [PHASE-5] Replace local buffer with authoritative server snapshot
+      localBars.length = 0; // Clear
+      serverBars.slice(-MAX_LOCAL_BARS).forEach((bar) => {
+        localBars.push(bar); // Keep last 10 bars
+      });
+
+      // Update lastSeq to highest from snapshot
+      if (serverBars.length > 0) {
+        lastSeq = serverBars[serverBars.length - 1]!.seq;
+        logger.info(`✅ Resynced ${serverBars.length} bars, lastSeq now: ${lastSeq}`);
+
+        // If no reconciliation needed, emit all bars
+        if (reconciled === 0) {
+          serverBars.forEach((bar) => {
+            listeners.bar.forEach((fn) => fn(bar));
+          });
+        }
+      }
+
       emitStatus("live");
       // [RESILIENCE] Emit completion event
       window.dispatchEvent(new CustomEvent("market:resync-complete"));
@@ -121,20 +237,25 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       emitStatus("error");
       // [RESILIENCE] Emit completion even on error
       window.dispatchEvent(new CustomEvent("market:resync-complete"));
+    } finally {
+      // [GUARD] Clear in-flight flag
+      resyncInFlight = false;
     }
   };
 
   const backfillGap = async (fromSeq: number, toSeq: number, previousLastSeq: number) => {
     try {
-      console.log(`📊 Backfilling gap: seq ${fromSeq} → ${toSeq}`);
+      logger.info(`📊 Backfilling gap: seq ${fromSeq} → ${toSeq}`);
       emitStatus("replaying_gap");
 
       const symbol = symbols[0] || "SPY";
+      const timeframe = opts?.timeframe || "1m";
+      const timeframeMs = parseTimeframeMs(timeframe);
       const limit = Math.min(toSeq - fromSeq + 1, 100);
 
       const params = new URLSearchParams({
         symbol,
-        timeframe: "1m",
+        timeframe,
         limit: String(limit),
       });
 
@@ -145,12 +266,12 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
       const rawBars = await res.json();
 
-      // Transform history response to Bar format
+      // Transform history response to Bar format (generalized for any timeframe)
       const bars: Bar[] = rawBars.map((b: any) => ({
         symbol: b.symbol || symbol,
-        timeframe: b.timeframe || "1m",
-        seq: Math.floor(b.bar_end / 60000),
-        bar_start: b.bar_end - 60000,
+        timeframe: (b.timeframe || timeframe) as Timeframe,
+        seq: Math.floor(b.bar_end / timeframeMs),
+        bar_start: b.bar_start || (b.bar_end - timeframeMs),
         bar_end: b.bar_end,
         ohlcv: b.ohlcv,
       }));
@@ -159,10 +280,17 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         .filter((bar) => bar.seq > previousLastSeq && bar.seq <= toSeq)
         .sort((a, b) => a.seq - b.seq);
 
-      console.log(`✅ Filled ${filledBars.length} bars in gap`);
+      logger.info(`✅ Filled ${filledBars.length} bars in gap`);
 
       filledBars.forEach((bar) => {
         lastSeq = bar.seq;
+        
+        // [PHASE-5] Track filled bars in local buffer
+        localBars.push(bar);
+        if (localBars.length > MAX_LOCAL_BARS) {
+          localBars.shift();
+        }
+        
         listeners.bar.forEach((fn) => fn(bar));
       });
     } catch (error) {
@@ -171,19 +299,53 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     }
   };
 
-  const connect = () => {
+  // [DYNAMIC SUBSCRIPTION] Ensure symbols are subscribed before connecting
+  const ensureSymbolsSubscribed = async () => {
+    for (const symbol of symbols) {
+      try {
+        const res = await fetch("/api/symbols/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ symbol, seedLimit: 200 }),
+        });
+        if (!res.ok) {
+          logger.warn(`Failed to subscribe ${symbol}: ${res.status}`);
+        } else {
+          const data = await res.json();
+          if (!data.already) {
+            logger.info(`✅ Subscribed to ${symbol} (seeded ${data.seeded || 0} bars)`);
+          }
+        }
+      } catch (err) {
+        logger.warn(`Symbol subscription error for ${symbol}:`, err);
+        // Continue - SSE will still attempt to connect
+      }
+    }
+  };
+
+  const connect = async () => {
     if (isManualClose) return;
+
+    // Subscribe symbols before establishing SSE connection
+    await ensureSymbolsSubscribed();
 
     const params = new URLSearchParams({ symbols: symbols.join(",") });
     if (lastSeq > 0) {
       params.append("sinceSeq", String(lastSeq));
     }
+    if (opts?.timeframe) {
+      params.append("timeframe", opts.timeframe);
+    }
 
     emitStatus(reconnectAttempts === 0 ? "connecting" : "degraded_ws");
 
-    es = new EventSource(`${STREAM_URL}?${params.toString()}`);
+    const url = `${STREAM_URL}?${params.toString()}`;
+    logger.debug(`[SSE] Creating EventSource connection to: ${url}`);
+    es = new EventSource(url, { withCredentials: true });
 
     es.addEventListener("open", async () => {
+      logger.debug(`[SSE] Connection OPENED successfully`);
       reconnectAttempts = 0;
       emitStatus("connected");
       window.dispatchEvent(new CustomEvent("sse:connected"));
@@ -191,15 +353,23 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       // Gap-fill on reconnect if we have a lastSeq
       if (lastSeq > 0) {
         const symbol = symbols[0] || "SPY";
+        const timeframe = opts?.timeframe || "1m";
         try {
           const res = await fetch(
-            `${HISTORY_URL}?symbol=${encodeURIComponent(symbol)}&timeframe=1m&sinceSeq=${lastSeq}`,
+            `${HISTORY_URL}?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&sinceSeq=${lastSeq}`,
           );
           if (res.ok) {
             const bars = await res.json();
             bars.forEach((bar: Bar) => {
               if (bar.seq > lastSeq) {
                 lastSeq = bar.seq;
+                
+                // [PHASE-5] Track gap-filled bars in local buffer
+                localBars.push(bar);
+                if (localBars.length > MAX_LOCAL_BARS) {
+                  localBars.shift();
+                }
+                
                 listeners.bar.forEach((fn) => fn(bar));
               }
             });
@@ -210,38 +380,72 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       }
     });
 
+    // [BOOTSTRAP] Listen for immediate bootstrap event
+    es.addEventListener("bootstrap", (e) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      logger.debug(`[SSE] Received bootstrap event:`, data);
+    });
+
     // [RESILIENCE] Listen for epoch events to detect server restarts
     es.addEventListener("epoch", (e) => {
-      const data = JSON.parse((e as MessageEvent).data) as { 
-        epochId: string; 
-        epochStartMs: number; 
-        symbols: string[]; 
+      logger.debug(`[SSE] Received epoch event`);
+      const data = JSON.parse((e as MessageEvent).data) as {
+        epochId: string;
+        epochStartMs: number;
+        symbols: string[];
         timeframe: string;
       };
-      
+
+      // Emit epoch to listeners first
+      listeners.epoch.forEach((fn) => fn({ epochId: data.epochId, epochStartMs: data.epochStartMs }));
+
       if (currentEpochId && currentEpochId !== data.epochId) {
-        console.log(`🔄 Server restarted: epoch ${currentEpochId.slice(0,8)} → ${data.epochId.slice(0,8)}, triggering resync`);
+        logger.info(
+          `🔄 Server restarted: epoch ${currentEpochId.slice(0, 8)} → ${data.epochId.slice(0, 8)}, soft reset`,
+        );
         currentEpochId = data.epochId;
         duplicateRejections = []; // Reset duplicate counter
+        
+        // [RESILIENCE] Soft reset on epoch change: clear lastSeq and resync
+        // This ensures we get fresh data after server restart
+        lastSeq = 0;
+        
         // Trigger immediate resync to rebuild state from server
-        performResync("epoch change").catch(err => {
+        performResync("epoch change").catch((err) => {
           console.error("Epoch resync failed:", err);
         });
       } else {
         currentEpochId = data.epochId;
-        console.log(`✅ Epoch established: ${data.epochId.slice(0,8)}`);
+        logger.info(`✅ Epoch established: ${data.epochId.slice(0, 8)}`);
+      }
+    });
+
+    // [RESILIENCE] Listen for ping events to keep connection alive (ignore payload)
+    es.addEventListener("ping", (e) => {
+      // Heartbeat event to prevent proxy idle timeout - no action needed
+      // Optionally could track buffered/dropped stats for observability
+      const data = JSON.parse((e as MessageEvent).data);
+      if (data.buffered > 0 || data.dropped > 0) {
+        logger.debug(`📡 SSE ping: buffered=${data.buffered}, dropped=${data.dropped}`);
       }
     });
 
     es.addEventListener("bar", (e) => {
+      logger.debug(`[SSE] Received bar event`);
       processingPromise = processingPromise.then(async () => {
-        const b = JSON.parse((e as MessageEvent).data) as Bar;
+        const b = JSON.parse((e as MessageEvent).data);
+        if (!isBarPayload(b)) {
+          logger.warn("Invalid bar payload", b);
+          return;
+        }
 
-        // [RESILIENCE] Detect server restart: seq is much lower than lastSeq
-        const isStaleSequence = lastSeq > 0 && b.seq < lastSeq - 1000;
-        
+        // [RESILIENCE] Detect server restart or seq regression (tightened threshold)
+        // Reduced from 1000 to 10 to catch smaller regressions quickly
+        const isStaleSequence = lastSeq > 0 && b.seq < lastSeq - 10;
+
         if (isStaleSequence) {
-          console.log(`🔄 Stale sequence detected: seq=${b.seq}, lastSeq=${lastSeq}`);
+          logger.info(`🔄 Stale sequence detected: seq=${b.seq}, lastSeq=${lastSeq}`);
+          duplicateRejections = []; // Reset counter before resync
           await performResync("stale sequence");
           return;
         }
@@ -250,18 +454,22 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
           // [RESILIENCE] Track duplicate rejections for forced resync
           const now = Date.now();
           duplicateRejections.push(now);
-          
+
           // Keep only rejections from last 2 seconds
-          duplicateRejections = duplicateRejections.filter(ts => now - ts < 2000);
-          
+          duplicateRejections = duplicateRejections.filter((ts) => now - ts < 2000);
+
           if (duplicateRejections.length >= 5) {
-            console.warn(`❌ Too many duplicate rejections (${duplicateRejections.length}), forcing resync`);
+            console.warn(
+              `❌ Too many duplicate rejections (${duplicateRejections.length}), forcing resync`,
+            );
             duplicateRejections = []; // Reset counter
             await performResync("excessive duplicates");
             return;
           }
-          
-          console.warn(`Duplicate bar detected: seq=${b.seq}, lastSeq=${lastSeq} (${duplicateRejections.length}/5)`);
+
+          console.warn(
+            `Duplicate bar detected: seq=${b.seq}, lastSeq=${lastSeq} (${duplicateRejections.length}/5)`,
+          );
           return;
         }
 
@@ -275,17 +483,121 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         }
 
         lastSeq = b.seq;
+        
+        // [IDLE-STATE] Track live data arrival
+        lastLiveBarAt = Date.now();
+        
+        // [PHASE-5] Track bar in local buffer for reconciliation
+        localBars.push(b);
+        if (localBars.length > MAX_LOCAL_BARS) {
+          localBars.shift(); // Keep only last 10 bars
+        }
+        
         listeners.bar.forEach((fn) => fn(b));
 
-        if (currentState === "connected" || currentState === "replaying_gap") {
+        if (currentState === "connected" || currentState === "replaying_gap" || currentState === "idle") {
           emitStatus("live");
         }
       });
     });
 
+    // [TIMEFRAME-SWITCH] Handle bar:reset for timeframe changes
+    es.addEventListener("bar:reset", (e) => {
+      logger.debug(`[SSE] Received bar:reset event`);
+      const data = JSON.parse((e as MessageEvent).data) as {
+        symbol: string;
+        timeframe: string;
+        bars: Array<{
+          symbol: string;
+          timestamp: number;
+          timeframe: string;
+          open: number;
+          high: number;
+          low: number;
+          close: number;
+          volume: number;
+          seq: number;
+          bar_start: number;
+          bar_end: number;
+        }>;
+      };
+
+      // Transform to client Bar format
+      const bars: Bar[] = data.bars.map((b) => ({
+        symbol: b.symbol,
+        timeframe: b.timeframe as Timeframe,
+        seq: b.seq,
+        bar_start: b.bar_start,
+        bar_end: b.bar_end,
+        ohlcv: {
+          o: b.open,
+          h: b.high,
+          l: b.low,
+          c: b.close,
+          v: b.volume,
+        },
+      }));
+
+      logger.info(`📊 Bar reset: ${data.symbol} ${data.timeframe}, ${bars.length} bars`);
+
+      // Update lastSeq to highest bar
+      if (bars.length > 0) {
+        lastSeq = Math.max(...bars.map((b) => b.seq));
+      }
+
+      // Clear local buffer and replace with new bars
+      localBars.length = 0;
+      bars.slice(-MAX_LOCAL_BARS).forEach((bar) => {
+        localBars.push(bar);
+      });
+
+      // Emit all bars to listeners (will trigger chart redraw)
+      listeners.barReset.forEach((fn) => fn(bars));
+    });
+
+    // [PHASE-5] Handle individual microbar (legacy)
     es.addEventListener("microbar", (e) => {
-      const m = JSON.parse((e as MessageEvent).data) as Micro;
+      const m = JSON.parse((e as MessageEvent).data);
+      if (!isMicroPayload(m)) {
+        logger.warn("Invalid micro payload", m);
+        return;
+      }
       listeners.microbar.forEach((fn) => fn(m));
+    });
+
+    // [PHASE-5] Handle microbar batch (unpack and emit individually)
+    es.addEventListener("microbar_batch", (e) => {
+      const batch = JSON.parse((e as MessageEvent).data) as {
+        microbars: Array<{
+          symbol: string;
+          ts: number;
+          open: number;
+          high: number;
+          low: number;
+          close: number;
+          volume: number;
+        }>;
+      };
+
+      // Unpack batch and emit as individual microbars
+      batch.microbars.forEach((mb) => {
+        const m: Micro = {
+          symbol: mb.symbol,
+          ts: mb.ts,
+          ohlcv: {
+            o: mb.open,
+            h: mb.high,
+            l: mb.low,
+            c: mb.close,
+            v: mb.volume,
+          },
+        };
+        if (!isMicroPayload(m)) {
+          logger.warn("Invalid micro from batch", m);
+          return;
+        }
+        listeners.microbar.forEach((fn) => fn(m));
+      });
     });
 
     es.addEventListener("tick", (e) => {
@@ -293,7 +605,16 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       listeners.tick.forEach((fn) => fn(t));
     });
 
-    es.onerror = () => {
+    es.addEventListener("message", (e) => {
+      logger.debug(`[SSE] Generic message event:`, e.type, e.data?.slice(0, 100));
+    });
+
+    es.onerror = (event) => {
+      console.error("[SSE] Connection error occurred:", {
+        readyState: es?.readyState,
+        url: es?.url,
+        event: event,
+      });
       console.warn("SSE error, scheduling reconnect");
       emitStatus("error");
       es?.close();
@@ -326,19 +647,36 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
 
   connect();
 
+  // [IDLE-STATE] Check for idle market every 30 seconds
+  const idleCheckInterval = setInterval(() => {
+    const idleMs = Date.now() - lastLiveBarAt;
+    if (idleMs > IDLE_THRESHOLD_MS && currentState === "live") {
+      logger.info(`📊 Market idle: ${Math.round(idleMs / 60000)} minutes since last bar`);
+      emitStatus("idle");
+    }
+  }, 30000);
+
   // Gap-fill on window focus (user returns to tab after being away)
   const handleFocus = async () => {
     if (lastSeq > 0 && currentState === "live") {
       const symbol = symbols[0] || "SPY";
+      const timeframe = opts?.timeframe || "1m";
       try {
         const res = await fetch(
-          `${HISTORY_URL}?symbol=${encodeURIComponent(symbol)}&timeframe=1m&sinceSeq=${lastSeq}`,
+          `${HISTORY_URL}?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&sinceSeq=${lastSeq}`,
         );
         if (res.ok) {
           const bars = await res.json();
           bars.forEach((bar: Bar) => {
             if (bar.seq > lastSeq) {
               lastSeq = bar.seq;
+              
+              // [PHASE-5] Track focus-filled bars in local buffer
+              localBars.push(bar);
+              if (localBars.length > MAX_LOCAL_BARS) {
+                localBars.shift();
+              }
+              
               listeners.bar.forEach((fn) => fn(bar));
             }
           });
@@ -357,6 +695,9 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     onBar(fn: (b: Bar) => void) {
       listeners.bar.push(fn);
     },
+    onBarReset(fn: (bars: Bar[]) => void) {
+      listeners.barReset.push(fn);
+    },
     onMicro(fn: (m: Micro) => void) {
       listeners.microbar.push(fn);
     },
@@ -368,6 +709,9 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     },
     onGap(fn: (detected: { expected: number; received: number }) => void) {
       listeners.gap.push(fn);
+    },
+    onEpoch(fn: (e: { epochId: string; epochStartMs: number }) => void) {
+      listeners.epoch.push(fn);
     },
     getLastSeq() {
       return lastSeq;
@@ -381,6 +725,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
         clearTimeout(reconnectTimeout);
         reconnectTimeout = null;
       }
+      clearInterval(idleCheckInterval); // Clean up idle checker
       es?.close();
 
       // Cleanup focus listener
@@ -416,6 +761,32 @@ export async function loadHistoryPreset(
   }
   const bars: Bar[] = await res.json();
   bars.forEach(onBar);
+}
+
+// Auth-aware market stream starter
+export function startMarketStream() {
+  const authReady = useAuthStore.getState().authReady;
+  const user = useAuthStore.getState().user;
+
+  if (!authReady || !user) {
+    logger.warn("[marketStream] Not starting - auth not ready");
+    return () => {}; // No-op cleanup
+  }
+
+  logger.info("[marketStream] Starting market stream (auth ready)");
+  const stream = connectMarketSSE(["SPY", "QQQ"]);
+
+  // Wire up default handlers
+  stream.onStatus((status) => {
+    if (status === "connected") {
+      window.dispatchEvent(new CustomEvent("sse:connected"));
+    }
+  });
+
+  return () => {
+    logger.info("[marketStream] Stopping market stream");
+    stream.close();
+  };
 }
 
 // fetchHistory lives in lib/history to avoid duplicates

@@ -1,0 +1,185 @@
+Here’s your single consolidated Replit prompt, clean and copy-paste ready — designed for your Spotlight-Trader-2 repo to fix auth, SSE, charting, and voice integration in one run.
+
+⸻
+
+
+You are an expert senior full-stack TypeScript developer. Apply the following changes to the Spotlight-Trader-2 repo to restore core functionality and create a seamless real-time experience that matches Thinkorswim-level performance with full voice AI integration.
+
+──────────────────────────
+🧩 GOALS
+──────────────────────────
+1. Fix authentication rendering so the dashboard loads immediately after demo login (no page reloads or timeouts).
+2. Stabilize Server-Sent Events (SSE) / WebSocket connections for real-time market data streaming.
+3. Replace all empty error logs ("{}") with structured, descriptive errors.
+4. Optimize the voice assistant for real-time context awareness and clear error handling.
+5. Ensure modular, clean, and maintainable code structure across client and server.
+
+──────────────────────────
+🚀 IMPLEMENTATION STEPS
+──────────────────────────
+
+A) AUTH STATE + RE-RENDERING
+---------------------------------
+File: `apps/client/src/stores/auth.ts`
+- Use Zustand with `persist` + `subscribeWithSelector`.
+- Add `authReady` flag and `markReady()` action.
+- Export `{ user, authReady, setUser, logout, markReady }`.
+
+File: `apps/client/src/components/AuthGate.tsx`
+- On mount, call `markReady()` after Zustand hydration.
+- Render `<AppShell />` when both `authReady` and `user` are set.
+- Remove any local loading hacks or 400 ms reload timeouts.
+
+File: `apps/client/src/components/SignIn.tsx`
+- Add a `loginDemo()` that sets:
+  ```ts
+  setUser({ id: 'demo', email: 'demo@spotlight', name: 'Demo', demo: true });
+
+	•	Remove all page reload logic.
+
+──────────────────────────
+B) REAL-TIME STREAM (SSE / WEBSOCKET)
+
+File: apps/server/src/routes/stream.ts
+	•	Set headers for reliable SSE:
+
+res.setHeader('Content-Type', 'text/event-stream');
+res.setHeader('Cache-Control', 'no-store');
+res.setHeader('Connection', 'keep-alive');
+res.setHeader('X-Accel-Buffering', 'no');
+res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+res.setHeader('Vary', 'Origin');
+res.flushHeaders?.();
+
+
+	•	Add 15 s heartbeat: res.write(': ping\n\n');
+	•	Clear timers on client disconnect.
+	•	Ensure event writes use: res.write("event: tick\ndata: {...}\n\n");
+
+File: apps/client/src/lib/marketStream.ts
+	•	Only open EventSource or WebSocket after authReady && user are true.
+	•	On repeated SSE failure, fall back to a WebSocket connection.
+	•	Handle reconnects gracefully with exponential backoff.
+	•	Log all errors: console.error('[SSE]', toLogError(err));
+
+File: apps/client/src/components/AppShell.tsx
+	•	In useEffect, start the stream when authReady && user are true, clean up on unmount.
+
+──────────────────────────
+C) STRUCTURED ERROR HANDLING
+
+File: apps/client/src/lib/errors.ts
+
+export function toLogError(err: unknown) {
+  if (err instanceof Error)
+    return { name: err.name, message: err.message, stack: err.stack };
+  try { return { message: JSON.stringify(err) }; }
+  catch { return { message: String(err) }; }
+}
+
+File: apps/server/src/middleware/error.ts
+
+export function errorHandler(err, _req, res, _next) {
+  const payload = {
+    name: err?.name || 'Error',
+    message: err?.message || 'Unknown error',
+    detail: err?.detail ?? undefined,
+  };
+  console.error('[API ERROR]', payload, err?.stack);
+  res.status(err?.status || 500).json({ error: payload });
+}
+
+	•	Register middleware after routes.
+
+──────────────────────────
+D) FEATURE FLAGS & MARKET STATUS
+
+File: apps/client/src/lib/flags.ts
+	•	Provide default flags and safe fallback:
+
+const DEFAULTS = { newChart: true, voiceCoach: true };
+export async function fetchFlags() {
+  try {
+    const r = await fetch(import.meta.env.VITE_FLAGS_URL, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`Flags ${r.status}`);
+    return { ...DEFAULTS, ...(await r.json()) };
+  } catch (e) {
+    console.warn('[Flags] fallback to defaults', e);
+    return DEFAULTS;
+  }
+}
+
+
+
+File: apps/client/src/lib/marketStatus.ts
+	•	Safe fallback:
+
+export async function getMarketStatus() {
+  try {
+    const r = await fetch(import.meta.env.VITE_MARKET_STATUS_URL, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`MarketStatus ${r.status}`);
+    const j = await r.json();
+    return j.status ?? 'closed';
+  } catch (e) {
+    console.warn('[MarketStatus] fallback closed', e);
+    return 'closed';
+  }
+}
+
+
+
+──────────────────────────
+E) VOICE ASSISTANT OPTIMIZATION
+
+File: apps/client/src/voice/realtime.ts
+	•	Ensure voice assistant refreshes context with latest chart data before each response.
+	•	Add structured logging:
+
+client.on('error', (err) => {
+  console.error('[RealtimeVoiceClient] Session error', toLogError(err));
+  toast.error('Voice session error — check console for details.');
+});
+
+
+	•	Add simple file upload / URL input in the “Coach” section to allow dropping in new training materials that update the assistant’s knowledge base in real time.
+
+──────────────────────────
+F) MODULARIZATION & CLEANUP
+	•	Split large components into modular ones (chart rendering, data fetching, voice interaction).
+	•	Remove all reload hacks.
+	•	Document the Replit HMR SSL limitation and ignore related console noise.
+	•	Add a minimal loading spinner in AuthGate while !authReady.
+
+──────────────────────────
+G) FINAL QUALITY COMMANDS
+
+Run these in Replit shell:
+
+pnpm i
+pnpm -w typecheck
+pnpm -w lint --fix
+pnpm --filter @spotlight/server build
+pnpm --filter @spotlight/client build
+pnpm dev
+
+Verification steps:
+	1.	Click “Try Demo Mode” → dashboard loads instantly, no reload.
+	2.	Confirm MultiChart and MarketStatus render correctly.
+	3.	Observe real-time market ticks streaming smoothly.
+	4.	Speak to the voice assistant → ensure response context matches chart data.
+	5.	Drop in a new strategy file → assistant learns it immediately.
+
+──────────────────────────
+🎯 EXPECTED OUTCOME
+──────────────────────────
+After applying this prompt:
+	•	Authentication flow re-renders instantly.
+	•	SSE / WebSocket streams deliver smooth, real-time chart updates.
+	•	All errors are structured and visible.
+	•	Voice assistant operates in full sync with chart data.
+	•	No more fallback reloads or blank dashboards.
+	•	Codebase is modular, lint-clean, and production-ready.
+
+---
+
+✅ Paste that entire block into your Replit agent — it’s structured to be fully executable and self-contained for automatic patching and validation across the repo.

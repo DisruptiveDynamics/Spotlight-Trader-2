@@ -1,8 +1,9 @@
-import { db } from "../db/index.js";
-import { journals, journalLinks } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
+
 import type { JournalEntry, JournalLink, Trade } from "./model.js";
+import { db } from "../db/index.js";
+import { journals, journalLinks } from "../db/schema.js";
 
 export async function addJournalEntry(
   userId: string,

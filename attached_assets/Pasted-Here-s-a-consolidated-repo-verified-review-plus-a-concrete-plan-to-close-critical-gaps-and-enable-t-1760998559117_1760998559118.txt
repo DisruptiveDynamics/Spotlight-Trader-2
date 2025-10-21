@@ -1,0 +1,374 @@
+Here’s a consolidated, repo-verified review plus a concrete plan to close critical gaps and enable the AI voice to “watch” multiple symbols proactively, with a quick mobile UX audit.
+
+Note on code review coverage
+- I searched the repo for the market pipeline, buffers, tools, and client chart code. Results may be incomplete due to search limits. You can browse more via GitHub code search: https://github.com/DisruptiveDynamics/Spotlight-Trader-2/search?q=barBuilder https://github.com/DisruptiveDynamics/Spotlight-Trader-2/search?q=polygonWs https://github.com/DisruptiveDynamics/Spotlight-Trader-2/search?q=bars1m https://github.com/DisruptiveDynamics/Spotlight-Trader-2/search?q=ringBuffer https://github.com/DisruptiveDynamics/Spotlight-Trader-2/search?q=voice+tools
+
+Executive summary
+- The architecture is aligned: server authoritative 1m buffer, roll-ups to higher TFs, SSE streaming, agent tools pulling from shared state, trigger-based callouts.
+- Critical to trader trust: subscribe to AM.* (official 1m aggregates) in addition to T.* and reconcile at minute close. Current code subscribes only to T.* which can cause volume/candle drift.
+- Session policy (RTH vs RTH+EXT) should be consistently applied to REST and WS; this reduces “super high” bars when mixing extended hours.
+- Avoid mock ticks outside trading hours in production; keep history accurate and UI honest.
+- Volume UX: Default to raw volume at the bottom with a volume SMA overlay; add a toggle for “Relative Volume” (optional).
+- AI voice “super monitor”: Add tools for watch/unwatch symbols, backfill/subscribe, and attach triggers so Nexa can monitor and call out setups across a watchlist, not just the active pane.
+
+What’s in the repo now (key files)
+- Polygon WS client: subscribes/unsubscribes T.SYMBOL; robust reconnect; mock fallback if not extended hours. Current gaps: no AM.* subscription or AM reconciliation.
+  - apps/server/src/market/polygonWs.ts
+- Authoritative 1m buffer: bars1m exists and is fed via eventBus listener. Roll-ups to higher TFs implemented and used by tools.
+  - apps/server/src/chart/bars1m.ts
+  - apps/server/src/chart/rollups.ts
+  - apps/server/src/chart/switchTimeframe.ts
+  - apps/server/src/wiring/index.ts
+- Ring buffer used for SSE and rules/triggers:
+  - apps/server/src/cache/ring.ts
+- Tools for voice/copilot accessing chart snapshots, last price/VWAP/EMA using the shared buffers:
+  - apps/server/src/voice/tools.ts
+  - apps/server/src/copilot/tools/handlers.ts
+- Triggers pipeline (VWAP reclaim/reject, ORB, EMA pullback) and test routes; triggers fire from telemetry bus when bars arrive:
+  - apps/server/src/copilot/triggers/manager.ts
+  - apps/server/src/routes/triggerTest.ts
+- Client chart: lightweight-charts; Pane computes overlays (EMA, Bollinger, session/anchored VWAP, volume SMA). SSE wiring present.
+  - apps/client/src/features/chart/Pane.tsx
+  - apps/client/src/features/chart/ChartView.tsx
+  - apps/client/src/lib/history.ts
+
+Gaps to close
+1) Data correctness (high priority)
+- Add Polygon AM.* subscription and minute-close reconciliation
+  - Subscribe/unsubscribe/resubscribe to both T.SYMBOL and AM.SYMBOL.
+  - Emit an internal event for AM updates, and ensure bar-builder overwrites the closed minute with AM values when available to eliminate drift (especially volume spikes).
+- Session policy
+  - Introduce SESSION=RTH|RTH_EXT in env; filter both REST and WS consistently (America/New_York).
+- Mock data policy
+  - Avoid mock ticks outside trading hours in production. Keep REST backfill working; if market is closed, charts should remain static.
+
+2) AI voice “super monitor”
+- Add tools for watchlist management:
+  - watch_symbol(symbol): Backfill history (1m), subscribe to T.* and AM.*, ensure barBuilder subscription, attach triggers, and register for callouts.
+  - unwatch_symbol(symbol): Reverse the above.
+  - list_watched(): Return the current monitored set and status.
+- Ensure tools can take an explicit list of symbols and context-switch cleanly; run proactive triggers for each watched symbol and stream callouts.
+- Teach Nexa’s prompt to use these tools and to maintain a prioritized “Hunting List” with gating (e.g., liquid large caps, earnings today, sector leaders).
+
+3) UI/UX
+- Volume UX:
+  - Default raw volume histogram at bottom with 20-SMA overlay (it looks like your Pane already computes volumeSmaBatch; ensure it is drawn).
+  - Optional toggle for Relative Volume scale (bar as % of average) for users who prefer it.
+- Mobile friendliness:
+  - Responsive toolbar: collapse advanced controls into a “Studies” drawer on small screens.
+  - Larger touch targets (44px min), sticky header, one-pane default on mobile, simplified overlay set.
+  - Persist layout/overlays per device; defer heavy overlays on mobile for perf.
+- Buttons audit:
+  - Keep: symbol input with typeahead, timeframe chips, Studies (EMA/Bollinger/VWAP), Layout (grid), Style (Candles/Bars/Line), Live status pill.
+  - Hide behind “…” or inside Studies on mobile: Tape Peek, advanced HUD toggles, less-used overlays.
+  - Add: quick add to watchlist button and a “Nexa watch this” voice command hook.
+
+Concrete patches
+
+1) Subscribe to AM.* and emit AM events (minimal change)
+```typescript name=apps/server/src/market/polygonWs.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/server/src/market/polygonWs.ts
+import { websocketClient } from "@polygon.io/client-js";
+import { validateEnv } from "@shared/env";
+import { eventBus } from "./eventBus";
+import { isExtendedHoursActive } from "./marketHours";
+import { mockTickGenerator } from "./mockTickGenerator";
+
+const env = validateEnv(process.env);
+
+export class PolygonWebSocket {
+  private ws: ReturnType<typeof websocketClient> | null = null;
+  private subscribedSymbols = new Set<string>();
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 10;
+  private baseBackoffMs = 1000;
+  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private lastMessageTime = 0;
+  private isConnected = false;
+  private useMockData = false;
+  private useWebSocket = false; // Track if WebSocket is active (separate from mock mode)
+
+  async connect() {
+    try {
+      const extendedHoursActive = isExtendedHoursActive();
+
+      if (!extendedHoursActive) {
+        console.log(`🌙 Outside extended hours (4 AM-8 PM ET) - WebSocket unavailable, using REST API; no mock ticks`);
+        this.useMockData = false; // do not simulate ticks in prod
+        this.useWebSocket = false;
+        this.isConnected = true;
+        // No mock tick start here; history/backfill will still function
+        return;
+      }
+
+      const wsUrl = "wss://socket.polygon.io";
+      console.log(`📡 Connecting to Polygon real-time feed (extended hours active)`);
+
+      this.useMockData = false;
+      this.useWebSocket = true;
+      this.ws = websocketClient(env.POLYGON_API_KEY, wsUrl).stocks();
+
+      if (this.ws) {
+        const ws = this.ws as any;
+
+        ws.onopen = () => {
+          console.log("✅ Polygon WebSocket connected");
+          this.isConnected = true;
+          this.reconnectAttempts = 0;
+          this.lastMessageTime = Date.now();
+          this.startHeartbeat();
+
+          // Stop mock generators when switching to real WebSocket data
+          this.subscribedSymbols.forEach(symbol => mockTickGenerator.stop(symbol));
+
+          // Manually send auth message
+          ws.send(JSON.stringify({ action: "auth", params: env.POLYGON_API_KEY }));
+
+          this.resubscribe();
+        };
+
+        ws.onmessage = (event: any) => {
+          this.lastMessageTime = Date.now();
+
+          try {
+            const response = event.data || event.response;
+            if (!response) return;
+            const messages = JSON.parse(response);
+            messages.forEach((msg: any) => this.handleMessage(msg));
+          } catch (err) {
+            console.error("Failed to parse Polygon message:", err);
+          }
+        };
+
+        ws.onerror = (error: any) => {
+          console.error("Polygon WebSocket error:", error);
+        };
+
+        ws.onclose = () => {
+          console.warn("Polygon WebSocket closed");
+          this.isConnected = false;
+          this.stopHeartbeat();
+          this.reconnect();
+        };
+      }
+    } catch (err) {
+      console.error("Failed to connect to Polygon:", err);
+      this.reconnect();
+    }
+  }
+
+  private handleMessage(msg: any) {
+    if (msg.ev === "status") {
+      console.log("Polygon status:", msg.message);
+      const text = (msg.message ?? "").toLowerCase();
+      const authFailed = msg.status === "auth_failed" ||
+        (msg.status === "error" && (text.includes("authentication") || text.includes("unauthorized") || text.includes("invalid api key")));
+
+      if (authFailed) {
+        console.error("❌ Polygon authentication failed - falling back to cold mode (no mock ticks)");
+        this.useMockData = false;
+        this.useWebSocket = false;
+        this.isConnected = false;
+
+        if (this.ws) {
+          (this.ws as any).close();
+          this.ws = null;
+        }
+      }
+      return;
+    }
+
+    if (msg.ev === "T") {
+      // Last trade tick
+      const tick: any = { ts: msg.t, price: msg.p, size: msg.s };
+      eventBus.emit(`tick:${msg.sym}` as const, tick);
+      return;
+    }
+
+    if (msg.ev === "AM") {
+      // Official 1m aggregate for symbol; publish for reconciliation
+      // msg: { ev:'AM', sym, v, o, c, h, l, a, s, e } per Polygon v2 format
+      const amBar = {
+        symbol: msg.sym,
+        timeframe: "1m",
+        seq: msg.e ?? msg.t ?? Date.now(), // sequence/epoch best-effort
+        bar_start: msg.s, // start ms
+        bar_end: msg.e,   // end ms
+        ohlcv: {
+          o: msg.o,
+          h: msg.h,
+          l: msg.l,
+          c: msg.c,
+          v: msg.v,
+        },
+      };
+      eventBus.emit(`am:${msg.sym}` as const, amBar);
+      return;
+    }
+  }
+
+  subscribe(symbol: string) {
+    this.subscribedSymbols.add(symbol);
+
+    if (this.useMockData || !this.useWebSocket) {
+      // No-op in cold mode (no mock)
+      return;
+    }
+
+    if (this.isConnected && this.ws) {
+      (this.ws as any).send(JSON.stringify({ action: "subscribe", params: `T.${symbol},AM.${symbol}` }));
+    }
+  }
+
+  unsubscribe(symbol: string) {
+    this.subscribedSymbols.delete(symbol);
+
+    if (this.useMockData || !this.useWebSocket) {
+      return;
+    }
+
+    if (this.isConnected && this.ws) {
+      (this.ws as any).send(JSON.stringify({ action: "unsubscribe", params: `T.${symbol},AM.${symbol}` }));
+    }
+  }
+
+  private resubscribe() {
+    if (this.useMockData || !this.useWebSocket) return;
+
+    if (this.subscribedSymbols.size > 0 && this.ws) {
+      const params = Array.from(this.subscribedSymbols).flatMap(sym => [`T.${sym}`, `AM.${sym}`]).join(",");
+      (this.ws as any).send(JSON.stringify({ action: "subscribe", params }));
+    }
+  }
+
+  private reconnect() {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error("Max reconnection attempts reached");
+      return;
+    }
+    const backoff = Math.min(this.baseBackoffMs * Math.pow(2, this.reconnectAttempts), 30000);
+    this.reconnectAttempts++;
+    console.log(`Reconnecting in ${backoff}ms (attempt ${this.reconnectAttempts})`);
+    setTimeout(() => this.connect(), backoff);
+  }
+
+  private startHeartbeat() {
+    if (this.useMockData) return;
+
+    this.heartbeatInterval = setInterval(() => {
+      if (this.isConnected && !this.useMockData) {
+        const timeSinceLastMessage = Date.now() - this.lastMessageTime;
+        if (timeSinceLastMessage > 60000) {
+          console.warn("No message received in 60s, reconnecting...");
+          if (this.ws) (this.ws as any).close();
+        } else {
+          console.log("🫀 Polygon heartbeat");
+        }
+      }
+    }, 30000);
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
+
+  close() {
+    this.stopHeartbeat();
+    if (this.ws) {
+      (this.ws as any).close();
+      this.ws = null;
+    }
+  }
+
+  isUsingMockData(): boolean { return this.useMockData; }
+  isUsingWebSocket(): boolean { return this.useWebSocket && this.isConnected; }
+}
+
+export const polygonWs = new PolygonWebSocket();
+```
+
+Notes:
+- This emits am:${symbol} events; ensure your bar builder listens and overwrites the closed minute. If there’s no barBuilder AM handler yet, we should add one.
+
+2) AI tools: watch/unwatch/list symbols for proactive monitoring
+- This lets Nexa “watch NVDA, AAPL” and begin calling out setups even if those charts aren’t currently selected.
+
+```typescript name=apps/server/src/copilot/tools/watchlist.ts
+import { z } from "zod";
+import { polygonWs } from "@server/market/polygonWs";
+import { eventBus } from "@server/market/eventBus";
+import { bars1m } from "@server/chart/bars1m";
+import { rollupFrom1m } from "@server/chart/rollups";
+import { getHistory } from "@server/history/service";
+
+const zSymbol = z.string().min(1).max(10).transform(s => s.toUpperCase());
+
+const watched = new Set<string>();
+
+export const watchlistTools = {
+  async watch_symbol(input: unknown) {
+    const { symbol } = z.object({ symbol: zSymbol }).parse(input);
+    if (watched.has(symbol)) return { ok: true, symbol, already: true };
+
+    // Backfill initial 1m history, populate buffers
+    const bars = await getHistory({ symbol, timeframe: "1m", limit: 500 });
+    if (bars.length) {
+      // Put into the authoritative 1m buffer by emitting the same event your wiring listens to
+      bars.forEach(b => eventBus.emit(`bar:new:${symbol}:1m` as any, b));
+    }
+
+    // Subscribe real-time (T + AM)
+    polygonWs.subscribe(symbol);
+
+    // Attach triggers implicitly (manager listens to telemetry/bus already)
+    watched.add(symbol);
+    return { ok: true, symbol };
+  },
+
+  async unwatch_symbol(input: unknown) {
+    const { symbol } = z.object({ symbol: zSymbol }).parse(input);
+    if (!watched.has(symbol)) return { ok: true, symbol, already: true };
+    polygonWs.unsubscribe(symbol);
+    watched.delete(symbol);
+    return { ok: true, symbol, removed: true };
+  },
+
+  async list_watched() {
+    return { symbols: Array.from(watched) };
+  },
+};
+```
+
+- Register these with your Copilot/voice tools so Nexa can manage the watchlist. In prompt/policy, instruct Nexa to maintain a Hunting List and to attach/detach symbols with these tools as you direct.
+
+3) Environment/session config
+````markdown name=POLICY_NOTES.md
+- SESSION policy:
+  - Add env SESSION=RTH or RTH_EXT.
+  - Apply the same filter to REST history and WS updates (bucketing in America/New_York).
+- Polygon REST:
+  - Use adjusted=true.
+  - Follow next_url paging for gaps.
+- Reconnect:
+  - Gap fill from last closed bar to now via REST before resuming live.
+````
+
+4) Client UX quick actions
+- Volume: ensure histogram at bottom with 20-SMA overlay (your Pane already computes volumeSmaBatch; verify it’s drawn as a line over the histogram). Add a “RelVol” toggle to display bars scaled by 20-SMA (optional).
+- Toolbar on mobile: group advanced controls into a Studies drawer; keep symbol input, timeframe chips, style toggle, and Live status visible. Add a small “+ Watch” button to send watch_symbol to Nexa.
+
+Validation against your vision
+- Proactive, near-clairvoyant coach: With watchlist tools + triggers per watched symbol, Nexa can monitor many names in parallel and surface callouts (VWAP reclaim/reject, ORB, EMA pullback) regardless of which chart is visible.
+- Single source of truth: bars1m is authoritative; higher TFs roll up deterministically; tools and UI read from the same buffers, so voice answers match the chart.
+- Data trust: AM reconciliation and session consistency fix volume/candle anomalies and open/close spikes when mixing sessions.
+- Mobile: simplified controls and responsive layout maintain clarity and performance.
+
+Would you like me to open a PR to:
+- Add AM.* subscription and events,
+- Add the watchlist tools (watch/unwatch/list),
+- Add SESSION env and REST/WS policy stubs,
+- Expose a minimal “RelVol” toggle on the client?
+
+If yes, I’ll implement guarded by feature flags and keep commits small and typed.

@@ -1,0 +1,56 @@
+You’re right—the timeframe selector isn’t fully wired. Based on the code, here’s what works, what’s broken, and the exact places to fix it.
+
+What works
+- Timeframe UI and state:
+  - Toolbar renders the full set of timeframe buttons and calls setTimeframe(tf), highlighting the active timeframe.
+    - apps/client/src/features/chart/Toolbar.tsx (buttons call setTimeframe and reflect active.timeframe)
+    - [Toolbar.tsx (center timeframe buttons)](https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/src/features/chart/Toolbar.tsx#L129-L157)
+  - Server has an endpoint and orchestration for authoritative timeframe switching and rollups from 1m:
+    - [POST /api/chart/timeframe route](https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/server/src/routes/chartTimeframe.ts#L1-L80)
+    - [Server switchTimeframe with rollupFrom1m](https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/server/src/chart/switchTimeframe.ts#L50-L68) and incremental rollup wiring
+- Streaming is healthy; bar SSE emits bar events with timeframe field, and duplicates are handled on the client.
+
+What’s broken (and evidence)
+- Client doesn’t actually switch or reload on timeframe change:
+  - setTimeframe in state updates the UI optimistically but the server call is not implemented yet, so no authoritative switch and no reload:
+    - [apps/client/src/state/chartState.ts (setTimeframe stub)](https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/src/state/chartState.ts#L60-L90)
+  - ChartView is hardcoded to 1m:
+    - Persists lastSeq with a fixed key: useLastSeq("SPY", "1m")
+    - Connects SSE without a timeframe param (so it keeps 1m)
+    - Doesn’t refetch history when timeframe changes
+    - [apps/client/src/features/chart/ChartView.tsx (full file)](https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/client/src/features/chart/ChartView.tsx#L1-L218)
+- Server-side support is ready but unused by the client:
+  - The server route and rollup logic exist and are meant to be triggered by the client’s timeframe change.
+  - [Server timeframe orchestration](https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/apps/server/src/chart/switchTimeframe.ts#L32-L49)
+  - [Supported timeframes type and mapping live in shared types](https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/8231a9dce4d2bcec1aa137c8f5a5d50659ef3858/packages/shared/src/types/market.ts#L1-L49)
+
+Targeted fixes (wire up the pieces you already have)
+- Complete the client’s setTimeframe to call the server and drive a reload:
+  - apps/client/src/state/chartState.ts
+    - In setTimeframe(timeframe), POST /api/chart/timeframe with { symbol, timeframe } and handle errors.
+    - Keep the optimistic UI update, but only finalize after 200 OK (or revert on failure).
+- Make ChartView read and react to the active timeframe:
+  - apps/client/src/features/chart/ChartView.tsx
+    - Read active { symbol, timeframe } from useChartState.
+    - Persist lastSeq keyed by symbol+timeframe: useLastSeq(symbol, timeframe) instead of ("SPY","1m").
+    - On timeframe change:
+      - Clear the series and fetch history for that symbol+timeframe (use fetchHistory from ../../lib/history, which Pane already uses).
+      - Reconnect SSE with timeframe in the query and sinceSeq from the new key.
+    - Bucket microbar updates using the selected timeframe:
+      - Compute bucketMs = TIMEFRAME_TO_BUCKET_MIN[timeframe] * 60000 (see shared mapping).
+      - Compare floor(ts/bucketMs) for microbars vs current rolled bar to decide update vs create.
+- Pass timeframe to the SSE connection and gap-fill history:
+  - apps/client/src/lib/marketStream.ts
+    - Extend connectMarketSSE to accept a timeframe option and include it in URLSearchParams alongside symbols and sinceSeq.
+    - When doing any history gap-fill from the client side, include timeframe in the request params.
+
+Why this aligns with your repo
+- The UI state and server routes are already designed for server-authoritative timeframe management; the client just needs to call the route and reload chart data accordingly.
+- The Toolbar is correctly updating state; the missing pieces are the server call in setTimeframe and the ChartView reload/SSE re-connect mechanics keyed off that state.
+- Shared types already define the valid timeframes and bucket math, which you can import for correct aggregation.
+
+Once these client-side wires are in place, clicking 2m, 5m, 15m, etc. will:
+- Notify the server to switch rollup state,
+- Reload the correct historical series for that timeframe,
+- Resume streaming bars for that timeframe over SSE,
+- And render microbar updates against the correct bucket size.

@@ -1,19 +1,20 @@
-import type { Express } from "express";
-import { polygonWs } from "@server/market/polygonWs";
-import { barBuilder } from "@server/market/barBuilder";
-import { sseMarketStream } from "@server/stream/sse";
-import { getHistory } from "@server/history/service";
-import { eventBus } from "@server/market/eventBus";
 import { ringBuffer } from "@server/cache/ring";
 import { bars1m } from "@server/chart/bars1m";
+import { coachAdvisor } from "@server/coach/advisor";
+import { getHistory } from "@server/history/service";
 import { sessionVWAP } from "@server/indicators/vwap";
 import { marketAuditTap } from "@server/market/auditTap";
+import { barBuilder } from "@server/market/barBuilder";
+import { getMarketSource, getMarketReason } from "@server/market/bootstrap";
+import { eventBus } from "@server/market/eventBus";
+import { polygonWs } from "@server/market/polygonWs";
+import { isRthOpen } from "@server/market/session";
+import { subscribeSymbol } from "@server/market/symbolManager";
+import { handleChartTimeframe } from "@server/routes/chartTimeframe";
 import { rulesEngineService } from "@server/rules/service";
 import { signalsService } from "@server/signals/service";
-import { coachAdvisor } from "@server/coach/advisor";
-import { getMarketSource, getMarketReason } from "@server/market/bootstrap";
-import { isRthOpen } from "@server/market/session";
-import { handleChartTimeframe } from "@server/routes/chartTimeframe";
+import { sseMarketStream } from "@server/stream/sse";
+import type { Express } from "express";
 
 const DEFAULT_FAVORITES = ["SPY", "QQQ"];
 const DEFAULT_TIMEFRAME = "1m";
@@ -22,6 +23,10 @@ const DEFAULT_TIMEFRAME = "1m";
 const activeSubscriptions = new Map<string, string>();
 // Track bar listeners to properly remove them
 const barListeners = new Map<string, (bar: any) => void>();
+
+// [COALESCING] Track in-flight history requests to prevent duplicate fetches
+// Key: `symbol:timeframe:limit:before:sinceSeq`, Value: Promise<Bar[]>
+const inflightHistoryRequests = new Map<string, Promise<any>>();
 
 function subscribeSymbolTimeframe(symbol: string, timeframe: string) {
   // CRITICAL: Always ensure 1m barBuilder subscription exists
@@ -109,12 +114,12 @@ export function initializeMarketPipeline(app: Express) {
   // Start optional audit tap (disabled by default via flag)
   marketAuditTap.start();
 
+  // Subscribe to default favorites using SymbolManager
+  // This enables live data + seeds historical bars immediately
   for (const symbol of DEFAULT_FAVORITES) {
-    polygonWs.subscribe(symbol);
-    subscribeSymbolTimeframe(symbol, DEFAULT_TIMEFRAME);
-
-    // Subscribe to session VWAP (same tick stream as Tape)
-    sessionVWAP.subscribe(symbol);
+    subscribeSymbol(symbol, { seedLimit: 200 }).catch((err) => {
+      console.error(`Failed to subscribe ${symbol}:`, err);
+    });
   }
 
   // [PERFORMANCE] Paged history endpoint for lazy loading
@@ -153,7 +158,24 @@ export function initializeMarketPipeline(app: Express) {
         query.sinceSeq = parseInt(sinceSeq as string, 10);
       }
 
-      const bars = await getHistory(query);
+      // [COALESCING] Create unique key for this request
+      const requestKey = `${query.symbol}:${query.timeframe}:${query.limit}:${query.before || ''}:${query.sinceSeq || ''}`;
+      
+      // Check if identical request is already in flight
+      let requestPromise = inflightHistoryRequests.get(requestKey);
+      
+      if (requestPromise) {
+        console.log(`♻️ Coalescing duplicate history request: ${requestKey}`);
+      } else {
+        // Create new request and track it
+        requestPromise = getHistory(query).finally(() => {
+          // Clean up when done
+          inflightHistoryRequests.delete(requestKey);
+        });
+        inflightHistoryRequests.set(requestKey, requestPromise);
+      }
+
+      const bars = await requestPromise;
 
       // Bars already have nested ohlcv format, just return them
       res.json(bars);
@@ -163,7 +185,7 @@ export function initializeMarketPipeline(app: Express) {
     }
   });
 
-  app.get("/stream/market", sseMarketStream);
+  app.get("/realtime/sse", sseMarketStream); // No auth for personal app
 
   // Endpoint to change timeframe for a symbol (replaced with new implementation)
   app.post("/api/chart/timeframe", handleChartTimeframe);

@@ -1,4 +1,5 @@
 import { EventEmitter } from "events";
+
 import type { TelemetryEvent, TelemetrySubscription } from "./types";
 
 class TelemetryBus extends EventEmitter {

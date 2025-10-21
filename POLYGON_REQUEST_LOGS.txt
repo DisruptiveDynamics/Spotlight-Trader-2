@@ -1,0 +1,21 @@
+# POLYGON_REQUEST_LOGS.txt
+
+Test Date: $(date)
+API Key (masked): ...$(printenv POLYGON_API_KEY | tail -c 5)
+
+## SPY Request (1m timeframe, limit=20)
+URL: /api/history?symbol=SPY&limit=20&timeframe=1m
+Status: 200 OK
+
+Response length: 17912 chars
+Bar count: 100
+First 300 chars:
+[{"symbol":"SPY","timestamp":1760815143331,"open":707.57,"high":708.3,"low":706.14,"close":706.36,"volume":142541,"seq":29346919,"bar_start":1760815143331,"bar_end":1760815203331},{"symbol":"SPY","timestamp":1760815243331,"open":706.36,"high":709.05,"low":694.88,"close":697.87,"volume":155372,"seq":
+
+## QQQ Request (1m timeframe, limit=20)
+URL: /api/history?symbol=QQQ&limit=20&timeframe=1m
+Status: 200 OK
+Response length: 17913 chars
+Bar count: 100
+First 300 chars:
+[{"symbol":"QQQ","timestamp":1760819143192,"open":485,"high":490.22,"low":481.71,"close":489.84,"volume":156402,"seq":29346985,"bar_start":1760819143192,"bar_end":1760819203192},{"symbol":"QQQ","timestamp":1760819203192,"open":489.84,"high":498.45,"low":489.44,"close":496.53,"volume":150807,"seq":29

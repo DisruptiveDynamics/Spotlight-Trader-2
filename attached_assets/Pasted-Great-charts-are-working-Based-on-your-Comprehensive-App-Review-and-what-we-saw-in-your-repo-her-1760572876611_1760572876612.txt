@@ -1,0 +1,420 @@
+Great—charts are working. Based on your “Comprehensive App Review” and what we saw in your repo, here’s a focused gap analysis and a ready-to-paste Replit Agent prompt to fix the remaining issues systematically (sequence continuity, CSP/HMR, resync).
+
+Summary: what matches vs. what needs work
+
+What matches the review
+- Live SSE path is correct; charts update in real-time when sequence isn’t stale.
+- Voice coach plumbing is in place (Realtime voice client, ToolBridge, tool schemas).
+- PIN-only auth and protected routes are present.
+- There’s a build-id/auto-reload guard in place (good).
+
+What still needs work (in priority)
+1) Sequence continuity after server reboot (Critical)
+- Client persists lastSeq (e.g., useLastSeq("SPY","1m")) across sessions.
+- Server’s in-memory buffers and seq counters reset on reboot, causing “stale sequence” resync loops.
+- Fix: Introduce a server “EPOCH_ID” that changes per boot and emit it to the client via SSE (and a header). Make the client’s lastSeq storage key epoch-aware and reset cleanly on epoch change.
+
+2) CSP/HMR in dev (Developer experience)
+- Replit/preview is HTTPS; Vite HMR must use wss and page host (not 0.0.0.0).
+- Helmet CSP must be off in dev; production CSP must not be ‘script-src none’ for a React/Vite app.
+
+3) Resync returns empty results (Gap-fill)
+- Ensure /api/history consistently returns bars for intraday resync windows (Polygon aggregates) and “no-store” caching.
+- Client resync path should fetch gap bars and resume streaming.
+
+Below are precise file-level changes to implement Option A (epoch-based reset) + CSP/HMR dev fixes + history gap-fill. Use them as the blueprint for your Replit agent (prompt at the end).
+
+Server: add an EPOCH ID and propagate it
+
+```typescript name=apps/server/src/realtime/epoch.ts
+import crypto from "node:crypto";
+
+// A new ID per server boot. Persisting to DB/Redis would be Option B.
+const EPOCH_ID = crypto.randomUUID();
+
+export function getEpochId(): string {
+  return EPOCH_ID;
+}
+```
+
+Emit epoch in SSE and as a response header
+
+```typescript name=apps/server/src/routes/marketStream.ts
+// ...existing imports
+import { getEpochId } from "../realtime/epoch";
+
+// inside GET /stream/market handler, after sseHeaders(res):
+res.setHeader("X-App-Epoch", getEpochId());
+// emit epoch immediately so the client can decide about lastSeq before any bars
+send(res, "epoch", { id: getEpochId() });
+
+// keep heartbeat pings as-is
+```
+
+Expose epoch for quick debugging
+
+```typescript name=apps/server/src/routes/epoch.ts
+import { Router } from "express";
+import { getEpochId } from "../realtime/epoch";
+
+export const epochRouter = Router();
+
+epochRouter.get("/epoch", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ epoch: getEpochId(), ts: Date.now() });
+});
+```
+
+Register the route and disable CSP in dev
+
+```typescript name=apps/server/src/index.ts
+import express from "express";
+import cookieParser from "cookie-parser";
+import helmet from "helmet";
+import { epochRouter } from "./routes/epoch";
+// ...other imports
+
+const app = express();
+app.use(express.json());
+app.use(cookieParser());
+
+const isProd = process.env.NODE_ENV === "production";
+app.use(
+  helmet({
+    contentSecurityPolicy: isProd
+      ? {
+          useDefaults: true,
+          directives: {
+            "script-src": ["'self'"], // adjust if you truly need inline/hash/nonce
+            "style-src": ["'self'", "'unsafe-inline'"],
+            "connect-src": ["'self'"], // SSE/WS to same-origin
+            "img-src": ["'self'", "data:"],
+          },
+        }
+      : false,
+    crossOriginEmbedderPolicy: false,
+  }),
+);
+
+// Public
+app.use("/api", epochRouter);
+// ...PIN auth mount
+// ...protected /api, /stream, /ws mounts
+```
+
+Server: fix history gap-fill (Polygon aggregates)
+
+```typescript name=apps/server/src/routes/history.ts
+import { Router } from "express";
+
+export const historyRouter = Router();
+
+/**
+ * GET /api/history?symbol=SPY&timeframe=1m&limit=300
+ * Returns: [{ time, msEnd, open, high, low, close, volume }]
+ */
+historyRouter.get("/history", async (req, res) => {
+  try {
+    const symbol = String(req.query.symbol || "").trim();
+    const timeframe = String(req.query.timeframe || "1m").trim();
+    const limit = Math.min(Number(req.query.limit || 300), 5000);
+    const apiKey = process.env.POLYGON_API_KEY;
+
+    if (!symbol) return res.status(400).json({ error: "symbol required" });
+    if (!apiKey) return res.status(500).json({ error: "POLYGON_API_KEY missing" });
+
+    const tfMap: Record<string, { mult: number; span: "minute" | "hour" | "day" }> = {
+      "1m": { mult: 1, span: "minute" },
+      "2m": { mult: 2, span: "minute" },
+      "5m": { mult: 5, span: "minute" },
+      "15m": { mult: 15, span: "minute" },
+      "1h": { mult: 1, span: "hour" },
+      "1d": { mult: 1, span: "day" },
+    };
+    const mapped = tfMap[timeframe] || tfMap["1m"];
+
+    const now = Date.now();
+    // Pull a rolling window large enough to cover limit bars for intraday
+    const minutes = mapped.span === "minute" ? mapped.mult * (limit + 60) : 60 * 24 * 7;
+    const from = new Date(now - minutes * 60_000).toISOString();
+    const to = new Date(now).toISOString();
+
+    const url = new URL(
+      `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${mapped.mult}/${mapped.span}/${from}/${to}`,
+    );
+    url.searchParams.set("adjusted", "true");
+    url.searchParams.set("sort", "asc");
+    url.searchParams.set("limit", String(Math.max(5000, limit)));
+    url.searchParams.set("apiKey", apiKey);
+
+    const r = await fetch(url.toString());
+    if (!r.ok) {
+      const text = await r.text();
+      return res.status(502).json({ error: `Polygon ${r.status}: ${text}` });
+    }
+    const j: any = await r.json();
+    const results = Array.isArray(j.results) ? j.results : [];
+
+    const bars = results.slice(-limit).map((x: any) => {
+      const msEnd = Number(x.t);
+      return {
+        time: Math.floor(msEnd / 1000),
+        msEnd,
+        open: Number(x.o),
+        high: Number(x.h),
+        low: Number(x.l),
+        close: Number(x.c),
+        volume: Number(x.v),
+      };
+    });
+
+    res.setHeader("Cache-Control", "no-store");
+    res.json(bars);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message ?? "history failed" });
+  }
+});
+```
+
+Client: make lastSeq epoch-aware and reset on epoch change
+
+```typescript name=apps/client/src/lib/marketStream.ts
+export type EpochEvent = { id: string };
+
+export function connectMarketSSE(symbols: string[], opts?: { sinceSeq?: number }) {
+  const params = new URLSearchParams();
+  if (symbols.length) params.set("symbols", symbols.join(","));
+  if (opts?.sinceSeq != null) params.set("sinceSeq", String(opts.sinceSeq));
+  const url = `/stream/market?${params.toString()}`;
+
+  const es = new EventSource(url, { withCredentials: true });
+
+  const epochListeners: Array<(e: EpochEvent) => void> = [];
+  const barListeners: Array<(b: any) => void> = [];
+  const microListeners: Array<(m: any) => void> = [];
+  const openListeners: Array<() => void> = [];
+  const errorListeners: Array<(e: any) => void> = [];
+
+  es.addEventListener("open", () => openListeners.forEach((fn) => fn()));
+  es.addEventListener("error", (e) => errorListeners.forEach((fn) => fn(e)));
+  es.addEventListener("epoch", (ev: MessageEvent) => {
+    try {
+      epochListeners.forEach((fn) => fn(JSON.parse(ev.data)));
+    } catch {}
+  });
+  es.addEventListener("bar", (ev: MessageEvent) => {
+    try {
+      barListeners.forEach((fn) => fn(JSON.parse(ev.data)));
+    } catch {}
+  });
+  es.addEventListener("micro", (ev: MessageEvent) => {
+    try {
+      microListeners.forEach((fn) => fn(JSON.parse(ev.data)));
+    } catch {}
+  });
+
+  return {
+    onOpen(fn: () => void) { openListeners.push(fn); },
+    onError(fn: (e: any) => void) { errorListeners.push(fn); },
+    onEpoch(fn: (e: EpochEvent) => void) { epochListeners.push(fn); },
+    onBar(fn: (b: any) => void) { barListeners.push(fn); },
+    onMicro(fn: (m: any) => void) { microListeners.push(fn); },
+    close() { es.close(); },
+  };
+}
+```
+
+Update the lastSeq hook to namespace by epoch
+
+```typescript name=apps/client/src/features/chart/useLastSeq.ts
+import { useEffect, useState } from "react";
+
+export function useLastSeq(symbol: string, timeframe: string, epochId: string | null) {
+  const key = epochId ? `lastSeq:${epochId}:${symbol}:${timeframe}` : null;
+  const [lastSeq, setLastSeq] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!key) return;
+    try {
+      const raw = localStorage.getItem(key);
+      setLastSeq(raw ? Number(raw) : null);
+    } catch {}
+  }, [key]);
+
+  const update = (seq: number) => {
+    if (!key) return;
+    setLastSeq(seq);
+    try {
+      localStorage.setItem(key, String(seq));
+    } catch {}
+  };
+
+  const resetAllForSymbolTf = () => {
+    // Optional: clear older epochs for same symbol/timeframe
+    try {
+      const prefix = `lastSeq:`;
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(prefix) && k.endsWith(`:${symbol}:${timeframe}`)) {
+          localStorage.removeItem(k);
+        }
+      }
+    } catch {}
+    setLastSeq(null);
+  };
+
+  return [lastSeq, update, resetAllForSymbolTf] as const;
+}
+```
+
+Consume epoch in ChartView and reset on change
+
+```typescript name=apps/client/src/features/chart/ChartView.tsx
+import { useEffect, useRef, useState } from "react";
+import type { IChartApi, ISeriesApi, UTCTimestamp } from "lightweight-charts";
+import { connectMarketSSE, type Bar, type Micro, type EpochEvent } from "../../lib/marketStream";
+import { useLastSeq } from "./useLastSeq";
+
+export function ChartView() {
+  const [epochId, setEpochId] = useState<string | null>(null);
+
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const [lastSeq, setLastSeq, resetSeqForTf] = useLastSeq("SPY", "1m", epochId);
+
+  useEffect(() => {
+    let sse = connectMarketSSE(["SPY"], lastSeq ? { sinceSeq: lastSeq } : undefined);
+
+    sse.onEpoch((e: EpochEvent) => {
+      if (!e?.id) return;
+      // First epoch arrival for this connection
+      if (!epochId) {
+        setEpochId(e.id);
+        return;
+      }
+      // If epoch changed during session → full reset for this TF
+      if (epochId && e.id !== epochId) {
+        resetSeqForTf();
+        setEpochId(e.id);
+        // caller can also trigger a history re-fetch here if needed
+      }
+    });
+
+    sse.onOpen(() => {
+      // on first open, we may still be waiting on 'epoch'
+    });
+
+    sse.onBar((bar: Bar) => {
+      // normal update path; setLastSeq(bar.seq);
+    });
+
+    sse.onMicro((micro: Micro) => {
+      // in-flight bar update logic
+    });
+
+    return () => sse.close();
+  }, [epochId, lastSeq]);
+
+  // rest of component unchanged (history load + chart wiring)
+  return <div ref={chartContainerRef} className="w-full h-full" />;
+}
+```
+
+Client: fix Vite HMR (avoid 0.0.0.0 in the URL, use page host)
+
+```typescript name=apps/client/vite.config.ts
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+const API_TARGET = process.env.VITE_API_TARGET || "http://127.0.0.1:3000";
+const USE_HTTPS = true; // Replit previews are HTTPS
+const HMR_PROTOCOL = USE_HTTPS ? "wss" : "ws";
+const HMR_CLIENT_PORT = USE_HTTPS ? 443 : 5173;
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    host: true, // bind 0.0.0.0 (listening), but do not use it as client host
+    port: 5173,
+    hmr: {
+      protocol: HMR_PROTOCOL,
+      clientPort: HMR_CLIENT_PORT,
+      path: "/__vite_hmr",
+      // host intentionally undefined → Vite uses window.location.host
+    },
+    proxy: {
+      "/api": { target: API_TARGET, changeOrigin: true, secure: false },
+      "/stream": { target: API_TARGET, changeOrigin: true, secure: false, proxyTimeout: 0, timeout: 0 },
+      "/ws": { target: API_TARGET, ws: true, changeOrigin: true, secure: false },
+    },
+  },
+});
+```
+
+Replit Agent prompt (copy-paste)
+
+```
+You are an expert full‑stack engineer in a TypeScript monorepo (apps/client = Vite/React, apps/server = Express). Do NOT add frameworks. Keep PRs small and focused. Strict TypeScript and ESLint/Prettier. No dead code.
+
+GOAL
+Fix three production-impacting items systematically:
+1) Sequence continuity: when the server restarts, the client should not get stuck in stale seq loops. Use an EPOCH_ID approach (Option A).
+2) CSP/HMR in dev: eliminate HMR “0.0.0.0” errors and disable CSP in dev so Vite works reliably in Replit/HTTPS.
+3) Resync gap-fill: ensure /api/history returns bars for intraday windows so resync can fill gaps and resume.
+
+SCOPE OF THIS PR
+A) Add server epoch and propagate to client
+- Create apps/server/src/realtime/epoch.ts with a boot-scoped ID (crypto.randomUUID()).
+- In /stream/market, set response header X-App-Epoch and emit an “epoch” SSE event immediately.
+- Add GET /api/epoch returning { epoch, ts } (no-store).
+- Do NOT add DB persistence (Option B) in this PR.
+
+B) Make client epoch-aware and reset lastSeq on change
+- Extend connectMarketSSE to listen for event “epoch” and expose onEpoch(cb).
+- Update useLastSeq(symbol,timeframe,epoch) to namespace localStorage by epoch (key = lastSeq:${epoch}:${symbol}:${timeframe}) and provide a reset function.
+- In ChartView/Pane, hold epochId in state. On first epoch, set it; if a subsequent epoch differs, call reset(), refetch history for the active symbol/timeframe, and reconnect SSE with no sinceSeq.
+
+C) Resync gap-fill
+- Implement/verify /api/history backed by Polygon aggregates that returns the last N bars for {symbol,timeframe}, with Cache-Control: no-store.
+- Ensure fetchHistory points to /api/history and that ChartView/Pane sets series.setData on response.
+
+D) CSP/HMR in dev
+- In apps/server/src/index.ts, use helmet with contentSecurityPolicy: false when NODE_ENV !== 'production'; provide a reasonable production CSP (no 'script-src none').
+- In apps/client/vite.config.ts, configure server.hmr = { protocol: 'wss', clientPort: 443, path: '/__vite_hmr' } and leave host undefined so Vite uses window.location.host. Keep host: true for listening.
+- Keep SSE proxy timeouts unlimited (proxyTimeout:0, timeout:0).
+
+ACCEPTANCE CRITERIA
+- On server restart, the client logs “epoch” once and continues streaming without “stale seq” loops; charts update in real time.
+- Manually deleting the server process and relaunching still results in chart recovery within 2–3 seconds (history refilled, stream resumes).
+- /api/history returns >0 bars for SPY 1m with limit=300 in normal market hours (200 OK; no-store).
+- DevTools shows HMR connected; no more wss://0.0.0.0:5000 errors. CSP “Report-Only” messages from Replit are acceptable, but our app does not send a blocking CSP in dev.
+- No new TypeScript errors; lint passes.
+
+OUT OF SCOPE (follow-up PRs)
+- Persisting seq continuity using Redis/DB (Option B).
+- Scanner/voice callouts tuning.
+- Advanced indicator/feature expansions.
+
+FILES TO CHANGE (exact paths)
+- apps/server/src/realtime/epoch.ts (new)
+- apps/server/src/routes/epoch.ts (new)
+- apps/server/src/routes/marketStream.ts (add X-App-Epoch header + epoch event)
+- apps/server/src/routes/history.ts (Polygon aggregates normalized; no-store)
+- apps/server/src/index.ts (helmet dev/prod behavior; mount /api/epoch)
+- apps/client/src/lib/marketStream.ts (onEpoch handler)
+- apps/client/src/features/chart/useLastSeq.ts (epoch-keyed storage)
+- apps/client/src/features/chart/ChartView.tsx (react to epoch: reset, refetch, reconnect)
+- apps/client/vite.config.ts (HMR config; SSE proxy timeouts)
+
+NOTES
+- Keep same-origin and withCredentials: true for EventSource.
+- Do not add demo mode. Live Polygon only.
+- Keep PIN-only auth as-is. Ensure /stream and /api/history require cookie auth.
+
+When done, provide a short test script: “Restart server → page stays open → epoch event logs → bars resume; No stale-seq resync loop.”
+```
+
+If you want, I can also produce a second prompt for a follow-up PR to add “Option B” (sequence persistence in Redis/SQLite) and a scanner that drives A/A‑ voice callouts once these core fixes are in.

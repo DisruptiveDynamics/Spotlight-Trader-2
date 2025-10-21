@@ -7,14 +7,14 @@ const PORTS = [5000, 8080];
 function killPort(port: number): void {
   try {
     console.log(`[Cleanup] Checking port ${port}...`);
-    
+
     // Find process using the port
     const result = execSync(`lsof -ti:${port}`, { encoding: "utf-8" }).trim();
-    
+
     if (result) {
       const pids = result.split("\n").filter(Boolean);
       console.log(`[Cleanup] Found ${pids.length} process(es) on port ${port}: ${pids.join(", ")}`);
-      
+
       // Kill each process
       for (const pid of pids) {
         try {

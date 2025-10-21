@@ -1,0 +1,239 @@
+Short answer
+- We applied the minimal fix to reduce flooding (removed tick streaming over SSE and raised the buffer), but several items from the plan haven’t been implemented yet. That’s why you still see 3s SSE reconnects and the 5m timeframe request storm.
+- For launch, we should finish the core stability items: add feature flags/env for streaming config, fix the client resync loop and dedupe logic, verify cookie/CORS for SSE, and coalesce identical history requests. Optional polish (labels, caching) can be next.
+
+What’s done vs. still pending
+- Done
+  - Removed tick streaming from SSE (fewer events)
+  - Increased SSE buffer (100 → 1000)
+- Not done (and should be)
+  - Feature flag for ticks (FF_SSE_TICKS) instead of deletion
+  - Configurable SSE buffer (SSE_BUFFER_CAP env)
+  - Client resync loop guard and sinceSeq-only backfill on reconnect
+  - Client-side fetch dedupe/cancel on timeframe switch
+  - Server-side inflight coalescing for history
+  - SSE seed filter honoring Last-Event-ID (to avoid dupes) wherever not present
+  - Cookie/CORS verification for SSE with credentials
+  - Observability labels and ring metrics (nice-to-have but helpful)
+
+What’s causing the current issues
+- 3s SSE reconnects
+  - Likely a combination of: residual backpressure on bursts AND auth/CORS causing 401s on the SSE route (your “PIN screen” shows session churn). Even when drops don’t close the stream, a 401 will.
+- 586 repeated history requests
+  - Client reconnection/resync logic is firing a full “snapshot” repeatedly (or a useEffect dependency loop), plus no in-flight dedupe. Each SSE reconnect calls the snapshot again.
+
+Launch blockers to fix now
+1) Add proper flags and env
+- FF_SSE_TICKS (default off) so we can re-enable ticks in testing without code edits.
+- SSE_BUFFER_CAP from env (default 1000).
+- VITE_MARKET_IDLE_MS (default 300000) and show “Connected (idle)” when no live messages.
+
+2) Fix client resync loop and dedupe logic
+- Only run a full resync snapshot once per symbol/timeframe after initial connect (lastSeq === 0).
+- On reconnect with lastSeq > 0, do sinceSeq backfill only (no full snapshot).
+- Coalesce duplicate history fetches and cancel previous ones on timeframe change.
+
+3) Verify SSE credentials and cookie
+- EventSource with credentials (or same-origin), CORS: Access-Control-Allow-Credentials: true, exact origin (not “*”).
+- Cookies: SameSite=None; Secure=true; maxAge=24h. Make sure the SSE route checks and accepts the cookie correctly.
+
+4) Server-side inflight coalescing for history
+- Prevent thundering herd of identical history requests.
+
+5) Seed and dedupe on resume
+- Filter SSE seed by Last-Event-ID so the client doesn’t see duplicates on reconnect.
+
+Drop-in patches (focused)
+
+Feature flag for ticks in SSE
+```typescript name=apps/server/src/stream/sse.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/stream/sse.ts
+// Gate tick streaming behind a flag (default off)
+const SSE_TICKS = (process.env.FF_SSE_TICKS ?? "off").toLowerCase() === "on";
+
+// ...
+if (SSE_TICKS) {
+  const tickHandler = (tick: any) => {
+    recordSSEEvent("tick");
+    bpc.write("tick", {
+      symbol,
+      ts: tick.ts,
+      price: tick.price,
+      size: tick.size,
+      side: tick.side,
+    });
+  };
+  eventBus.on(`tick:${symbol}` as const, tickHandler);
+  listeners.push({ event: `tick:${symbol}`, handler: tickHandler });
+}
+```
+
+Configurable buffer + drop metrics (env-driven)
+```typescript name=apps/server/src/stream/sse.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/stream/sse.ts
+const SSE_BUFFER_CAP = Number(process.env.SSE_BUFFER_CAP ?? 1000);
+// when creating the buffered writer:
+const bpc = createBufferedSSEWriter(res, { capacity: SSE_BUFFER_CAP });
+
+// in heartbeat:
+if (stats?.dropped && stats.dropped > lastDropped) {
+  const dropped = stats.dropped - lastDropped;
+  sseDropped.labels(symbol ?? "unknown", timeframe ?? "1m").inc(dropped);
+  logger.warn({ dropped, cap: SSE_BUFFER_CAP, symbol, timeframe }, "sse_backpressure_drop");
+  lastDropped = stats.dropped;
+}
+```
+
+Honor Last-Event-ID when seeding
+```typescript name=apps/server/src/stream/sse.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/stream/sse.ts
+import { parseLastEventId } from "./lastEventId";
+// ...
+const lastId = parseLastEventId(req.headers["last-event-id"] as string | undefined);
+
+if (seedOnConnect) {
+  await Promise.all(symbols.map(async (symbol) => {
+    const seed = await getHistory({ symbol, timeframe: timeframe as any });
+    for (const bar of seed) {
+      if (lastId !== undefined && bar.seq <= lastId) continue; // filter dupes
+      bpc.write("bar", {
+        symbol: bar.symbol,
+        timeframe: bar.timeframe,
+        seq: bar.seq,
+        bar_start: bar.bar_start,
+        bar_end: bar.bar_end,
+        ohlcv: bar.ohlcv,
+      }, String(bar.seq));
+    }
+  }));
+}
+```
+
+Client resync guard and in-flight dedupe
+```typescript name=apps/client/src/lib/marketStream.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/client/src/lib/marketStream.ts
+// Track last resync per key and prevent snapshot storms
+const resyncDone = new Set<string>(); // key: `${symbol}:${timeframe}`
+const inflight = new Map<string, AbortController>();
+
+async function resyncSnapshot(symbol: string, timeframe: string) {
+  const key = `${symbol}:${timeframe}`;
+  if (resyncDone.has(key)) return;          // don't repeat snapshots
+  if (lastSeq > 0) return;                  // if we already have bars, skip snapshot
+  resyncDone.add(key);
+
+  const ac = new AbortController();
+  const prev = inflight.get(key);
+  if (prev) prev.abort();
+  inflight.set(key, ac);
+
+  try {
+    const params = new URLSearchParams({ symbol, timeframe, limit: "50" });
+    const res = await fetch(`${HISTORY_URL}?${params}`, { signal: ac.signal, credentials: "include" as any });
+    if (!res.ok) throw new Error(`Resync failed: ${res.status}`);
+    const rawBars = await res.json();
+    const bars = rawBars.map((b: any) => ({
+      symbol: b.symbol || symbol,
+      timeframe: b.timeframe || timeframe,
+      seq: Math.floor((b.bar_start ?? (b.bar_end - 60000)) / 60000),
+      bar_start: b.bar_start ?? (b.bar_end - 60000),
+      bar_end: b.bar_end,
+      ohlcv: b.ohlcv,
+    })).sort((a: Bar, b: Bar) => a.seq - b.seq);
+
+    if (bars.length > 0) {
+      lastSeq = bars[bars.length - 1]!.seq;
+      bars.forEach((bar) => listeners.bar.forEach((fn) => fn(bar)));
+    }
+    emitStatus("live");
+  } catch (e) {
+    console.error("Resync error:", e);
+    emitStatus("error");
+  } finally {
+    inflight.delete(key);
+  }
+}
+
+// On SSE open or first live bar, call resyncSnapshot(symbol, timeframe) if lastSeq===0
+// On reconnect with lastSeq>0, do a sinceSeq backfill only.
+```
+
+Client dedupe on incoming bars
+```typescript name=apps/client/src/lib/marketStream.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/client/src/lib/marketStream.ts
+// Before delivering
+if (b.seq <= lastSeq) {
+  // stale or duplicate, ignore
+  return;
+}
+lastSeq = b.seq;
+listeners.bar.forEach((fn) => fn(b));
+```
+
+SSE “idle” status (no live for N minutes)
+```typescript name=apps/client/src/lib/marketStream.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/client/src/lib/marketStream.ts
+let lastLiveAt = Date.now();
+const idleMs = Number(import.meta.env.VITE_MARKET_IDLE_MS ?? 300000);
+
+es.addEventListener("bar", (e) => {
+  lastLiveAt = Date.now();
+  // ...
+});
+
+setInterval(() => {
+  if (Date.now() - lastLiveAt > idleMs && currentState === "live") {
+    emitStatus("idle");
+  }
+}, 30000);
+```
+
+SSE credentials in client + CORS on server
+- Client: ensure EventSource is same-origin or initialized with credentials (some polyfills support withCredentials).
+- Server: CORS must allow credentials (Access-Control-Allow-Credentials: true) and echo exact Origin (not “*”).
+
+History inflight coalescing (server)
+```typescript name=apps/server/src/history/inflight.ts
+type Key = string;
+const inflight = new Map<Key, Promise<any>>();
+export function coalesce<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = inflight.get(key);
+  if (existing) return existing as Promise<T>;
+  const p = fn().finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
+}
+```
+
+Use coalesce in history service for 1m fetches
+```typescript name=apps/server/src/history/service.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/history/service.ts
+import { coalesce } from "./inflight";
+// ...
+const key = `${symbol}:1m:${fromMs}:${toMs}`;
+const oneMinuteBars = await coalesce(key, () => fetchPolygonHistory(symbol, "1m", neededMinutes, before));
+```
+
+Optional polish for TapePanel
+```typescript name=apps/client/src/components/TapePanel.tsx url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/client/src/components/TapePanel.tsx
+const ticksEnabled = import.meta.env.VITE_SSE_TICKS === "on";
+return (
+  <div>
+    {!ticksEnabled && (
+      <div className="px-3 py-2 text-xs text-amber-400">
+        Live tick-by-tick is disabled for stability. Bars/microbars are live. (Enable via VITE_SSE_TICKS=on)
+      </div>
+    )}
+    {/* existing UI */}
+  </div>
+);
+```
+
+What to consider for launch
+- Must pass
+  - SSE stability: no 3s reconnects; sse_dropped_total flat during normal use.
+  - No request storms on timeframe switch; only one history snapshot, then sinceSeq backfill on reconnects.
+  - Cookie/CORS confirmed; no random PIN prompts while idle.
+- Nice to have
+  - Prometheus labels: {symbol,timeframe} on polygon_empty_total, sse_dropped_total; ring_size and ring_evictions per symbol.
+  - Rollup cache for repeated 5m/15m requests (we can add once SSE is stable).
+
+I can push these changes to PR #3 and set defaults in .env.example:
+- FF_SSE_TICKS=off
+- SSE_BUFFER_CAP=1000
+- VITE_MARKET_IDLE_MS=300000
+
+Do you want me to proceed updating the PR now?

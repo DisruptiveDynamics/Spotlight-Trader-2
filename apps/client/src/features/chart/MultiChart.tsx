@@ -1,6 +1,6 @@
-import { useChartState } from "../../state/chartState";
-import { Pane } from "./Pane";
+import { PaneStable as Pane } from "./PaneStable";
 import { ChartErrorBoundary } from "../../components/ChartErrorBoundary";
+import { useChartState } from "../../state/chartState";
 
 export function MultiChart() {
   const { layout, focusedPane } = useChartState();

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { toLogError } from "../../lib/errors";
+
 type MarketSource = "polygon" | "sim";
 type SessionType = "PRE" | "RTH" | "A/H" | "CLOSED";
 
@@ -16,7 +18,9 @@ export function MarketStatus() {
     // Fetch market status from dedicated endpoint
     const fetchStatus = async () => {
       try {
-        const response = await fetch("/api/market/status");
+        const response = await fetch("/api/market/status", {
+          credentials: "include",
+        });
 
         if (!response.ok) {
           throw new Error(`Status endpoint failed: ${response.statusText}`);
@@ -39,7 +43,8 @@ export function MarketStatus() {
 
         setStatus({ source, reason, session });
       } catch (error) {
-        console.error("Failed to fetch market status:", error);
+        console.error("Failed to fetch market status:", toLogError(error));
+        setStatus({ source: "polygon", reason: "Status unavailable", session: "CLOSED" });
       }
     };
 

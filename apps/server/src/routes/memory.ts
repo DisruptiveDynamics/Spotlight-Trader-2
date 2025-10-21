@@ -1,5 +1,7 @@
 import { Router } from "express";
+import type { Request, Response } from "express";
 import { z } from "zod";
+
 import {
   saveMemory,
   listMemories,
@@ -7,7 +9,7 @@ import {
   deleteMemory,
   type MemoryKind,
 } from "../memory/store.js";
-import { AuthRequest } from "../middleware/requireUser.js";
+import { requirePin } from "../middleware/requirePin";
 
 const router: Router = Router();
 
@@ -28,10 +30,10 @@ const SearchMemoriesSchema = z.object({
   k: z.coerce.number().optional(),
 });
 
-router.post("/", async (req: AuthRequest, res) => {
+router.post("/", requirePin, async (req: Request, res: Response) => {
   try {
     const parsed = SaveMemorySchema.parse(req.body);
-    const userId = req.user!.userId;
+    const userId = (req as any).userId;
 
     const id = await saveMemory(userId, parsed.kind, parsed.text, parsed.tags);
 
@@ -45,10 +47,10 @@ router.post("/", async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/", async (req: AuthRequest, res) => {
+router.get("/", requirePin, async (req: Request, res: Response) => {
   try {
     const parsed = ListMemoriesSchema.parse(req.query);
-    const userId = req.user!.userId;
+    const userId = (req as any).userId;
 
     const options: { kind?: MemoryKind; limit?: number; tag?: string } = {};
     if (parsed.kind) options.kind = parsed.kind;
@@ -67,10 +69,10 @@ router.get("/", async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/search", async (req: AuthRequest, res) => {
+router.get("/search", requirePin, async (req: Request, res: Response) => {
   try {
     const parsed = SearchMemoriesSchema.parse(req.query);
-    const userId = req.user!.userId;
+    const userId = (req as any).userId;
 
     const k = parsed.k ?? 4;
     const memories = await retrieveTopK(userId, parsed.q, k);
@@ -85,10 +87,11 @@ router.get("/search", async (req: AuthRequest, res) => {
   }
 });
 
-router.delete("/:id", async (req: AuthRequest, res) => {
+router.delete("/:id", requirePin, async (req: Request, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = (req as any).userId;
     const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "ID required" });
 
     await deleteMemory(userId, id);
 

@@ -1,0 +1,209 @@
+You’re right to expect AMD (and any valid symbol) to “just work.” The voice controls look fine, but AMD failed because only SPY/QQQ are subscribed on the server. The fix is to support dynamic, on-demand symbol subscription, seed history immediately, and wire the client/voice paths to request it. Below is a safe, additive plan and patches that align with your code and won’t break existing flows.
+
+What I validated and what failed
+- Voice button controls: OK
+  - Single-click toggles mute/unmute; double-click disconnect; T key mutes; Esc disconnects.
+- Live feed: SPY/QQQ live via Polygon; bars finalize; SSE stable when not overloaded.
+- AMD “no data”: Root cause is static subscriptions (SPY/QQQ only). Voice tools can request AMD, but without server subscription the live stream and 1m buffer stay empty, so charts/coach say “no data.”
+
+What we’ll add (minimal, safe)
+- Dynamic symbol subscription
+  - Server: SymbolManager with ref-count + TTL, subscribe/unsubscribe to Polygon WS on demand.
+  - API: /api/symbols/subscribe, /api/symbols/unsubscribe, /api/symbols/active.
+  - SSE: when a client requests symbols, auto-subscribe missing ones (optional), or require a pre-call to subscribe.
+- Immediate history seed
+  - After subscribe, fetch 1m history and prime buffers so charts/voice have bars instantly.
+- Client/voice integration
+  - Before connecting SSE (or when switching symbol / voice requests new symbol), call subscribe endpoint and then connect/refresh.
+- Keep ticks off SSE by default (FF_SSE_TICKS=off) to avoid flooding; bars/microbars remain live.
+
+Server: symbol manager (on-demand WS subscribe)
+```typescript name=apps/server/src/market/symbolManager.ts
+import { logger } from "@server/logger";
+import { startPolygonSymbol, stopPolygonSymbol, isPolygonSymbolActive } from "@server/market/polygon/stream"; // provide these hooks
+import { ringBuffer } from "@server/cache/ring";
+import { getHistory } from "@server/history/service";
+
+type SubEntry = { refs: number; lastTouched: number; timer?: NodeJS.Timeout };
+
+const ACTIVE = new Map<string, SubEntry>();
+const TTL_MS = Number(process.env.SYMBOL_TTL_MS ?? 15 * 60_000); // 15m default
+
+function touch(symbol: string) {
+  const entry = ACTIVE.get(symbol);
+  if (!entry) return;
+  entry.lastTouched = Date.now();
+  if (entry.timer) clearTimeout(entry.timer);
+  entry.timer = setTimeout(() => tryEvict(symbol), TTL_MS);
+}
+
+function tryEvict(symbol: string) {
+  const entry = ACTIVE.get(symbol);
+  if (!entry) return;
+  const idle = Date.now() - entry.lastTouched;
+  if (entry.refs <= 0 && idle >= TTL_MS) {
+    stopPolygonSymbol(symbol).catch((e) => logger.warn({ symbol, e }, "evict_stop_failed"));
+    ACTIVE.delete(symbol);
+    logger.info({ symbol }, "symbol_evicted");
+  } else {
+    touch(symbol);
+  }
+}
+
+export async function subscribeSymbol(symbolRaw: string, opts?: { seedLimit?: number }) {
+  const symbol = symbolRaw.toUpperCase();
+  const seedLimit = opts?.seedLimit ?? 200;
+  const now = Date.now();
+  const entry = ACTIVE.get(symbol);
+  if (entry) {
+    entry.refs++;
+    touch(symbol);
+    return { ok: true, already: true };
+  }
+
+  ACTIVE.set(symbol, { refs: 1, lastTouched: now });
+  try {
+    if (!isPolygonSymbolActive(symbol)) {
+      await startPolygonSymbol(symbol);
+      logger.info({ symbol }, "polygon_symbol_started");
+    }
+    // Seed history to prime buffers
+    const bars = await getHistory({ symbol, timeframe: "1m", limit: seedLimit });
+    if (bars?.length) {
+      ringBuffer.putBars(symbol, bars as any);
+      logger.debug({ symbol, count: bars.length }, "seeded_history");
+    }
+    touch(symbol);
+    return { ok: true };
+  } catch (e) {
+    ACTIVE.delete(symbol);
+    logger.error({ symbol, e }, "subscribe_symbol_failed");
+    throw e;
+  }
+}
+
+export async function unsubscribeSymbol(symbolRaw: string) {
+  const symbol = symbolRaw.toUpperCase();
+  const entry = ACTIVE.get(symbol);
+  if (!entry) return { ok: true, missing: true };
+  entry.refs = Math.max(0, entry.refs - 1);
+  touch(symbol);
+  return { ok: true };
+}
+
+export function getActiveSymbols() {
+  return Array.from(ACTIVE.keys());
+}
+```
+
+Server: symbols API
+```typescript name=apps/server/src/routes/symbols.ts
+import { Router } from "express";
+import { subscribeSymbol, unsubscribeSymbol, getActiveSymbols } from "@server/market/symbolManager";
+
+const router = Router();
+
+router.get("/active", (_req, res) => {
+  res.json({ symbols: getActiveSymbols() });
+});
+
+router.post("/subscribe", async (req, res) => {
+  try {
+    const { symbol, seedLimit } = req.body ?? {};
+    if (!symbol || !/^[A-Z]{1,6}$/.test(String(symbol).toUpperCase())) {
+      return res.status(400).json({ error: "invalid symbol" });
+    }
+    const out = await subscribeSymbol(String(symbol), { seedLimit: Number(seedLimit) || 200 });
+    res.json({ ok: true, ...out });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || "subscribe failed" });
+  }
+});
+
+router.post("/unsubscribe", async (req, res) => {
+  try {
+    const { symbol } = req.body ?? {};
+    if (!symbol) return res.status(400).json({ error: "missing symbol" });
+    const out = await unsubscribeSymbol(String(symbol));
+    res.json({ ok: true, ...out });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || "unsubscribe failed" });
+  }
+});
+
+export default router;
+```
+
+Server: mount symbols route
+```typescript name=apps/server/src/index.ts
+import symbolsRouter from "@server/routes/symbols";
+// ...
+app.use("/api/symbols", symbolsRouter);
+```
+
+Server: SSE auto-subscribe (optional)
+If your SSE handler receives a symbols list (it does), you can auto-subscribe any missing symbol before seeding:
+```typescript name=apps/server/src/stream/sse.ts
+import { subscribeSymbol } from "@server/market/symbolManager";
+// ...
+for (const symbol of symbols) {
+  try {
+    await subscribeSymbol(symbol, { seedLimit: 200 });
+  } catch {
+    // continue; SSE still starts, seed may be empty if subscription failed
+  }
+}
+```
+
+Voice tool: ensure subscription before chart fetch
+```typescript name=apps/server/src/routes/insight.ts
+import { subscribeSymbol } from "@server/market/symbolManager";
+// inside handler, before building context:
+const sym = extractSymbol(question) || context?.symbol || "SPY";
+await subscribeSymbol(sym, { seedLimit: 200 });
+// then proceed to fetch chart/context as you do today
+```
+
+Client: subscribe before connecting SSE or switching symbols
+```typescript name=apps/client/src/lib/marketStream.ts
+async function ensureSubscribed(symbols: string[]) {
+  try {
+    await fetch("/api/symbols/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ symbol: symbols[0], seedLimit: 200 }),
+    });
+  } catch (e) {
+    console.warn("subscribe failed", e);
+  }
+}
+
+// Before connecting SSE, or when symbol changes:
+await ensureSubscribed([activeSymbol]);
+connect(); // existing SSE connect logic
+```
+
+Verification checklist (5–10 minutes)
+- Voice controls
+  - Single-click toggles mute, double-click disconnect, T and Esc shortcuts work.
+- AMD end-to-end
+  - POST /api/symbols/subscribe { symbol: "AMD" } → { ok: true }
+  - curl /api/history?symbol=AMD&timeframe=1m&limit=50 → 200 with bars
+  - Open chart to AMD: bars seed immediately; live microbars/bars arrive
+  - Ask coach: “What’s AMD doing?” → Returns with real chart context
+- Dynamic lifecycle
+  - Switch SPY → QQQ → AMD; each time, one subscribe call, no repeated snapshot storms; SSE stable (no 3s flaps)
+- Metrics/logs (if enabled)
+  - ring_size{symbol="AMD"} rises after seeding; polygon_empty_total stays flat
+  - Logs show polygon_symbol_started and seeded_history for AMD once
+
+Notes and considerations
+- Backpressure stability
+  - Keep ticks off SSE by default (FF_SSE_TICKS=off). If you need tape later, add a dedicated WS that samples/conflates ticks.
+- Uppercase normalization
+  - We normalize symbols to uppercase and validate with a simple regex to avoid bad inputs.
+- TTL eviction
+  - Unused symbols auto-evict after TTL (15 min by default). Ref-count prevents eviction while views/voice are referencing.
+
+If you want, I can add these files to PR #3 and wire the minimal client call (ensureSubscribed before SSE connect / symbol switch). This will make SPY, QQQ, AMD (and any other symbol) behave the same for voice and charts.

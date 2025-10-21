@@ -1,6 +1,7 @@
-import { BaseTrigger, TriggerCondition, TriggerEvent } from "./base";
 import { type Candle } from "@shared/indicators";
 import { nanoid } from "nanoid";
+
+import { BaseTrigger, TriggerCondition, TriggerEvent } from "./base";
 
 export class OrbTrigger extends BaseTrigger {
   private sessionStartMs: number;

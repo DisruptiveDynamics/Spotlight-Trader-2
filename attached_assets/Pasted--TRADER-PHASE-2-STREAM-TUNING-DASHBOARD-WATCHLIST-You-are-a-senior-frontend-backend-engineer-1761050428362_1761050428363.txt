@@ -1,0 +1,42 @@
+ TRADER — PHASE 2: STREAM TUNING + DASHBOARD + WATCHLIST
+You are a senior frontend/backend engineer. Tune streaming to reduce load, make right-rail cards actionable, and add watch/unwatch tools for proactive monitoring. Small, reversible commits.
+
+Guardrails
+- Keep microbar updates readable but not noisy. Don’t regress bar close correctness.
+- Use flags for new UI affordances to avoid surprising users.
+
+Tasks
+1) Microbar cadence (server-side)
+- apps/server/src/market/barBuilder.ts
+  - Introduce env MICROBAR_MS=200 (default 200–300ms). Replace the hard-coded microbarInterval=50 with Number(process.env.MICROBAR_MS || 200).
+  - Keep existing SSE “microbar” events; no schema changes.
+
+2) Client rendering
+- apps/client/src/features/chart/Pane.tsx
+  - Already applies micro updates per event. Keep as-is; verify perf is smooth with MICROBAR_MS=200.
+  - Ensure volume histogram + 20-SMA overlay is enabled by default (it already is).
+
+3) Wire Dashboard cards to functional panels (MVP)
+- apps/client/src/App.tsx
+  - Replace static Coach/Rules/Journal placeholders with buttons that open:
+    - Coach → ExplainPanel
+    - Rules → RulesBrowser
+    - Journal → JournalView
+  - Use a simple local UI state or your existing focusManager to toggle panels.
+  - Add a “+ Watch current symbol” button in Coach panel that calls new watchlist tool (see below).
+
+4) Watchlist tools for Coach/Copilot
+- apps/server/src/copilot/tools/watchlist.ts (new)
+  - watch_symbol(symbol): backfill 1m (e.g., 500 bars), ensure subscriptions (T + AM), and register in a watched Set.
+  - unwatch_symbol(symbol)
+  - list_watched()
+- Register these tools in the copilot tool registry and expose via voiceTools if needed.
+
+Acceptance
+- With MICROBAR_MS=200, forming minute updates are smooth; CPU remains reasonable.
+- Coach, Rules, Journal cards open their respective functional panels and close cleanly.
+- watch_symbol/unwatch/list_watched tools work and persist for the server process lifetime.
+- No regressions to bar close correctness or volume overlay display.
+
+Commit hygiene
+- Separate commits: (1) microbar cadence, (2) UI wiring (cards → panels), (3) watchlist tools and registration.

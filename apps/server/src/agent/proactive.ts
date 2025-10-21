@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+
 import { onEvent, publishCoach } from "./state";
 import type { AppEvent } from "./types";
 

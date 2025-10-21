@@ -1,11 +1,12 @@
-import { db } from "../db/index.js";
-import { coachMemories, knowledgeUploads } from "../db/schema.js";
 import { eq, desc } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { extractYouTubeTranscript, isYouTubeUrl } from "./youtube.js";
-import { extractPDFText, isPDF } from "./pdf.js";
+
 import { chunkText } from "./chunker.js";
 import { batchGenerateEmbeddings } from "./embedder.js";
+import { extractPDFText, isPDF } from "./pdf.js";
+import { extractYouTubeTranscript, isYouTubeUrl } from "./youtube.js";
+import { db } from "../db/index.js";
+import { coachMemories, knowledgeUploads } from "../db/schema.js";
 
 export interface UploadResult {
   uploadId: string;

@@ -1,8 +1,9 @@
 import type { Rule } from "@shared/types/rules";
+import { eq, and } from "drizzle-orm";
+
 import { ruleEvaluator } from "./evaluator";
 import { db } from "../db";
 import { rules, ruleVersions, userRules, userRuleVersions } from "../db/schema";
-import { eq, and } from "drizzle-orm";
 
 export class RuleRegistry {
   private activeRulesCache = new Map<string, Rule[]>();

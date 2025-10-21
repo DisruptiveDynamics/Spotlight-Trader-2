@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+
 import { verifyJwt, JwtPayload } from "../auth/jwt.js";
 
 export interface AuthRequest extends Request {

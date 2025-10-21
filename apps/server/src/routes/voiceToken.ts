@@ -1,8 +1,9 @@
-import type { Express } from "express";
-import { signVoiceToken } from "../realtime/auth";
-import { requireUser, AuthRequest } from "../middleware/requireUser.js";
 import { validateEnv } from "@shared/env";
+import type { Express, Request, Response } from "express";
 import jwt from "jsonwebtoken";
+
+import { requirePin } from "../middleware/requirePin";
+import { signVoiceToken } from "../realtime/auth";
 
 const env = validateEnv(process.env);
 
@@ -54,11 +55,10 @@ export function setupVoiceTokenRoute(app: Express) {
   });
 
   // POST /api/voice/token - Generate voice session token and tools bridge JWT
-  app.post("/api/voice/token", requireUser, async (req: AuthRequest, res) => {
+  app.post("/api/voice/token", requirePin, async (req: Request, res: Response) => {
     try {
-      console.log("[VOICE] Token request received, user:", req.user);
-
-      const userId = req.user!.userId;
+      const userId = (req as any).userId || "owner";
+      console.log("[VOICE] Token request received, user:", userId);
       const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const clientIp = req.ip || req.connection.remoteAddress || "unknown";
 
@@ -114,10 +114,10 @@ export function setupVoiceTokenRoute(app: Express) {
     }
   });
 
-  // POST /api/voice/ephemeral-token - Generate ephemeral token for WebRTC (AUTHENTICATED)
-  app.post("/api/voice/ephemeral-token", requireUser, async (req: AuthRequest, res) => {
+  // POST /api/voice/ephemeral-token - Generate ephemeral token for WebRTC
+  app.post("/api/voice/ephemeral-token", requirePin, async (req: Request, res: Response) => {
     try {
-      const userId = req.user!.userId;
+      const userId = (req as any).userId || "owner";
       const clientIp = req.ip || req.connection.remoteAddress || "unknown";
 
       // Apply rate limiting per user (secondary defense)

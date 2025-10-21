@@ -1,8 +1,9 @@
-import { eventBus, type Bar, type Tick } from "@server/market/eventBus";
+import { eventBus, type MarketBarEvent, type Tick } from "@server/market/eventBus";
+
 import { telemetryBus } from "./bus";
 
 export function initializeTelemetryBridge(): void {
-  eventBus.on("bar:new:SPY:1m", (bar: Bar) => {
+  eventBus.on("bar:new:SPY:1m", (bar: MarketBarEvent) => {
     telemetryBus.publish({
       type: "bar:new",
       symbol: bar.symbol,
@@ -12,7 +13,7 @@ export function initializeTelemetryBridge(): void {
     });
   });
 
-  eventBus.on("bar:new:QQQ:1m", (bar: Bar) => {
+  eventBus.on("bar:new:QQQ:1m", (bar: MarketBarEvent) => {
     telemetryBus.publish({
       type: "bar:new",
       symbol: bar.symbol,

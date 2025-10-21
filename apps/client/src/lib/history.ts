@@ -1,7 +1,8 @@
-import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { setHours, setMinutes, setSeconds, setMilliseconds } from "date-fns";
-import type { Timeframe } from "../state/chartState";
+import { toZonedTime, fromZonedTime } from "date-fns-tz";
+
 import { HISTORY_URL } from "../config";
+import type { Timeframe } from "../state/chartState";
 
 export interface HistoryCandle {
   time: number; // Unix timestamp in seconds (for lightweight-charts)
@@ -39,18 +40,19 @@ export async function fetchHistory(
   }
 
   return data
-    .filter((bar: any) => 
-      bar.bar_end != null &&
-      bar.ohlcv?.o != null &&
-      bar.ohlcv?.h != null &&
-      bar.ohlcv?.l != null &&
-      bar.ohlcv?.c != null &&
-      bar.ohlcv?.v != null &&
-      !isNaN(bar.ohlcv.o) &&
-      !isNaN(bar.ohlcv.h) &&
-      !isNaN(bar.ohlcv.l) &&
-      !isNaN(bar.ohlcv.c) &&
-      !isNaN(bar.ohlcv.v)
+    .filter(
+      (bar: any) =>
+        bar.bar_end != null &&
+        bar.ohlcv?.o != null &&
+        bar.ohlcv?.h != null &&
+        bar.ohlcv?.l != null &&
+        bar.ohlcv?.c != null &&
+        bar.ohlcv?.v != null &&
+        !isNaN(bar.ohlcv.o) &&
+        !isNaN(bar.ohlcv.h) &&
+        !isNaN(bar.ohlcv.l) &&
+        !isNaN(bar.ohlcv.c) &&
+        !isNaN(bar.ohlcv.v),
     )
     .map((bar: any) => ({
       time: Math.floor(bar.bar_end / 1000),

@@ -1,0 +1,11 @@
+== env ==
+
+No projects matched the filters in "/home/runner/workspace"
+== health ==
+(no /health endpoint)
+
+== sse ==
+  [SSE] connected at Wed Oct 15 22:17:51 2025
+  (SSE: missing bootstrap/seed quickly)
+
+== voice-ws ==

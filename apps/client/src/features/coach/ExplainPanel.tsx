@@ -1,7 +1,8 @@
+import type { InsightContext } from "@spotlight/shared";
 import { useState, useEffect, useRef } from "react";
+
 import { useExplainSignal } from "./useExplainSignal";
 import { useInsightJournal } from "./useInsightJournal";
-import type { InsightContext } from "@spotlight/shared";
 
 interface ExplainPanelProps {
   isOpen: boolean;

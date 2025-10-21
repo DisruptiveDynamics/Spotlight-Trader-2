@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
-import { enforceRealtimeClaim } from "../guards/noDataGuard";
+
 import { ensureFreshTools } from "../guards/freshnessGuard";
+import { enforceRealtimeClaim } from "../guards/noDataGuard";
 
 describe("noDataGuard", () => {
   it("forces snapshot when draft denies realtime data", async () => {

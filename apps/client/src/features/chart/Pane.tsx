@@ -1,14 +1,3 @@
-import { useEffect, useRef, useState, useMemo } from "react";
-import {
-  createChart,
-  IChartApi,
-  ISeriesApi,
-  UTCTimestamp,
-  LineStyle,
-  CrosshairMode,
-} from "lightweight-charts";
-import { useChartState } from "../../state/chartState";
-import { fetchHistory, sessionStartMs } from "../../lib/history";
 import {
   emaBatch,
   bollingerBatch,
@@ -17,8 +6,20 @@ import {
   volumeSmaBatch,
   type Candle,
 } from "@spotlight/shared";
+import {
+  createChart,
+  IChartApi,
+  ISeriesApi,
+  UTCTimestamp,
+  LineStyle,
+  CrosshairMode,
+} from "lightweight-charts";
+import { useEffect, useRef, useState, useMemo } from "react";
+
 import { useChartContext } from "./hooks/useChartContext";
+import { fetchHistory, sessionStartMs } from "../../lib/history";
 import { connectMarketSSE, type Bar, type Micro } from "../../lib/marketStream";
+import { useChartState } from "../../state/chartState";
 
 interface PaneProps {
   paneId: number;
@@ -42,6 +43,88 @@ export function Pane({ className = "" }: PaneProps) {
   const currentBarTimeRef = useRef<number>(0);
 
   const [showExplainButton, setShowExplainButton] = useState(false);
+
+  // RAF batching for smooth rendering
+  const barQueueRef = useRef<Bar[]>([]);
+  const microQueueRef = useRef<Micro[]>([]);
+  const rafIdRef = useRef<number | null>(null);
+
+  // Schedule batch processing on next animation frame
+  const scheduleProcess = () => {
+    if (rafIdRef.current != null) return;
+    rafIdRef.current = requestAnimationFrame(processBatches);
+  };
+
+  // Process queued bars and micros in batches
+  const processBatches = () => {
+    rafIdRef.current = null;
+    const bars = barQueueRef.current;
+    const micros = microQueueRef.current;
+    barQueueRef.current = [];
+    microQueueRef.current = [];
+
+    if (bars.length && seriesRef.current && volumeSeriesRef.current) {
+      for (const bar of bars) {
+        if (!bar.ohlcv || typeof bar.ohlcv !== 'object') continue;
+        
+        const time = Math.floor(bar.bar_end / 1000) as UTCTimestamp;
+        const { o, h, l, c, v } = bar.ohlcv;
+
+        // Validate numeric fields before update
+        if ([o, h, l, c].some((n) => n == null || Number.isNaN(n))) continue;
+
+        if (chartStyle === "line") {
+          seriesRef.current.update({ time, value: c });
+        } else {
+          seriesRef.current.update({ time, open: o, high: h, low: l, close: c });
+        }
+
+        if (v != null && !Number.isNaN(v)) {
+          volumeSeriesRef.current.update({
+            time,
+            value: v,
+            color: c >= o ? "#10b98166" : "#ef444466",
+          });
+        }
+
+        const newCandle: Candle = { t: bar.bar_end, ohlcv: bar.ohlcv };
+        setCandles((prev) => {
+          const last = prev[prev.length - 1];
+          return last && last.t === newCandle.t
+            ? [...prev.slice(0, -1), newCandle]
+            : [...prev, newCandle];
+        });
+
+        currentMinuteRef.current = Math.floor(bar.bar_end / 60000) * 60000;
+        currentBarTimeRef.current = time;
+      }
+    }
+
+    // Process only the last microbar for the current bucket
+    const micro = micros.at(-1);
+    if (micro && micro.ohlcv && typeof micro.ohlcv === 'object' && seriesRef.current && currentBarTimeRef.current > 0) {
+      const microMinute = Math.floor(micro.ts / 60000) * 60000;
+      if (microMinute === currentMinuteRef.current) {
+        const { o, h, l, c } = micro.ohlcv;
+        if ([o, h, l, c].some((n) => n == null || Number.isNaN(n))) return;
+
+        if (chartStyle === "line") {
+          seriesRef.current.update({
+            time: currentBarTimeRef.current as UTCTimestamp,
+            value: c,
+          });
+        } else {
+          seriesRef.current.update({
+            time: currentBarTimeRef.current as UTCTimestamp,
+            open: o,
+            high: h,
+            low: l,
+            close: c,
+          });
+        }
+      }
+    }
+  };
 
   // Convert candles for indicators
   const candlesForIndicators = useMemo(() => {
@@ -232,11 +315,7 @@ export function Pane({ className = "" }: PaneProps) {
         if (seriesRef.current) {
           if (chartStyle === "line") {
             const lineData = history
-              .filter((bar) => 
-                bar.time != null && 
-                bar.close != null && 
-                !isNaN(bar.close)
-              )
+              .filter((bar) => bar.time != null && bar.close != null && !isNaN(bar.close))
               .map((bar) => ({
                 time: bar.time as UTCTimestamp,
                 value: bar.close,
@@ -244,16 +323,17 @@ export function Pane({ className = "" }: PaneProps) {
             seriesRef.current.setData(lineData);
           } else {
             const ohlcData = history
-              .filter((bar) => 
-                bar.time != null && 
-                bar.open != null && 
-                bar.high != null && 
-                bar.low != null && 
-                bar.close != null &&
-                !isNaN(bar.open) &&
-                !isNaN(bar.high) &&
-                !isNaN(bar.low) &&
-                !isNaN(bar.close)
+              .filter(
+                (bar) =>
+                  bar.time != null &&
+                  bar.open != null &&
+                  bar.high != null &&
+                  bar.low != null &&
+                  bar.close != null &&
+                  !isNaN(bar.open) &&
+                  !isNaN(bar.high) &&
+                  !isNaN(bar.low) &&
+                  !isNaN(bar.close),
               )
               .map((bar) => ({
                 time: bar.time as UTCTimestamp,
@@ -269,11 +349,9 @@ export function Pane({ className = "" }: PaneProps) {
         // Update volume
         if (volumeSeriesRef.current) {
           const volumeData = history
-            .filter((bar) => 
-              bar.time != null && 
-              bar.volume != null && 
-              bar.close != null &&
-              !isNaN(bar.volume)
+            .filter(
+              (bar) =>
+                bar.time != null && bar.volume != null && bar.close != null && !isNaN(bar.volume),
             )
             .map((bar) => ({
               time: bar.time as UTCTimestamp,
@@ -305,112 +383,100 @@ export function Pane({ className = "" }: PaneProps) {
     };
   }, [active.symbol, active.timeframe, chartStyle]);
 
-  // Connect to SSE for real-time updates
+  // Connect to SSE for real-time updates with RAF batching
   useEffect(() => {
     if (!seriesRef.current || !volumeSeriesRef.current) return;
 
     const sseConnection = connectMarketSSE([active.symbol]);
 
     sseConnection.onBar((bar: Bar) => {
-      if (!seriesRef.current || !volumeSeriesRef.current) return;
+      barQueueRef.current.push(bar);
+      scheduleProcess();
+    });
 
-      const time = Math.floor(bar.bar_end / 1000) as UTCTimestamp;
-      
-      // Validate OHLC data before updating
-      if (
-        bar.ohlcv.o != null && 
-        bar.ohlcv.h != null && 
-        bar.ohlcv.l != null && 
-        bar.ohlcv.c != null &&
-        !isNaN(bar.ohlcv.o) &&
-        !isNaN(bar.ohlcv.h) &&
-        !isNaN(bar.ohlcv.l) &&
-        !isNaN(bar.ohlcv.c)
-      ) {
-        // Update main series
-        if (chartStyle === "line") {
-          seriesRef.current.update({
-            time,
-            value: bar.ohlcv.c,
-          });
-        } else {
-          seriesRef.current.update({
-            time,
-            open: bar.ohlcv.o,
-            high: bar.ohlcv.h,
-            low: bar.ohlcv.l,
-            close: bar.ohlcv.c,
-          });
-        }
-
-        // Update volume
-        if (bar.ohlcv.v != null && !isNaN(bar.ohlcv.v)) {
-          volumeSeriesRef.current.update({
-            time,
-            value: bar.ohlcv.v,
-            color: bar.ohlcv.c >= bar.ohlcv.o ? "#10b98166" : "#ef444466",
-          });
-        }
-
-        // Update candles state for indicators
-        const newCandle: Candle = {
-          t: bar.bar_end,
-          ohlcv: bar.ohlcv,
-        };
-
-        setCandles((prev) => {
-          const lastCandle = prev[prev.length - 1];
-          if (lastCandle && lastCandle.t === newCandle.t) {
-            // Update existing candle
-            return [...prev.slice(0, -1), newCandle];
-          } else {
-            // Add new candle
-            return [...prev, newCandle];
-          }
-        });
-
-        currentMinuteRef.current = Math.floor(bar.bar_end / 60000) * 60000;
-        currentBarTimeRef.current = time;
+    sseConnection.onBarReset((bars: Bar[]) => {
+      // [GUARD] Only reset if this event is for our active symbol/timeframe
+      if (bars.length === 0) {
+        console.warn(`[Pane] Bar reset received but bars array is empty`);
+        return;
       }
+      
+      const resetSymbol = bars[0]?.symbol;
+      const resetTimeframe = bars[0]?.timeframe;
+      
+      if (resetSymbol !== active.symbol) {
+        console.log(`[Pane] Ignoring bar:reset for ${resetSymbol} (active: ${active.symbol})`);
+        return;
+      }
+      
+      if (resetTimeframe !== active.timeframe) {
+        console.log(`[Pane] Ignoring bar:reset for ${resetTimeframe} (active: ${active.timeframe})`);
+        return;
+      }
+      
+      console.log(`[Pane] Bar reset received: ${bars.length} bars for ${resetSymbol} ${resetTimeframe}`);
+      
+      if (!seriesRef.current || !volumeSeriesRef.current) return;
+      
+      // Clear queues
+      barQueueRef.current = [];
+      microQueueRef.current = [];
+      
+      // Transform bars to chart format
+      const chartData = bars.map((bar) => ({
+        time: Math.floor(bar.bar_start / 1000) as UTCTimestamp,
+        open: bar.ohlcv.o,
+        high: bar.ohlcv.h,
+        low: bar.ohlcv.l,
+        close: bar.ohlcv.c,
+      }));
+      
+      const volumeData = bars.map((bar) => ({
+        time: Math.floor(bar.bar_start / 1000) as UTCTimestamp,
+        value: bar.ohlcv.v,
+        color: bar.ohlcv.c >= bar.ohlcv.o ? "#10b98150" : "#ef444450",
+      }));
+      
+      // Set new data (this clears and redraws the chart)
+      seriesRef.current.setData(chartData);
+      volumeSeriesRef.current.setData(volumeData);
+      
+      // Update candle state to match chart data
+      const newCandles: Candle[] = bars.map((bar) => ({
+        t: bar.bar_start,
+        ohlcv: {
+          o: bar.ohlcv.o,
+          h: bar.ohlcv.h,
+          l: bar.ohlcv.l,
+          c: bar.ohlcv.c,
+          v: bar.ohlcv.v,
+        },
+      }));
+      setCandles(newCandles);
+      
+      // Update current bar tracking
+      if (bars.length > 0) {
+        const lastBar = bars[bars.length - 1];
+        if (lastBar) {
+          currentMinuteRef.current = Math.floor(lastBar.bar_end / 60000) * 60000;
+          currentBarTimeRef.current = Math.floor(lastBar.bar_start / 1000) as UTCTimestamp;
+        }
+      }
+      
+      console.log(`[Pane] Chart reset with ${bars.length} bars`);
     });
 
     sseConnection.onMicro((micro: Micro) => {
-      if (!seriesRef.current) return;
-
-      const microMinute = Math.floor(micro.ts / 60000) * 60000;
-
-      // Only update if microbar belongs to current minute
-      if (microMinute === currentMinuteRef.current && currentBarTimeRef.current > 0) {
-        if (
-          micro.ohlcv.o != null && 
-          micro.ohlcv.h != null && 
-          micro.ohlcv.l != null && 
-          micro.ohlcv.c != null &&
-          !isNaN(micro.ohlcv.o) &&
-          !isNaN(micro.ohlcv.h) &&
-          !isNaN(micro.ohlcv.l) &&
-          !isNaN(micro.ohlcv.c)
-        ) {
-          if (chartStyle === "line") {
-            seriesRef.current.update({
-              time: currentBarTimeRef.current as UTCTimestamp,
-              value: micro.ohlcv.c,
-            });
-          } else {
-            seriesRef.current.update({
-              time: currentBarTimeRef.current as UTCTimestamp,
-              open: micro.ohlcv.o,
-              high: micro.ohlcv.h,
-              low: micro.ohlcv.l,
-              close: micro.ohlcv.c,
-            });
-          }
-        }
-      }
+      microQueueRef.current.push(micro);
+      scheduleProcess();
     });
 
     return () => {
       sseConnection.close();
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
     };
   }, [active.symbol, chartStyle]);
 

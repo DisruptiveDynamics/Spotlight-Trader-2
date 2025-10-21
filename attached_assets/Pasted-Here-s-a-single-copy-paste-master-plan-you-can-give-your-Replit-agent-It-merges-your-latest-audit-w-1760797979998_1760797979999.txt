@@ -1,0 +1,168 @@
+Here’s a single copy‑paste master plan you can give your Replit agent. It merges your latest audit with the earlier guidance and focuses on executing the missing pieces, fine‑tuning what’s done, and wiring OnDemand replay to create a single, legendary data path.
+
+```markdown
+You are a senior reliability + realtime engineer auditing and hardening DisruptiveDynamics/Spotlight-Trader-2 for elite intraday traders. Execute this plan end-to-end, producing code, logs, and artifacts. Default to read/diagnose; only write code where instructed.
+
+Guardrails
+- Do NOT expose secrets. Read POLYGON_API_KEY and other keys from Replit Secrets; mask to last 4 chars in logs.
+- Small, auditable commits with clear messages.
+- If ambiguous, pick sensible defaults and continue; document in VERIFY.md.
+- Keep Typescript strict; ESM only (no require()).
+- Preserve existing conventions; prefer shared types (packages/shared).
+
+Context from latest audit (assume as facts; verify quickly)
+- Bars/charts: seq is aligned across stack via Math.floor(bar_start / 60000).
+- SSE: duplicate loop fixed via per-connection watermark; heartbeat present and verified.
+- Voice WS: binary handling, heartbeat, and backpressure correct; missing auto-reconnect.
+- Auth cookies: Safari SameSite/secure config needs fix.
+- Lint/ES checks: clean; ring.ts.bak removed.
+- System ~80% prod-ready.
+
+Mission (deliver upgrades without reintroducing complexity)
+- Keep ONE authoritative data path: live and OnDemand replay must share the same pipeline (eventBus → SSE).
+- Finish resilience and observability: auto-reconnect for voice, Safari cookie hardening, Prometheus /metrics, SSE Last-Event-ID resume.
+- Make 1m buffer authoritative for all timeframes; roll up 2m/5m/15m/30m/1h from 1m.
+- De-emphasize/remove mock ticks in default dev; add Replay Mode controls.
+- Ensure client ms→seconds conversion and gap-fill consistency remain correct.
+
+Baseline (print first, ≤10 lines)
+- Node, pnpm versions; current branch + HEAD commit SHA.
+- Ports: server bind, client dev server; Vite proxy target.
+- SSE endpoints used; voice WS endpoint.
+- History route(s) used for charts.
+- Feature flags relevant to mock/replay; whether mockTickGenerator is enabled.
+- Vite HMR: enabled/disabled.
+
+Phase 1 — Confirm current fixes (no code, just verify)
+1) Seq alignment
+- Grep for all seq calculations and ensure they use time-derived minute: Math.floor(bar_start/60000) (server history/service.ts, barBuilder.ts, SSE seed path, client marketStream transforms).
+- Capture 10 consecutive finalized bars (seq, start/end ISO, ohlcv, volume) in BARS_SEQ_AUDIT.md; ensure monotonic minute-based seq.
+
+2) SSE resilience
+- Confirm watermark dedupe is active.
+- Confirm heartbeat interval (10–15s) is present and visible via curl -N.
+
+3) History fetch
+- Confirm Polygon requests use full ISO windows (not date-only) and that empty results log raw response with status.
+
+Artifacts to paste back:
+- Updated BARS_SEQ_AUDIT.md table (20 rows).
+- POLYGON_REQUEST_LOGS.txt (SPY + QQQ, masked key, status, 300 chars of body).
+
+Phase 2 — Implement missing resilience
+A) Voice WebSocket auto-reconnect (client)
+- Add a robust auto-reconnect wrapper with exponential backoff, heartbeat reuse, backpressure guard, and optional token refresh hook.
+
+Create file:
+- apps/client/src/lib/voiceWS.ts (binary audio + JSON control, ping/pong, auto-reconnect, backpressure).
+
+Wire it into the current voice client path.
+
+B) Auth cookies (Safari/iPad)
+- Centralize session cookie issuance with SameSite=None; Secure; maxAge=24h. Ensure HTTPS in prod/dev tunnel.
+
+Create helper and use in auth routes:
+- apps/server/src/auth/setAuthCookie.ts
+
+C) Prometheus metrics (server)
+- Expose /api/metrics (Prometheus format) and add basic counters/gauges:
+  - spotlight_sse_connections (Gauge)
+  - spotlight_sse_dropped_total (Counter)
+  - spotlight_polygon_empty_total (Counter)
+- Increment polygon_empty_total on empty REST history.
+- Update SSE connect/close handlers to set sse_connections.
+
+Add:
+- apps/server/src/routes/metricsProm.ts
+- Mount in apps/server/src/index.ts
+
+D) SSE Last-Event-ID resume
+- Parse Last-Event-ID in SSE handler; if present, seed bars since that seq via ring/history, then attach live listeners.
+
+Add helper:
+- apps/server/src/stream/lastEventId.ts
+- Use in apps/server/src/stream/sse.ts
+
+Phase 3 — Unify data path with OnDemand Replay (replace mocks in default dev)
+A) Server replay engine
+- Stream real historical 1m bars over the same eventBus/SSE events used by live; optional microbar interpolation to keep UI active.
+- Start/stop/speed endpoints.
+
+Add:
+- apps/server/src/replay/engine.ts
+- apps/server/src/routes/replay.ts (mount at /api/replay)
+
+B) Client replay controls (small)
+- Minimal UI to start/stop/speed replay; reuse existing SSE handling; no chart code changes.
+
+Add:
+- apps/client/src/features/replay/ReplayControls.tsx (simple panel)
+
+C) Remove/mock gating
+- Remove mockTickGenerator from default dev flow; gate behind FF_MOCK if you must keep it. Default path should be live or replay only.
+
+Phase 4 — Multi-timeframe rollups (from authoritative 1m buffer)
+- Add server-side rollups for 2m/5m/15m/30m/1h from 1m buffer (bars1m).
+- Keep America/New_York bucket alignment and consistent session policy (RTH or RTH_EXT).
+- Return rolled-up bars via existing history route or a dedicated endpoint parameter (timeframe).
+- Ensure SSE can broadcast non-1m frames if needed, but prefer client to request desired timeframe via history + live 1m updates.
+
+Phase 5 — Observability polish
+- Add /api/diag route: lastSeq per symbol, bars1m size, recent ring entries, polygon empties, SSE reconnect count, flags.
+- Expand LatencyHUD to show lastSeq and gap-fill counts (events already present).
+
+Verification (append to VERIFY.md and execute)
+- Charts:
+  - Seed 50 bars via history; lastSeq monotonic; no gaps with live feed on.
+  - Kill server; restart; client resumes via Last-Event-ID and sinceSeq gap-fill (no missing bars).
+  - Switch timeframes 1m→5m→15m and back; rollup boundaries are clean (ET).
+- Replay:
+  - Start replay (SPY) for a known volatile window at speed=4x; chart updates and voice triggers behave as live.
+- Voice:
+  - Toggle network offline/online for 10s; auto-reconnect recovers without reload; no Blob JSON parse errors; RTT stable.
+- Auth:
+  - Test on iPad Safari (HTTPS tunnel): cookie persists 24h; SameSite=None; Secure; HMR doesn’t blow auth.
+- Metrics:
+  - /api/metrics returns Prometheus exposition; sse_connections and polygon_empty_total nonzero with expected values.
+
+Deliverables — paste back into chat
+1) DIAGNOSIS.md (updated with new evidence)
+2) GRADES.yaml (re-grade subsystems; aim ≥8.5 overall)
+3) BARS_SEQ_AUDIT.md (20 rows with seq + ISO; note policy)
+4) POLYGON_REQUEST_LOGS.txt (2 symbols, masked)
+5) VOICE_WS_AUDIT.md (now including auto-reconnect; observed behavior)
+6) VERIFY.md (all checks; include sample outputs)
+7) Diffs or file contents for:
+   - apps/client/src/lib/voiceWS.ts
+   - apps/server/src/auth/setAuthCookie.ts
+   - apps/server/src/routes/metricsProm.ts
+   - apps/server/src/stream/lastEventId.ts
+   - apps/server/src/replay/engine.ts
+   - apps/server/src/routes/replay.ts
+   - Wiring changes in apps/server/src/index.ts and SSE handler for Last-Event-ID
+8) Optional: screenshot/clip of replay controls driving the chart.
+
+PR Instructions
+- Create branch feat/replay+voice-reconnect+metrics.
+- Keep commits small:
+  - chore(metrics): add Prometheus /metrics and counters
+  - feat(voice): auto-reconnect wrapper
+  - feat(replay): engine + routes + controls
+  - feat(sse): Last-Event-ID resume
+  - fix(auth): Safari-safe cookies
+- Open a PR with a description that includes:
+  - What changed, why, how to verify (copy VERIFY steps)
+  - Risks/rollbacks
+  - Screenshots/gifs (replay + LatencyHUD)
+
+Acceptance
+- No chart gaps under normal conditions; replay behaves like live.
+- Voice survives transient network loss without manual reload.
+- Safari auth stable; HMR in dev does not invalidate sessions repeatedly.
+- /api/metrics and /api/diag provide enough signals to triage issues in <5 minutes.
+
+If blocked
+- State the exact blocker with command, output, and the minimal code/log you need. Offer two ways forward (e.g., add a narrow log, or temporarily enable a flag).
+```
+
+If you want, I can also prepare the exact file patches as code blocks for quick apply.

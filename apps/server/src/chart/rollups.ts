@@ -2,7 +2,7 @@
 // Ensures single source of truth and TradingView/TOS-level consistency
 
 import { TIMEFRAME_TO_BUCKET_MIN, type Timeframe } from "@shared/types/market";
-import type { Bar } from "@shared/types";
+import { floorToExchangeBucket } from "@shared/utils/time";
 
 interface Bar1m {
   symbol: string;
@@ -31,20 +31,10 @@ interface RolledBar {
   };
 }
 
-// Floor timestamp to k-minute bucket (exchange time aware)
+// Floor timestamp to k-minute bucket (DST-safe, exchange time aware)
+// Replaced legacy UTC-only implementation with DST-aware floorToExchangeBucket
 function floorToKMinute(tsMs: number, k: number): number {
-  // Use simple UTC floor for now (exchange time handled upstream)
-  const d = new Date(tsMs);
-  const flooredMin = Math.floor(d.getUTCMinutes() / k) * k;
-  return new Date(
-    d.getUTCFullYear(),
-    d.getUTCMonth(),
-    d.getUTCDate(),
-    d.getUTCHours(),
-    flooredMin,
-    0,
-    0,
-  ).getTime();
+  return floorToExchangeBucket(tsMs, k);
 }
 
 // Rollup from 1m bars - initial backfill for history

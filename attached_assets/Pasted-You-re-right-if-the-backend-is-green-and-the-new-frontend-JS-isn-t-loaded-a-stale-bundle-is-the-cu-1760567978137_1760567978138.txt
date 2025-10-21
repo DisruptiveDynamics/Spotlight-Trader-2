@@ -1,0 +1,211 @@
+You’re right: if the backend is green and the new frontend JS isn’t loaded, a stale bundle is the culprit. Let’s unblock you now and make it impossible to get stuck on old code again.
+
+Immediate unblock checklist
+- Hard refresh the app page
+  - Windows/Linux: Ctrl+Shift+R
+  - Mac: Cmd+Shift+R
+- In DevTools (F12)
+  - Network tab → check Disable cache (while DevTools is open)
+  - Application tab → Clear storage → Select all → Clear site data
+  - Application → Service Workers → Unregister any worker, then reload
+- Console sanity check
+  - Paste:
+    - new EventSource('/stream/market?symbols=SPY,QQQ', { withCredentials: true })
+    - You should see readyState 0→1. If it errors, open Network → stream/market → verify:
+      - Status 200
+      - Content-Type: text/event-stream
+      - Access-Control-Allow-Credentials: true (only needed if cross-origin)
+      - Access-Control-Allow-Origin: your exact origin (not “*”) if cross-origin
+
+Make it future-proof (minimal code guards)
+Below are drop-in, small changes to ensure:
+- Frontend always picks up new builds (auto reload on build change)
+- No service worker surprises
+- SSE + CORS stay correct for credentialed requests
+- index.html isn’t cached aggressively
+
+1) Ensure EventSource sends cookies
+You said you shipped this, but for completeness, keep this exact shape.
+
+```typescript name=apps/client/src/lib/marketStream.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/chore/health-setup/apps/client/src/lib/marketStream.ts
+// Ensure same-origin path + credentials
+const url = `/stream/market?${params.toString()}`;
+const es = new EventSource(url, { withCredentials: true });
+// keep onopen/onerror logging for live debugging
+```
+
+2) CORS and cookies (only if you truly cross origins)
+If client and server share origin/host, you don’t need CORS at all. If they differ, use specific origin + credentials=true (never “*” with credentials).
+
+```typescript name=apps/server/src/index.ts
+import cors from "cors";
+
+// If cross-origin is required, set explicit origin
+const ORIGIN = process.env.CLIENT_ORIGIN; // e.g. https://<your-replit-preview-url>
+app.use(cors({
+  origin: ORIGIN,
+  credentials: true,
+}));
+
+// Also handle OPTIONS preflight early if needed
+app.options("*", cors({ origin: ORIGIN, credentials: true }));
+```
+
+3) SSE headers for non-buffered, long-lived streams
+Double-check your SSE route sets all the right headers and heartbeats.
+
+```typescript name=apps/server/src/routes/marketStream.ts
+function sseHeaders(res: any) {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+}
+
+function send(res: any, event: string, data: any) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`);
+}
+
+marketStreamRouter.get("/market", (req, res) => {
+  sseHeaders(res);
+  send(res, "ping", "hello");           // quick confirm in console
+  const hb = setInterval(() => send(res, "ping", Date.now()), 15_000);
+  req.on("close", () => clearInterval(hb));
+});
+```
+
+4) Dev proxy must not kill SSE
+Ensure the Vite dev proxy does not buffer or time out streams.
+
+```typescript name=apps/client/vite.config.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/chore/health-setup/apps/client/vite.config.ts
+server: {
+  proxy: {
+    "/api": { target: API_TARGET, changeOrigin: true, secure: false },
+    "/stream": {
+      target: API_TARGET,
+      changeOrigin: true,
+      secure: false,
+      proxyTimeout: 0,
+      timeout: 0,
+    },
+    "/ws": { target: API_TARGET, ws: true, changeOrigin: true, secure: false },
+  },
+},
+```
+
+5) Make the client auto-reload when a new build is deployed
+Inject a build id into the page and force a reload when it changes. This defeats stale bundles and cached module graphs.
+
+```typescript name=apps/client/src/build-id.d.ts
+declare global {
+  interface Window { __BUILD_ID__?: string }
+}
+export {};
+```
+
+```typescript name=apps/client/src/main.tsx
+// Simple build-id guard to hard-reload when new JS is deployed
+const BUILD_ID = import.meta.env.VITE_BUILD_ID || String(__BUILD_TIME__ || Date.now());
+try {
+  const last = localStorage.getItem("BUILD_ID");
+  if (last && last !== BUILD_ID) {
+    localStorage.setItem("BUILD_ID", BUILD_ID);
+    // Hard reload to bust stale caches and module graph
+    window.location.reload();
+  } else if (!last) {
+    localStorage.setItem("BUILD_ID", BUILD_ID);
+  }
+} catch {}
+```
+
+Add two tiny defines so Vite stamps the build:
+
+```typescript name=apps/client/vite.config.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/chore/health-setup/apps/client/vite.config.ts
+import { defineConfig } from "vite";
+// ...
+export default defineConfig({
+  // ...
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    // Optionally forward a hash from env/CI
+    "import.meta.env.VITE_BUILD_ID": JSON.stringify(process.env.VITE_BUILD_ID || ""),
+  },
+});
+```
+
+6) Disable index.html caching in production (server static)
+If you serve the built client from Express, mark HTML as no-store so you always fetch the latest entry file.
+
+```typescript name=apps/server/src/index.ts
+import path from "path";
+import express from "express";
+
+const clientDist = path.resolve(process.cwd(), "apps/client/dist");
+app.use(express.static(clientDist, {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith(".html")) {
+      res.setHeader("Cache-Control", "no-store");
+    } else {
+      // hashed assets can be cached longer
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    }
+  },
+}));
+```
+
+7) Nuke any rogue Service Worker on client boot (safety valve)
+If you previously experimented with a SW, this guarantees it won’t cache old JS.
+
+```typescript name=apps/client/src/sw-safety.ts
+export async function killServiceWorkers() {
+  if ("serviceWorker" in navigator) {
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    } catch {}
+  }
+}
+```
+
+```typescript name=apps/client/src/main.tsx
+import { killServiceWorkers } from "./sw-safety";
+killServiceWorkers().finally(() => {
+  // mount your app
+});
+```
+
+What to screenshot if it still doesn’t load
+- Console logs right after unlock:
+  - “[MarketSSE] OPEN …”
+  - Or any “ERROR” with readyState and the event
+- Network → /stream/market request:
+  - Status 200
+  - Response headers: Content-Type: text/event-stream, Cache-Control: no-cache, X-Accel-Buffering: no
+  - If cross-origin: Access-Control-Allow-Credentials: true and Access-Control-Allow-Origin: exact origin (not “*”)
+- Application → Cookies: confirm st_auth exists (you won’t see value if httpOnly; that’s fine)
+
+Tiny Replit Agent prompt to lock this down
+Use this if you want your agent to enforce these guards so you don’t get bit by cache again.
+
+```
+You’re working in Spotlight Trader (TypeScript, Vite client, Express server). Do NOT add frameworks. Ship a small PR that:
+1) Guarantees new JS always loads:
+   - Add BUILD_ID guard in apps/client/src/main.tsx that forces window.location.reload() when BUILD_ID changes (see code above).
+   - In vite.config.ts, define __BUILD_TIME__ and VITE_BUILD_ID, and set long cache for hashed assets, no-store for HTML via Express static setHeaders.
+   - Add sw-safety.ts and call killServiceWorkers() before mounting the app.
+2) Verify SSE and credentials:
+   - Ensure EventSource is created with { withCredentials: true } and same-origin path /stream/market.
+   - Confirm Vite proxy sets proxyTimeout:0 and timeout:0 for /stream.
+   - If server and client are cross-origin, configure cors({ origin: CLIENT_ORIGIN, credentials:true }) and OPTIONS handling; never use “*” with credentials.
+3) Logging:
+   - Keep concise “[MarketSSE] OPEN/ERROR” logs on client.
+   - Server SSE route must send 15s heartbeats and proper SSE headers.
+
+Acceptance:
+- Hard refresh reliably pulls new JS (or auto reloads when BUILD_ID changes).
+- /stream/market stays pending and emits ping/bar/micro events.
+- No stale-bundle bugs after deploy; no service worker interference.
+```
+
+If you share a console screenshot after a hard refresh + unlock, I’ll point to the exact header or origin mismatch (if any).

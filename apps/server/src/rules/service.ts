@@ -1,7 +1,9 @@
-import { eventBus, type Bar } from "../market/eventBus";
-import { ruleRegistry } from "./registry";
-import { ruleEvaluator } from "./evaluator";
 import type { RuleContext } from "@shared/types/rules";
+
+import { ruleEvaluator } from "./evaluator";
+import { ruleRegistry } from "./registry";
+import { eventBus, type MarketBarEvent, toSharedBar } from "../market/eventBus";
+
 
 export class RulesEngineService {
   private userId = "demo-user";
@@ -10,7 +12,7 @@ export class RulesEngineService {
     eventBus.on("bar:new:SPY:1m", this.handleNewBar.bind(this));
   }
 
-  private async handleNewBar(bar: Bar): Promise<void> {
+  private async handleNewBar(marketBar: MarketBarEvent): Promise<void> {
     try {
       const rules = await ruleRegistry.getActiveRules(this.userId);
 
@@ -18,6 +20,7 @@ export class RulesEngineService {
         return;
       }
 
+      const bar = toSharedBar(marketBar);
       const context: RuleContext = {
         open: bar.open,
         high: bar.high,

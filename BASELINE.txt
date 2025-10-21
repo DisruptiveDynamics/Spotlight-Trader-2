@@ -1,0 +1,54 @@
+# Baseline Snapshot (October 18, 2025)
+
+## Environment
+- Node.js: v20.19.3
+- pnpm: 10.18.1
+- Branch: meta/refactor-foundation
+- Commit: 8e8d07d
+
+## Server Configuration
+- Port: 8080 (env PORT, default 8080)
+- Bind: 0.0.0.0:8080
+- Keep-alive: 75s timeout, 80s headers timeout
+
+## Client Configuration  
+- Dev server: port 5000 (Vite)
+- HMR: WSS protocol, client port 443
+- HTTPS enabled: true
+- Unified dev mode: Express serves both API and Vite on 8080
+
+## Key Endpoints
+- SSE: /realtime/sse (market data streaming)
+- WebSocket: /ws/realtime (voice WebRTC proxy)
+- History: /api/history (checked via routes)
+- Health: /health, /health/tools
+- Metrics: /api/metrics (Prometheus format)
+- Diag: /api/diag (observability)
+- Replay: /api/replay (OnDemand engine)
+
+## Feature Flags
+- Mock tick generator: EXISTS (apps/server/src/market/mockTickGenerator.ts)
+- Usage: NOT actively wired in default flow (instance exported but not started)
+- Replay system: ENABLED (routes/replay.ts mounted)
+
+## SSE Implementation
+- Heartbeat: 10s interval (ping events)
+- Watermark dedupe: per-connection lastSentSeq
+- Last-Event-ID: parsing implemented
+- Compression: DISABLED for SSE (unbuffered streaming required)
+
+## Voice WebSocket
+- Endpoint: /ws/realtime (voice WebRTC proxy to OpenAI)
+- Auto-reconnect: Managed by OpenAI Realtime SDK (no custom wrapper needed)
+- Binary handling: Verified correct
+
+## Data Pipeline
+- Authoritative source: 1m bars (bars1m ring buffer)
+- Multi-timeframe: Server-side rollups from 1m
+- Seq calculation: Math.floor(bar_start / 60000) - consistent across stack
+- OnDemand replay: Uses same eventBus/SSE as live data
+
+## Build Status
+- TypeScript: ✅ Clean
+- ESLint: ✅ Clean  
+- Workflows: Server running (pnpm --filter @spotlight/server dev:unified)

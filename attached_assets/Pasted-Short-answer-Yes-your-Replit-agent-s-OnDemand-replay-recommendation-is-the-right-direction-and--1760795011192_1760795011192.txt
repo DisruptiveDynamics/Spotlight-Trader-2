@@ -1,0 +1,428 @@
+Short answer
+- Yes: your Replit agent’s “OnDemand replay” recommendation is the right direction and it slightly changes my approach. I recommend we deprecate the mock tick generator and implement a replay mode that streams real historical Polygon bars through the exact same pipeline as live. This removes the dual code path, fixes format drift, and still fully exercises the voice coach and charts.
+- Separately, there are immediate correctness fixes we should still apply now: align bar sequence to minute time, tighten the Polygon history fetch, and harden voice WebSocket handling (binary type + heartbeat + backpressure). These fixes help both live and replay.
+
+What’s breaking bars/charts and voice (based on current repo)
+- Bars
+  - Sequence mismatch: server uses an incrementing seq in barBuilder while the client treats seq as minute-derived. This creates false gaps and empty resyncs. File: apps/server/src/market/barBuilder.ts
+  - History API shaping and logging: history/service.ts used date-only bounds and returned [] with minimal visibility; client then seeds/replays emptiness. File: apps/server/src/history/service.ts
+  - Mixed units: server emits ms; chart lib expects seconds. Client code handles it, but any inconsistency leads to missing updates. Files: apps/client/src/features/chart/Pane.tsx, ChartView.tsx
+  - SSE seed/backfill depends on seq semantics; when they disagree, client assumes gaps. Files: apps/server/src/stream/sse.ts, apps/client/src/lib/marketStream.ts
+- Voice coach disconnects
+  - The client treats binary audio as JSON in some paths; ws.binaryType isn’t consistently set; no robust ping/pong; bufferedAmount backpressure loops cause closes. Add a small, robust wrapper and route audio vs control. Client module to add: apps/client/src/lib/voiceWS.ts
+
+Does OnDemand change the plan?
+- Yes, but positively: pivot to a single “authoritative 1m” pipeline used by both live and replay. Keep producing the same SSE events (bar, microbar) and let replay “tick” the timeline by streaming historical 1m bars at adjustable speed. This removes the mock generator and the format drift it introduced, and still exercises voice tools against real market patterns.
+
+Minimal fixes to apply now (work for both live and replay)
+- Make seq minute-based and time-derived.
+- Improve Polygon history fetch and logging.
+- Harden voice WS.
+
+Files/patches
+1) Bar builder: compute seq from minute boundary (authoritative across stack)
+```typescript name=apps/server/src/market/barBuilder.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/market/barBuilder.ts
+// ...inside class; replace finalizeBar with the following implementation or patch the seq computation.
+
+private finalizeBar(symbol: string, timeframe: string, state: SymbolState) {
+  if (!state.currentBar) return;
+
+  const stateKey = `${symbol}:${timeframe}`;
+
+  // Authoritative seq = floor(start-of-bar ms / 60_000)
+  const seqFromTime = Math.floor(state.bar_start / 60000);
+  const currentSeq = this.lastSeq.get(stateKey) ?? 0;
+  const seq = seqFromTime > currentSeq ? seqFromTime : currentSeq + 1;
+  this.lastSeq.set(stateKey, seq);
+
+  const finalizedBar: Bar = {
+    symbol,
+    timeframe: timeframe as any,
+    seq,
+    bar_start: state.bar_start,
+    bar_end: state.bar_end,
+    ohlcv: {
+      o: state.currentBar.open,
+      h: state.currentBar.high,
+      l: state.currentBar.low,
+      c: state.currentBar.close,
+      v: state.currentBar.volume,
+    },
+  };
+
+  console.debug(
+    `[barBuilder] finalizeBar symbol=${symbol} tf=${timeframe} seq=${seq} start=${new Date(finalizedBar.bar_start).toISOString()} end=${new Date(finalizedBar.bar_end).toISOString()} o=${finalizedBar.ohlcv.o} c=${finalizedBar.ohlcv.c} v=${finalizedBar.ohlcv.v}`
+  );
+
+  state.microbars = [];
+  eventBus.emit(`bar:new:${symbol}:${timeframe}` as any, finalizedBar);
+}
+```
+
+2) Polygon history: use precise ISO times and log raw upstream responses on empties
+```typescript name=apps/server/src/history/service.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/main/apps/server/src/history/service.ts
+// Replace the fetchPolygonHistory implementation with this shape or patch equivalently.
+
+async function fetchPolygonHistory(
+  symbol: string,
+  timeframe: Timeframe,
+  limit: number,
+  before?: number,
+): Promise<Bar[]> {
+  const toMs = before ?? Date.now();
+  const timeframeMs = timeframeToMs(timeframe);
+  const fromMs = toMs - limit * timeframeMs;
+
+  const fromISO = new Date(fromMs).toISOString();
+  const toISO = new Date(toMs).toISOString();
+
+  const multiplier = timeframeToMultiplier(timeframe);
+  const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/minute/${fromISO}/${toISO}`;
+  const params = new URLSearchParams({
+    adjusted: "true",
+    sort: "asc",
+    limit: String(limit),
+    apiKey: env.POLYGON_API_KEY,
+  });
+
+  try {
+    const response = await fetch(`${url}?${params.toString()}`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    const status = response.status;
+    const raw = await response.text().catch(() => "");
+
+    if (!response.ok) {
+      console.warn(`[history] Polygon error status=${status} body=${raw}`);
+      return [];
+    }
+
+    let data: PolygonAggResponse | null = null;
+    try {
+      data = JSON.parse(raw) as PolygonAggResponse;
+    } catch (e) {
+      console.warn(`[history] Polygon parse error for ${symbol} (${status}):`, e);
+      return [];
+    }
+
+    if (!data?.results?.length) {
+      console.warn(`[history] Empty Polygon results for ${symbol} ${fromISO}→${toISO} status=${status} body=${raw}`);
+      return [];
+    }
+
+    return data.results.map((agg) => {
+      const bar_start = agg.t;
+      const bar_end = bar_start + timeframeMs;
+      const seq = Math.floor(bar_start / timeframeMs);
+      return {
+        symbol,
+        timeframe,
+        seq,
+        bar_start,
+        bar_end,
+        ohlcv: { o: agg.o, h: agg.h, l: agg.l, c: agg.c, v: agg.v },
+      };
+    });
+  } catch (err) {
+    console.warn(`[history] Polygon request failed:`, err);
+    return [];
+  }
+}
+```
+
+3) Voice WS: robust client wrapper (binary audio + JSON control + heartbeat + backpressure)
+```typescript name=apps/client/src/lib/voiceWS.ts
+// New file: robust WebSocket helper for voice audio/control
+
+type VoiceHandler = {
+  onAudioChunk?: (chunk: ArrayBuffer) => void;
+  onControl?: (msg: any) => void;
+  onOpen?: () => void;
+  onClose?: (ev?: CloseEvent) => void;
+  onError?: (err?: any) => void;
+};
+
+export function createVoiceWS(url: string, handlers: VoiceHandler) {
+  const ws = new WebSocket(url);
+  ws.binaryType = "arraybuffer";
+
+  let pingTimer: number | undefined;
+  let lastPongAt = Date.now();
+
+  ws.onopen = () => {
+    handlers.onOpen?.();
+    pingTimer = window.setInterval(() => {
+      try {
+        ws.send(JSON.stringify({ type: "ping", ts: Date.now() }));
+        if (Date.now() - lastPongAt > 15000) {
+          console.warn("VoiceWS: no pong, closing to reconnect");
+          ws.close();
+        }
+      } catch (e) {
+        console.error("VoiceWS ping error", e);
+      }
+    }, 5000);
+  };
+
+  ws.onmessage = (ev) => {
+    if (typeof ev.data === "string") {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg?.type === "pong") lastPongAt = Date.now();
+        handlers.onControl?.(msg);
+      } catch {
+        console.warn("VoiceWS: control parse error");
+      }
+      return;
+    }
+
+    if (ev.data instanceof ArrayBuffer) {
+      handlers.onAudioChunk?.(ev.data);
+      return;
+    }
+
+    // Blob fallback
+    const reader = new FileReader();
+    reader.onload = () => handlers.onAudioChunk?.(reader.result as ArrayBuffer);
+    reader.readAsArrayBuffer(ev.data as Blob);
+  };
+
+  ws.onerror = (err) => handlers.onError?.(err);
+  ws.onclose = (ev) => {
+    if (pingTimer) clearInterval(pingTimer);
+    handlers.onClose?.(ev);
+  };
+
+  function send(data: ArrayBuffer | string) {
+    const maxBuffered = 256 * 1024;
+    if (ws.bufferedAmount > maxBuffered) {
+      setTimeout(() => send(data), 50);
+      return;
+    }
+    try {
+      if (typeof data === "string") ws.send(data);
+      else ws.send(data);
+    } catch (e) {
+      console.error("VoiceWS send failed", e);
+    }
+  }
+
+  return { ws, send, close: () => ws.close() };
+}
+```
+
+OnDemand replay design (TOS-style) — additive, replaces mocks
+- Goal: one data path for both live and replay. Replay streams real Polygon 1m bars (and optional microbar interpolation) over the same eventBus/SSE events as live.
+
+Server additions
+- Replay engine that loads bars via getHistory and emits them over eventBus at controlled speed. It can also synthesize microbar updates between bar_start and bar_end to animate wicks in the chart and keep voice “alive” during the minute.
+
+```typescript name=apps/server/src/replay/engine.ts
+import { eventBus } from "@server/market/eventBus";
+import type { Bar } from "@server/market/eventBus";
+import { getHistory } from "@server/history/service";
+
+type ReplayState = {
+  timer?: NodeJS.Timeout;
+  idx: number;
+  bars: Bar[];
+  speed: number; // 1.0x, 2.0x, etc.
+  symbol: string;
+  timeframe: "1m";
+};
+
+const sessions = new Map<string, ReplayState>(); // key per symbol
+
+export async function startReplay(symbol: string, fromMs: number, toMs: number, speed = 1.0) {
+  const bars = await getHistory({ symbol, timeframe: "1m", limit: Math.ceil((toMs - fromMs) / 60_000), before: toMs });
+  if (!bars.length) throw new Error(`No bars to replay for ${symbol}`);
+
+  const state: ReplayState = { idx: 0, bars, speed, symbol, timeframe: "1m" };
+  sessions.set(symbol, state);
+
+  tick(symbol);
+  return { total: bars.length };
+}
+
+export function stopReplay(symbol: string) {
+  const s = sessions.get(symbol);
+  if (s?.timer) clearTimeout(s.timer);
+  sessions.delete(symbol);
+}
+
+export function setReplaySpeed(symbol: string, speed: number) {
+  const s = sessions.get(symbol);
+  if (s) s.speed = speed;
+}
+
+function tick(symbol: string) {
+  const s = sessions.get(symbol);
+  if (!s) return;
+
+  const bar = s.bars[s.idx];
+  if (!bar) {
+    stopReplay(symbol);
+    return;
+  }
+
+  // Emit the closed bar immediately (replay is bar-by-bar)
+  eventBus.emit(`bar:new:${symbol}:${s.timeframe}` as any, bar);
+
+  // Optional: synthesize microbar animation between bars for smoother UX
+  emitMicrobarPulse(symbol, bar);
+
+  s.idx += 1;
+  const intervalMs = Math.max(100, (60_000 / s.speed)); // accelerate minute to 100ms+ if desired
+  s.timer = setTimeout(() => tick(symbol), intervalMs);
+}
+
+function emitMicrobarPulse(symbol: string, bar: Bar) {
+  // Simple 3-step pulse: open -> mid -> close
+  const steps = [
+    { o: bar.ohlcv.o, h: Math.max(bar.ohlcv.o, bar.ohlcv.c, bar.ohlcv.h), l: Math.min(bar.ohlcv.o, bar.ohlcv.c, bar.ohlcv.l), c: (bar.ohlcv.o + bar.ohlcv.c) / 2, v: Math.floor((bar.ohlcv.v ?? 0) * 0.5) },
+    { o: bar.ohlcv.o, h: bar.ohlcv.h, l: bar.ohlcv.l, c: bar.ohlcv.c, v: bar.ohlcv.v ?? 0 },
+  ];
+
+  let i = 0;
+  const pulse = setInterval(() => {
+    const step = steps[i++];
+    if (!step) return clearInterval(pulse);
+
+    eventBus.emit(`microbar:${symbol}` as const, {
+      symbol,
+      tf: "250ms",
+      ts: Date.now(),
+      open: step.o,
+      high: step.h,
+      low: step.l,
+      close: step.c,
+      volume: step.v,
+    });
+  }, 120);
+}
+```
+
+- Simple replay route to control start/stop/speed:
+
+```typescript name=apps/server/src/routes/replay.ts
+import { Router } from "express";
+import { startReplay, stopReplay, setReplaySpeed } from "@server/replay/engine";
+
+const router = Router();
+
+router.post("/start", async (req, res) => {
+  try {
+    const { symbol, fromMs, toMs, speed } = req.body ?? {};
+    const result = await startReplay(symbol, Number(fromMs), Number(toMs), Number(speed) || 1.0);
+    res.json({ ok: true, ...result });
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: e?.message || "failed" });
+  }
+});
+
+router.post("/stop", (req, res) => {
+  const { symbol } = req.body ?? {};
+  stopReplay(String(symbol));
+  res.json({ ok: true });
+});
+
+router.post("/speed", (req, res) => {
+  const { symbol, speed } = req.body ?? {};
+  setReplaySpeed(String(symbol), Number(speed) || 1.0);
+  res.json({ ok: true });
+});
+
+export default router;
+```
+
+Client additions
+- Replay controls UI (start/stop/speed/date range). It just calls the replay routes; the chart keeps listening to the same SSE events it already handles.
+
+```typescript name=apps/client/src/features/replay/ReplayControls.tsx
+import { useState } from "react";
+
+export function ReplayControls() {
+  const [symbol, setSymbol] = useState("SPY");
+  const [date, setDate] = useState<string>("");
+  const [speed, setSpeed] = useState<number>(4);
+
+  const start = async () => {
+    const from = new Date(date + "T13:30:00Z").getTime(); // example
+    const to = from + 6 * 60_000; // 6 minutes
+    await fetch("/api/replay/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol, fromMs: from, toMs: to, speed }),
+      credentials: "include",
+    });
+  };
+
+  const stop = async () => {
+    await fetch("/api/replay/stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol }),
+      credentials: "include",
+    });
+  };
+
+  return (
+    <div className="flex gap-2 items-center">
+      <input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} className="input" />
+      <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input" />
+      <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
+        <option value={1}>1x</option>
+        <option value={2}>2x</option>
+        <option value={4}>4x</option>
+        <option value={10}>10x</option>
+      </select>
+      <button onClick={start} className="btn">Start</button>
+      <button onClick={stop} className="btn">Stop</button>
+    </div>
+  );
+}
+```
+
+Documentation (OnDemand vs Mock)
+````markdown name=docs/REPLAY_MODE.md
+# Replay Mode (OnDemand)
+
+Replay streams real Polygon historical bars over the same SSE events as live.
+
+Benefits:
+- One data path (live and replay share pipeline)
+- Voice, indicators, charts all work identically
+- Deterministic testing (pick dates, speed up, repeat)
+
+How it works:
+- Server loads bars via `/api/history` (Polygon aggs)
+- `replay/engine.ts` emits `bar:new:${symbol}:1m` and `microbar:${symbol}` at controlled intervals
+- Client continues listening to SSE; no changes required for chart rendering
+
+Controls:
+- POST `/api/replay/start` { symbol, fromMs, toMs, speed }
+- POST `/api/replay/stop` { symbol }
+- POST `/api/replay/speed` { symbol, speed }
+
+Notes:
+- Keep `mockTickGenerator` disabled by default; prefer replay for dev/test.
+- Sequence (`seq`) is time-derived: `floor(bar_start/60000)`.
+- Bar times are ms on the wire; chart converts to seconds.
+````
+
+Does this allow testing voice features?
+- Yes. The voice coach queries the same chart/bars and receives the same SSE updates. Replay uses real historical bars so the coach’s reasoning and latencies are realistic. You can fast-forward through consolidations to trigger rules, replay volatile days, and tune voice behavior.
+
+Next steps I recommend
+- Apply the seq and history fixes now; this will stabilize live charts immediately.
+- Add the voice WS helper; this should stop the disconnect/loop.
+- Implement Replay Mode and remove mock tick generator from default dev flow. Keep it behind a flag if you want, but aim for a single data path.
+
+If you want, I can open a PR implementing:
+- barBuilder seq fix
+- history fetch/logging improvements
+- new replay engine + routes + client controls
+- voice WS helper
+Branch suggestion: feat/replay-mode-seq-fix. Would you like me to proceed with that PR?

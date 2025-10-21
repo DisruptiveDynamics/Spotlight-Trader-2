@@ -1,8 +1,9 @@
-import type { Express } from "express";
-import { requireUser, AuthRequest } from "../middleware/requireUser.js";
+import { eq } from "drizzle-orm";
+import type { Express, Request, Response } from "express";
+
 import { db } from "../db/index.js";
 import { userPreferences } from "../db/schema.js";
-import { eq } from "drizzle-orm";
+import { requirePin } from "../middleware/requirePin";
 
 interface UserPreferences {
   favoriteSymbols?: string[];
@@ -13,6 +14,7 @@ interface UserPreferences {
   signalAudio?: boolean;
   colorVision?: string;
   highContrast?: boolean;
+  sessionPolicy?: "auto" | "rth" | "rth_ext";
   notifications?: {
     voice?: boolean;
     visual?: boolean;
@@ -22,9 +24,9 @@ interface UserPreferences {
 
 export function setupPreferencesRoutes(app: Express) {
   // GET /api/nexa/preferences - Get user preferences
-  app.get("/api/nexa/preferences", requireUser, async (req: AuthRequest, res) => {
+  app.get("/api/nexa/preferences", async (req: Request, res: Response) => {
     try {
-      const userId = req.user!.userId;
+      const userId = (req as any).userId || "owner";
 
       const prefs = await db
         .select()
@@ -43,6 +45,7 @@ export function setupPreferencesRoutes(app: Express) {
           signalAudio: true,
           colorVision: "normal",
           highContrast: false,
+          sessionPolicy: "auto",
           notifications: {
             voice: true,
             visual: true,
@@ -61,6 +64,7 @@ export function setupPreferencesRoutes(app: Express) {
         signalAudio: pref.signalAudio,
         colorVision: pref.colorVision,
         highContrast: pref.highContrast,
+        sessionPolicy: pref.sessionPolicy || "auto",
         notifications: pref.notifications as { voice: boolean; visual: boolean; sound: boolean },
       });
     } catch (error) {
@@ -72,9 +76,9 @@ export function setupPreferencesRoutes(app: Express) {
   });
 
   // PUT /api/nexa/preferences - Update all preferences (for migration)
-  app.put("/api/nexa/preferences", requireUser, async (req: AuthRequest, res) => {
+  app.put("/api/nexa/preferences", async (req: Request, res: Response) => {
     try {
-      const userId = req.user!.userId;
+      const userId = (req as any).userId || "owner";
       const updates: UserPreferences = req.body;
 
       // Check if preferences exist
@@ -94,6 +98,7 @@ export function setupPreferencesRoutes(app: Express) {
         signalAudio: updates.signalAudio ?? true,
         colorVision: updates.colorVision ?? "normal",
         highContrast: updates.highContrast ?? false,
+        sessionPolicy: updates.sessionPolicy ?? "auto",
         notifications: updates.notifications ?? {
           voice: true,
           visual: true,
@@ -120,9 +125,9 @@ export function setupPreferencesRoutes(app: Express) {
   });
 
   // PATCH /api/nexa/preferences - Partial update with deep merge
-  app.patch("/api/nexa/preferences", requireUser, async (req: AuthRequest, res) => {
+  app.patch("/api/nexa/preferences", requirePin, async (req: Request, res: Response) => {
     try {
-      const userId = req.user!.userId;
+      const userId = (req as any).userId || "owner";
       const updates: Partial<UserPreferences> = req.body;
 
       if (Object.keys(updates).length === 0) {
@@ -149,6 +154,7 @@ export function setupPreferencesRoutes(app: Express) {
               signalAudio: true,
               colorVision: "normal",
               highContrast: false,
+              sessionPolicy: "auto",
               notifications: {
                 voice: true,
                 visual: true,
@@ -179,6 +185,7 @@ export function setupPreferencesRoutes(app: Express) {
         signalAudio: updates.signalAudio ?? current.signalAudio,
         colorVision: updates.colorVision ?? current.colorVision,
         highContrast: updates.highContrast ?? current.highContrast,
+        sessionPolicy: updates.sessionPolicy ?? current.sessionPolicy ?? "auto",
         notifications: mergedNotifications,
         updatedAt: new Date(),
       };

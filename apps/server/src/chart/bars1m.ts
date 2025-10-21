@@ -1,8 +1,6 @@
 // Authoritative 1m bar buffer - single source of truth for all timeframes
 // All higher timeframes (2m, 5m, 10m, 15m, 30m, 1h) roll up from this buffer
 
-import type { Bar } from "@shared/types";
-
 interface Bar1m {
   symbol: string;
   seq: number;
@@ -58,6 +56,41 @@ class Bars1mBuffer {
     const buffer = this.buffers.get(symbol);
     if (!buffer || buffer.length === 0) return undefined;
     return buffer[buffer.length - 1];
+  }
+
+  // Reconcile a bar with official data (for AM aggregate minute reconciliation)
+  // Replaces existing bar by seq (primary) or bar_end (fallback), or appends if not found
+  reconcile(symbol: string, bar: Bar1m): 
+    | { replaced: true; oldBar: Bar1m }
+    | { replaced: false; oldBar?: undefined } {
+    if (!this.buffers.has(symbol)) {
+      this.buffers.set(symbol, []);
+    }
+
+    const buffer = this.buffers.get(symbol)!;
+    
+    // Primary: Find existing bar with same seq (most deterministic)
+    let existingIndex = buffer.findIndex((b) => b.seq === bar.seq);
+    
+    // Fallback: Find by bar_end if seq match fails (handles rare DST edge cases)
+    if (existingIndex < 0) {
+      existingIndex = buffer.findIndex((b) => b.bar_end === bar.bar_end);
+    }
+
+    if (existingIndex >= 0) {
+      // Replace existing tick-based bar with official AM data
+      const oldBar = buffer[existingIndex]!;
+      buffer[existingIndex] = bar;
+      return { replaced: true, oldBar };
+    } else {
+      // No existing bar found - append as new (gap-fill scenario)
+      buffer.push(bar);
+      // Trim to max size (FIFO)
+      if (buffer.length > this.MAX_SIZE) {
+        buffer.shift();
+      }
+      return { replaced: false };
+    }
   }
 
   // Clear buffer for a symbol (rarely used)

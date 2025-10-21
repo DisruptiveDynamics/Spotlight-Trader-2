@@ -1,26 +1,24 @@
+import { and, eq, gte, lt } from "drizzle-orm";
 import { Router } from "express";
+import type { Request, Response } from "express";
 import { z } from "zod";
+
 import { db } from "../db/index.js";
 import { signals } from "../db/schema.js";
-import { and, eq, gte, lt } from "drizzle-orm";
-import { AuthRequest } from "../middleware/requireUser.js";
+import { requirePin } from "../middleware/requirePin";
 
 const router: Router = Router();
 
 const ListSignalsSchema = z.object({
   symbol: z.string().optional(),
-  date: z.string().optional(), // YYYY-MM-DD
+  date: z.string().optional(),
   ruleId: z.string().optional(),
 });
 
-/**
- * GET /api/signals
- * Query signals by symbol, date, and/or ruleId
- */
-router.get("/", async (req: AuthRequest, res) => {
+router.get("/", requirePin, async (req: Request, res: Response) => {
   try {
     const parsed = ListSignalsSchema.parse(req.query);
-    const userId = req.user!.userId;
+    const userId = (req as any).userId;
 
     const conditions = [eq(signals.userId, userId)];
 
@@ -50,7 +48,7 @@ router.get("/", async (req: AuthRequest, res) => {
       .from(signals)
       .where(whereClause)
       .orderBy(signals.ts)
-      .limit(100); // Safety limit
+      .limit(100);
 
     res.json({
       signals: results.map((s) => ({

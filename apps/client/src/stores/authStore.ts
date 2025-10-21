@@ -1,57 +1,92 @@
 import { create } from "zustand";
+import { persist, subscribeWithSelector } from "zustand/middleware";
+
 import { authStorage } from "../auth/authStorage";
 
-// Preserve store across HMR
 if (import.meta.hot) {
   import.meta.hot.accept(() => {
     console.log("[HMR] authStore reloaded");
   });
 }
 
-interface User {
-  userId: string;
+export type User = {
+  id: string;
   email: string;
-  createdAt?: string;
-}
+  name?: string;
+  demo?: boolean;
+} | null;
 
-interface AuthState {
-  user: User | null;
-  setUser: (user: User | null) => void;
+type AuthState = {
+  user: User;
+  authReady: boolean;
+  setUser: (u: User) => void;
   logout: () => void;
-}
-
-const getInitialUser = (): User | null => {
-  const stored = authStorage.get();
-  const isValid = stored && stored.user && !authStorage.isExpired();
-  return isValid && stored?.user ? stored.user : null;
+  verifyAuth: () => Promise<void>;
+  markReady: () => void;
 };
 
-// Export store as singleton
-export const useAuthStore = create<AuthState>((set) => ({
-  user: getInitialUser(),
-
-  setUser: (user) => {
-    console.log("[authStore] setUser called with:", user);
-    set({ user });
-    if (user) {
-      const authData = {
-        user,
-        expiresAt: Date.now() + 30 * 60 * 1000,
-      };
-      console.log("[authStore] Saving to localStorage:", authData);
-      authStorage.set(authData);
-    } else {
-      console.log("[authStore] Clearing localStorage");
-      authStorage.clear();
-    }
-  },
-
-  logout: () => {
-    authStorage.clear();
-    set({ user: null });
-    fetch("/api/auth/logout", {
-      method: "POST",
-      credentials: "include",
-    }).catch(console.error);
-  },
-}));
+export const useAuthStore = create<AuthState>()(
+  subscribeWithSelector(
+    persist(
+      (set, _get) => ({
+        user: null,
+        authReady: false,
+        setUser: (u) => {
+          console.log("[authStore] setUser:", u);
+          set({ user: u });
+          if (u) {
+            authStorage.set({
+              user: { userId: u.id, email: u.email, createdAt: new Date().toISOString() },
+              expiresAt: Date.now() + 30 * 60 * 1000,
+            });
+          } else {
+            authStorage.clear();
+          }
+        },
+        logout: async () => {
+          console.log("[authStore] Logging out");
+          authStorage.clear();
+          set({ user: null, authReady: true });
+          try {
+            await fetch("/api/pin/logout", {
+              method: "POST",
+              credentials: "include",
+            });
+          } catch (err) {
+            console.error("[authStore] Logout failed:", err);
+          }
+        },
+        verifyAuth: async () => {
+          console.log("[authStore] Verifying server auth status");
+          try {
+            const res = await fetch("/api/pin/status", {
+              credentials: "include",
+            });
+            
+            if (res.ok) {
+              const data = await res.json();
+              if (data.ok && data.user) {
+                console.log("[authStore] Server auth valid, user:", data.user.id);
+                set({ user: { id: data.user.id, email: data.user.email }, authReady: true });
+                return;
+              }
+            }
+            
+            console.log("[authStore] Server auth invalid, clearing persisted state");
+            authStorage.clear();
+            set({ user: null, authReady: true });
+          } catch (err) {
+            console.error("[authStore] Auth verification failed:", err);
+            authStorage.clear();
+            set({ user: null, authReady: true });
+          }
+        },
+        markReady: () => {
+          console.log("[authStore] Marking auth as ready");
+          set({ authReady: true });
+        },
+      }),
+      { name: "spotlight-auth" },
+    ),
+  ),
+);

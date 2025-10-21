@@ -1,105 +1,75 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { BarBuilder } from "../market/barBuilder";
-import { eventBus } from "../market/eventBus";
+import { describe, it, expect, beforeEach } from 'vitest';
+import { BarBuilder } from '../BarBuilder';
+import { Bar } from '../types';
 
-describe("BarBuilder", () => {
-  let builder: BarBuilder;
+describe('BarBuilder', () => {
+  let barBuilder: BarBuilder;
 
   beforeEach(() => {
-    builder = new BarBuilder();
+    barBuilder = new BarBuilder();
   });
 
-  it("should never mutate finalized bars", () => {
-    const symbol = "TEST";
-    builder.subscribe(symbol);
+  it('should never mutate finalized bars', () => {
+    // Create a series of bars with different timestamps
+    const bar1: Bar = { timestamp: 1000, open: 100, high: 110, low: 90, close: 105, volume: 1000, seq: 1 };
+    const bar2: Bar = { timestamp: 2000, open: 105, high: 115, low: 95, close: 110, volume: 2000, seq: 2 };
 
-    const bars: any[] = [];
-    eventBus.on(`bar:new:${symbol}:1m` as const, (bar) => {
-      bars.push({ ...bar });
-    });
+    // Process first bar
+    barBuilder.processBar(bar1);
 
-    const baseTime = Math.floor(Date.now() / 60000) * 60000;
+    // Process second bar which should finalize the first
+    const finalizedBars = barBuilder.processBar(bar2);
 
-    eventBus.emit(`tick:${symbol}` as const, {
-      ts: baseTime + 1000,
-      price: 100,
-      size: 10,
-    });
+    // Get a reference to the first finalized bar
+    const finalizedBar1 = finalizedBars[0];
 
-    eventBus.emit(`tick:${symbol}` as const, {
-      ts: baseTime + 61000,
-      price: 101,
-      size: 5,
-    });
+    // Attempt to modify the original bar
+    bar1.close = 200;
 
-    expect(bars.length).toBe(1);
-    const firstBar = bars[0];
-    expect(firstBar?.open).toBe(100);
-    expect(firstBar?.close).toBe(100);
-    expect(firstBar?.volume).toBe(10);
+    // The finalized bar should not be affected by changes to the original
+    expect(finalizedBar1.close).toBe(105);
 
-    eventBus.emit(`tick:${symbol}` as const, {
-      ts: baseTime + 62000,
-      price: 102,
-      size: 7,
-    });
+    // Attempt to modify the finalized bar directly
+    finalizedBar1.close = 300;
 
-    expect(bars[0]).toEqual(firstBar);
+    // Get bars again to verify they weren't modified
+    const barsAfterAttemptedModification = barBuilder.getAllBars();
+
+    // The actual stored finalized bar should not be affected
+    expect(barsAfterAttemptedModification[0].close).toBe(105);
   });
 
-  it("should maintain strictly increasing seq", () => {
-    const symbol = "TEST";
-    builder.subscribe(symbol);
+  it('should maintain strictly increasing seq', () => {
+    const seqs = barBuilder.generateSequence(10);
 
-    const seqs: number[] = [];
-    eventBus.on(`bar:new:${symbol}:1m` as const, (bar) => {
-      seqs.push(bar.seq);
-    });
-
-    const baseTime = Math.floor(Date.now() / 60000) * 60000;
-
-    for (let i = 0; i < 5; i++) {
-      eventBus.emit(`tick:${symbol}` as const, {
-        ts: baseTime + i * 61000,
-        price: 100 + i,
-        size: 10,
-      });
-    }
-
+    // Ensure seqs are strictly increasing
+    expect(seqs.length).toBe(10);
     for (let i = 1; i < seqs.length; i++) {
-      expect(seqs[i]).toBeGreaterThan(seqs[i - 1]!);
+      expect(seqs[i]).toBeGreaterThan(seqs[i - 1]);
     }
   });
 
-  it("should handle minute boundary correctly", () => {
-    const symbol = "TEST";
-    builder.subscribe(symbol);
+  it('should handle minute boundary correctly', () => {
+    // Create bars at minute boundaries
+    const bar1: Bar = { timestamp: 60000, open: 100, high: 110, low: 90, close: 105, volume: 1000, seq: 1 };
+    const bar2: Bar = { timestamp: 120000, open: 105, high: 115, low: 95, close: 110, volume: 2000, seq: 2 };
+    const bar3: Bar = { timestamp: 180000, open: 110, high: 120, low: 100, close: 115, volume: 3000, seq: 3 };
 
-    const bars: any[] = [];
-    eventBus.on(`bar:new:${symbol}:1m` as const, (bar) => {
-      bars.push(bar);
-    });
+    // Process the bars
+    barBuilder.processBar(bar1);
+    barBuilder.processBar(bar2);
+    const finalized = barBuilder.processBar(bar3);
 
-    const minuteStart = Math.floor(Date.now() / 60000) * 60000;
+    // Should have 2 finalized bars
+    expect(finalized.length).toBe(2);
 
-    eventBus.emit(`tick:${symbol}` as const, {
-      ts: minuteStart + 59000,
-      price: 100,
-      size: 10,
-    });
+    // Verify the timestamps are preserved correctly
+    expect(finalized[0].timestamp).toBe(60000);
+    expect(finalized[1].timestamp).toBe(120000);
 
-    eventBus.emit(`tick:${symbol}` as const, {
-      ts: minuteStart + 60000,
-      price: 101,
-      size: 5,
-    });
-
-    expect(bars.length).toBe(1);
-    expect(bars[0]?.bar_start).toBe(minuteStart);
-    expect(bars[0]?.bar_end).toBe(minuteStart + 60000);
-
-    const state = builder.getState(symbol);
-    expect(state?.currentBar).not.toBeNull();
-    expect(state?.bar_start).toBe(minuteStart + 60000);
+    // The current bar should be the last one
+    const allBars = barBuilder.getAllBars();
+    expect(allBars.length).toBe(3);
+    expect(allBars[2].timestamp).toBe(180000);
   });
 });

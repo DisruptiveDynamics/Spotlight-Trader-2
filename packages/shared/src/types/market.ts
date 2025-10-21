@@ -25,6 +25,9 @@ export interface ChartPoint {
   v: number; // volume
 }
 
+// Canonical alias used across the codebase for clarity
+export type OHLCV = ChartPoint;
+
 // Chart snapshot for voice AI and client consumption
 export interface ChartSnapshot {
   symbol: string;

@@ -1,65 +1,48 @@
 # Spotlight Trader
 
 ## Overview
-
-Spotlight Trader is a production-grade, real-time trading coach application for high-frequency day traders. It provides real-time market data, AI-powered voice coaching, a rule-based trading alert system, and comprehensive journaling. The application emphasizes professional trader ergonomics with zero-lag, keyboard-first control, institutional-grade hotkeys, focus modes, latency monitoring, and accessibility. Its primary goal is to deliver immediate insights and coaching to improve trading performance and efficiency, aiming to empower traders with cutting-edge AI and real-time analytics.
+Spotlight Trader is a production-grade, real-time trading coach application for high-frequency day traders. It provides real-time market data, AI-powered voice coaching, a rule-based trading alert system, and comprehensive journaling. The application emphasizes professional trader ergonomics with zero-lag, keyboard-first control, institutional-grade hotkeys, focus modes, latency monitoring, and accessibility, aiming to enhance trading performance and efficiency through AI and real-time analytics. The project's ambition is to equip traders with advanced tools and a cutting-edge AI assistant.
 
 ## User Preferences
-
 Preferred communication style: Simple, everyday language.
 
-## Recent Changes
-
-### October 14, 2025 - Resilience & Observability Improvements
-- **Networking Fix**: Updated Vite proxy to use `0.0.0.0:8080` instead of `localhost:8080` for Replit cloud compatibility
-- **Demo Login Hardening**: Added exponential backoff retry logic (3 attempts, 1s → 2s → 4s delays) with user feedback during retries
-- **Health Endpoints**: Added `/api/livez`, `/api/readyz`, `/api/healthz` for debugging and monitoring
-- **Error Handling**: Implemented global process error handlers (`uncaughtException`, `unhandledRejection`) that log and exit to prevent undefined states; improved Express error middleware for consistent API error responses
-- **Port Cleanup Utility**: Created `pnpm cleanup` script to kill orphaned processes on ports 5000 and 8080
-
 ## System Architecture
+The application is a TypeScript monorepo using pnpm workspaces, comprising `apps/client` (React 18, Vite, Tailwind CSS), `apps/server` (Node.js 20 Express), and shared packages.
 
-### Monorepo Structure
-The application uses a TypeScript monorepo with pnpm workspaces, including `apps/client` (React 18, Vite, Tailwind CSS), `apps/server` (Node.js 20 Express), `packages/shared`, and `packages/config`.
+**Real-Time Data Pipeline**: Features a deterministic, lossless data pipeline for live market data, integrating Polygon REST API for historical data and tick-by-tick streaming down to 50ms microbars. Server-Sent Events (SSE) provide streaming market data and trading alerts with lossless resume capabilities. It supports 24/7 Polygon data with extended hours and a server-authoritative timeframe system with multi-timeframe rollups from a 1-minute buffer. Dynamic symbol subscription system with SymbolManager orchestrates Polygon WebSocket, bar builder, session VWAP, and history seeding with ref-counting and 5-minute TTL for inactive symbols.
 
-### Real-Time Data Pipeline
-A deterministic, lossless data pipeline handles live market data, including DST-safe exchange timezone management. It integrates Polygon REST API for historical data, tick-by-tick streaming, and 50ms microbars. Server-Sent Events (SSE) are used for streaming market data and trading alerts with lossless resume capabilities. The system supports 24/7 real Polygon data with extended hours and overnight REST API fallback. It uses a server-authoritative timeframe system with multi-timeframe rollups, driven by a 1-minute authoritative buffer.
+**Phase 1 Data Correctness (Oct 2025)**: Production-grade minute-bar reconciliation system ensuring tick-based estimates are replaced with official Polygon AM aggregates when available. Dual subscription model (T.* ticks + AM.* aggregates) with idempotent dedupe via `reconciledSeqs` tracking prevents duplicate emissions. `ringBuffer.replaceOrUpsertBySeq()` ensures single bar per seq across all consumers. `bars1m.reconcile()` matches by seq (primary) with bar_end fallback for DST safety. Seq calculation strictly `floor(bar_start/60000)` for deterministic alignment across all sources. Volume drift logging alerts when tick-based vs AM differs >10%.
 
-### Communication Protocols
-- **Server-Sent Events (SSE)**: For streaming market data (1-minute bars, microbars, trading alerts) with lossless resume.
-- **WebRTC (via OpenAI Agents SDK)**: Handles browser-to-OpenAI audio streaming for the voice coach, secured with ephemeral client tokens and authenticated user sessions.
+**Session Policy System (Oct 2025)**: Intelligent session management with auto-switching between RTH (regular trading hours 9:30 AM-4:00 PM ET) and RTH_EXT (extended hours 4:00 AM-8:00 PM ET) based on market time. User preference stored in database with three modes: "auto" (time-based switching), "rth" (RTH only), "rth_ext" (extended hours only). Data pipeline (barBuilder, history service) emits ALL bars unfiltered to preserve Phase 1 guarantees - session filtering intended for future implementation at API/SSE layer with user context. SessionPolicy service provides getCurrentSession() for auto mode and getUserSession() for preference-aware filtering. UI includes Settings panel with session policy selector under "Market" tab.
 
-### Data Storage Strategy
+**Communication Protocols**:
+- **Server-Sent Events (SSE)**: For streaming market data and trading alerts.
+- **WebRTC (via OpenAI Agents SDK)**: For browser-to-OpenAI audio streaming for the voice coach, secured with ephemeral client tokens.
+
+**Data Storage Strategy**:
 - **Neon PostgreSQL with Drizzle ORM**: Stores versioned trading rules, user customizations, signals, and journal entries. Pgvector is planned for semantic memory.
 - **Redis (Upstash)**: Planned for session management, rate limiting, and distributed ring buffer persistence.
 - **In-Memory Structures**: Used for ring buffer and bar builder state for sub-millisecond latency.
 
-### Security Model
-Includes Helmet.js, strict CORS allowlisting, short-lived JWTs, connection limits, Zod for environment validation, and cookie-based authentication with httpOnly session cookies.
+**Security Model**: Implements a 6-digit PIN authentication system with JWT-based sessions in httpOnly cookies. A `requirePin` middleware secures all API routes, SSE streams, and WebSocket upgrade handlers. Enhanced security includes Helmet.js, strict CORS, connection limits, and Zod for environment validation.
 
-### Frontend Architecture
-Built with React 18 and TypeScript, using Lightweight Charts, Zustand for state management, and Tailwind CSS. Features a professional charting system, a TOS-style toolbar, and a Pane component for multi-chart grids.
+**Frontend Architecture**: Built with React 18 and TypeScript, utilizing Lightweight Charts, Zustand for state management, and Tailwind CSS. It includes a professional charting system, a TOS-style toolbar, and a Pane component for multi-chart grids.
 
-### Rules Engine Architecture
-Facilitates strategy automation and AI explanations through Expression Evaluation, Signal Generation with Risk Governance, and AI Explanation Generation using the OpenAI API.
+**Multi-Timeframe Charting System (Oct 2025)**: Production-grade charting with lightweight-charts using direct ref-based lifecycle management. Features deterministic bar sequencing generalized for all timeframes (1m, 2m, 5m, 10m, 15m, 30m, 1h) with correct timestamp calculations, gap detection, and backfill logic. The PaneStable component provides single initialization, proper seeding from history API, volume histogram rendering, and real-time bar updates via SSE. Chart adapters (chartAdapters.ts) handle timeframe-aware millisecond→seconds conversion for lightweight-charts compatibility. Architecture choice: direct chart refs over hook abstraction for production-grade stability.
 
-### Journaling & Memory System
-Provides structured trade tracking and automated end-of-day summaries. The Coach Memory System uses Pgvector to store and retrieve `playbook`, `glossary`, `postmortem`, and `knowledge` memories with OpenAI embeddings. Nexa 2.0 introduces a knowledge upload pipeline for ingesting YouTube videos, PDFs, and text notes with semantic chunking and OpenAI embeddings, and integrates these memories into session context.
+**Rules Engine Architecture**: Enables strategy automation and AI explanations through expression evaluation, signal generation with risk governance, and AI explanation generation via the OpenAI API.
 
-### Continuous Learning Loop & Backtesting
-An event-driven system with in-memory feature flags and a database schema for user feedback. A deterministic backtest harness runs historical data against the same evaluator as live trading.
+**Journaling & Memory System**: Offers structured trade tracking and automated end-of-day summaries. The Coach Memory System employs Pgvector for storing and retrieving `playbook`, `glossary`, `postmortem`, and `knowledge` memories using OpenAI embeddings. A knowledge upload pipeline supports ingesting YouTube videos, PDFs, and text notes with semantic chunking.
 
-### Voice Presence Control System
-A voice interface with modern animations, robust audio handling, and personalization. Includes core audio infrastructure, UI components, performance optimizations, a Voice Tools Registry (7 tools), Function Call Routing to Copilot tool handlers, Callout Streaming, and Tool-Powered Responses for real-time coaching. The coach has a persistent identity ("Nexa", she/her pronouns, warm personality).
+**Continuous Learning Loop & Backtesting**: An event-driven system with in-memory feature flags and a database schema for user feedback. A deterministic backtest harness evaluates historical data.
 
-### Trader UX Pack
-Focuses on professional ergonomics including: Hotkey System, Focus Modes (`Trade Mode`, `Review Mode`, `Normal Mode`), Signal Density Control, Anchored VWAP, Latency & Health HUD, Tape Peek, Accessibility features, and Performance Safeguards.
+**Voice Presence Control System**: A voice interface with core audio infrastructure, UI components, performance optimizations, a Voice Tools Registry (7 tools), function call routing, callout streaming, and tool-powered responses. The coach ("Nexa", she/her) maintains a persistent, warm identity.
 
-### Realtime Copilot System
-An intelligent trading assistant providing real-time pattern recognition, proactive alerts, and trade assistance. Built on a deterministic event-driven architecture with SSE streaming for sub-200ms latency. Core components include a Telemetry Bus, a 10-tool Tool Registry, Copilot Broadcaster, Rules Sentinel for risk governance, and Pattern Memory. It features an event-driven Trigger System and UI components for `CalloutsOverlay`.
+**Trader UX Pack**: Focuses on professional ergonomics including a Hotkey System, Focus Modes (`Trade Mode`, `Review Mode`, `Normal Mode`), Signal Density Control, Anchored VWAP, Latency & Health HUD, Tape Peek, Accessibility features, and Performance Safeguards.
 
-### AI Intelligence & Proactive Coaching
-Enhanced AI coach with unrestricted tool usage, memory integration, trader behavior analysis, and proactive market monitoring. Coach Policy enhancements ensure real-time data access, mandatory tool calls, and ultra-brief responses. A Voice Memory Bridge captures insights, and a Trader Pattern Detector analyzes journal history. The Proactive Coaching Engine monitors for market alerts, feeding into tool-powered voice responses. The voice model was upgraded to `gpt-realtime`.
+**Realtime Copilot System**: An intelligent trading assistant providing real-time pattern recognition, proactive alerts, and trade assistance. It operates on a deterministic event-driven architecture with SSE streaming for sub-200ms latency. Key components include a Telemetry Bus, a 10-tool Tool Registry, Copilot Broadcaster, Rules Sentinel for risk governance, and Pattern Memory. It features an event-driven Trigger System and UI for `CalloutsOverlay`.
+
+**AI Intelligence & Proactive Coaching**: The AI coach has unrestricted tool usage, memory integration, trader behavior analysis, and proactive market monitoring. Coach Policy enhancements ensure real-time data access, mandatory tool calls, and ultra-brief responses. A Voice Memory Bridge captures insights, and a Trader Pattern Detector analyzes journal history. The Proactive Coaching Engine monitors market alerts, feeding into tool-powered voice responses, using the `gpt-realtime` model.
 
 ## External Dependencies
 

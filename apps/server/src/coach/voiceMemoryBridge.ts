@@ -108,11 +108,35 @@ class VoiceMemoryBridge {
     }, this.FLUSH_INTERVAL_MS);
   }
 
+  /**
+   * [PHASE-8] Graceful shutdown with retry logic
+   * Attempts to flush all insights with up to 3 retries before giving up
+   */
   async shutdown(): Promise<void> {
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
     }
-    await this.flushAllInsights();
+
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 500;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        console.log(`[VoiceMemoryBridge] Shutdown flush attempt ${attempt}/${MAX_RETRIES}`);
+        await this.flushAllInsights();
+        console.log(`[VoiceMemoryBridge] Shutdown flush successful on attempt ${attempt}`);
+        return;
+      } catch (err) {
+        console.error(`[VoiceMemoryBridge] Shutdown flush attempt ${attempt} failed:`, err);
+        
+        if (attempt < MAX_RETRIES) {
+          console.log(`[VoiceMemoryBridge] Retrying in ${RETRY_DELAY_MS}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        } else {
+          console.error(`[VoiceMemoryBridge] All ${MAX_RETRIES} flush attempts failed - data may be lost`);
+        }
+      }
+    }
   }
 
   getBufferSize(userId?: string): number {
@@ -125,8 +149,19 @@ class VoiceMemoryBridge {
 
 export const voiceMemoryBridge = new VoiceMemoryBridge();
 
-// Graceful shutdown
+// [PHASE-8] Graceful shutdown handlers for all exit scenarios
 process.on("SIGTERM", async () => {
-  console.log("[VoiceMemoryBridge] Shutting down, flushing insights...");
+  console.log("[VoiceMemoryBridge] SIGTERM received, flushing insights...");
+  await voiceMemoryBridge.shutdown();
+});
+
+process.on("SIGINT", async () => {
+  console.log("[VoiceMemoryBridge] SIGINT received, flushing insights...");
+  await voiceMemoryBridge.shutdown();
+  process.exit(0);
+});
+
+process.on("beforeExit", async (code) => {
+  console.log(`[VoiceMemoryBridge] beforeExit (code ${code}), flushing insights...`);
   await voiceMemoryBridge.shutdown();
 });

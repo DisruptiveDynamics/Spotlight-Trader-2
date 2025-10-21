@@ -1,15 +1,15 @@
-import { Router, type Router as ExpressRouter } from "express";
-import { eventBus } from "@server/market/eventBus";
 import { ringBuffer } from "@server/cache/ring";
-import type { Bar } from "@server/market/eventBus";
+import { eventBus, type MarketBarEvent, toSharedBar } from "@server/market/eventBus";
+import { Router, type Router as ExpressRouter } from "express";
 
 const router: ExpressRouter = Router();
 
 router.post("/test/vwap-reclaim", async (req, res) => {
   const now = Date.now();
-  const sessionStart = new Date().setHours(9, 30, 0, 0);
+  // TODO: Use sessionStart for time-based trigger testing
+  const _sessionStart = new Date().setHours(9, 30, 0, 0);
 
-  const baseBars: Bar[] = [
+  const baseBars: MarketBarEvent[] = [
     {
       symbol: "SPY",
       timeframe: "1m",
@@ -44,7 +44,7 @@ router.post("/test/vwap-reclaim", async (req, res) => {
     },
   ];
 
-  ringBuffer.putBars("SPY", baseBars);
+  ringBuffer.putBars("SPY", baseBars.map(toSharedBar));
 
   for (const bar of baseBars) {
     eventBus.emit("bar:new:SPY:1m", bar);
@@ -59,10 +59,11 @@ router.post("/test/vwap-reclaim", async (req, res) => {
 });
 
 router.post("/test/orb", async (req, res) => {
-  const now = Date.now();
+  // TODO: Use now for current time-based testing
+  const _now = Date.now();
   const sessionStart = new Date().setHours(9, 30, 0, 0);
 
-  const orbBars: Bar[] = [
+  const orbBars: MarketBarEvent[] = [
     {
       symbol: "SPY",
       timeframe: "1m",
@@ -89,7 +90,7 @@ router.post("/test/orb", async (req, res) => {
     },
   ];
 
-  ringBuffer.putBars("SPY", orbBars);
+  ringBuffer.putBars("SPY", orbBars.map(toSharedBar));
 
   for (const bar of orbBars) {
     eventBus.emit("bar:new:SPY:1m", bar);
@@ -106,7 +107,7 @@ router.post("/test/orb", async (req, res) => {
 router.post("/test/ema-pullback", async (req, res) => {
   const now = Date.now();
 
-  const emaBars: Bar[] = [];
+  const emaBars: MarketBarEvent[] = [];
   let basePrice = 100;
 
   for (let i = 0; i < 25; i++) {
@@ -129,7 +130,7 @@ router.post("/test/ema-pullback", async (req, res) => {
     });
   }
 
-  ringBuffer.putBars("SPY", emaBars);
+  ringBuffer.putBars("SPY", emaBars.map(toSharedBar));
 
   for (const bar of emaBars) {
     eventBus.emit("bar:new:SPY:1m", bar);

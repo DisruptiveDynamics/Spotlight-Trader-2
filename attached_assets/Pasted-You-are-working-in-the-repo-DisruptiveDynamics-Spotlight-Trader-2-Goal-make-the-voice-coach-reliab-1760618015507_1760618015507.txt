@@ -1,0 +1,97 @@
+You are working in the repo DisruptiveDynamics/Spotlight-Trader-2. Goal: make the voice coach reliably answer “What is SPY’s current price?” and clean up noisy console dumps. Do the following in order, explaining each change in PR notes.
+
+1) Bring up the server correctly (the previous script was using the wrong pnpm filter)
+- Why: The API wasn’t running; all health/SSE checks failed. Server package name is @spotlight/server.
+- Steps:
+  - Enable pnpm and install deps:
+    corepack enable pnpm || npm i -g pnpm
+    pnpm install
+  - Start server with debug:
+    API_PORT=4000 DEBUG="Realtime*,Voice*,Tool*,SSE*,History*,Market*" pnpm --filter @spotlight/server dev
+  - Set secrets in Replit (as environment secrets, not in client code):
+    OPENAI_API_KEY=<redacted>
+    POLYGON_API_KEY=<redacted>   # or whatever market provider key is used
+
+2) Fix diag.sh so it actually runs the server in isolation
+- Why: The script uses an incorrect pnpm filter (@app/api), so it never started the API.
+- Steps:
+  - Update the filter and re-run:
+    sed -i 's/@app\/api/@spotlight\/server/' diag.sh
+    chmod +x ./diag.sh
+    ./diag.sh
+- Acceptance:
+  - “== health ==” doesn’t fail (or shows a valid response).
+  - “== sse ==” shows bootstrap/epoch quickly.
+  - “== voice-ws ==” reports an open (or a controlled error if VOICE_WS_URL isn’t set).
+
+3) Clean up the massive JSX/UI dumps in the browser console
+- Why: A component (PresenceBubble) content/string is getting logged/serialized, flooding the console and hiding real errors.
+- Targets:
+  - apps/client/src/features/coach/PresenceBubble.tsx
+    - Strings observed: “Muted 🔇/Unmuted 🔊”, “Disconnect Coach”, “Thinking…”, getLatencyColor, showThinkingOverlay.
+- Steps:
+  - Search for noisy logging and remove or dev-guard:
+    rg -n 'console\.(log|error|warn)\(' apps/client --glob '!**/node_modules/**' --glob '!**/dist/**'
+  - Ensure we never log JSX or component functions (e.g., console.log(<PresenceBubble />) or console.log(PresenceBubble)).
+  - Keep only structured, minimal logs (e.g., small objects), wrapped in dev guards:
+    if (import.meta.env?.MODE === 'development') { console.log('Coach state', { connectionState, latency }); }
+- Acceptance:
+  - After refresh, the console no longer prints giant JSX strings.
+  - Only purposeful, small logs remain for troubleshooting.
+
+4) Implement a fast, minimal quote tool: get_last_price(symbol)
+- Why: The assistant has no way to fetch a real-time price; existing tools focus on chart snapshots and analysis, not quotes. This is why “What is SPY’s current price?” stalls or times out.
+- Server implementation:
+  - Create apps/server/src/market/quote.ts with a function:
+    - Prefer reading from an in-process market cache/bus if available (lowest latency).
+    - Else, call Polygon “last trade/quote” (using @polygon.io/client-js already in deps).
+    - Fallback: if no provider key or request fails, use the latest 1m bar’s close so the assistant still answers with a disclaimer.
+    - Return: { symbol, price, ts: number, source: "cache|polygon|bar_fallback" }.
+  - Add an HTTP probe for manual testing:
+    - GET /tools/quote?symbol=SPY → returns above JSON.
+  - Register the tool in apps/server/src/realtime/voiceTools.ts:
+    {
+      type: "function",
+      name: "get_last_price",
+      description: "Get the latest price for a symbol from the market cache or provider",
+      parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }
+    }
+  - Ensure get_last_price is included in the MINIMAL session tool list:
+    - apps/server/src/realtime/voiceProxy.ts → in getMinimalSessionUpdate(), include get_last_price so it’s available immediately after session.created.
+- Client timeout adjustment:
+  - apps/client/src/voice/RealtimeVoiceClient.ts:
+    - Micro-tools currently time out at ~1200ms if name starts with "get_last_".
+    - Either guarantee the server returns <200ms (via cache), or bump micro-tool timeout for get_last_price to 3000ms.
+- Acceptance:
+  - curl -fsS "http://127.0.0.1:4000/tools/quote?symbol=SPY" | jq .
+    → JSON with { symbol, price, ts, source } and non-error HTTP 200.
+  - In the browser DevTools during a voice test:
+    - You see “Function call created: get_last_price …” then “Tool … succeeded …”
+    - The assistant speaks back the price promptly (no stall).
+
+5) Validate the rest of the data path still works
+- Why: Charts depend on SSE/History; we must avoid regressions.
+- Checks:
+  - SSE headers/seed:
+    curl -i "http://127.0.0.1:4000/realtime/sse?symbols=SPY" | head -n 40
+    → includes X-Market-Source / X-Market-Reason headers and bootstrap/epoch quickly.
+  - History backfill:
+    curl -fsS "http://127.0.0.1:4000/api/history?symbol=SPY&timeframe=1m&limit=2" | jq .
+  - Voice WS probe:
+    node -e "const {WebSocket}=require('ws');const ws=new WebSocket('ws://127.0.0.1:4000/ws/realtime');ws.on('open',()=>{console.log('open');ws.close()});ws.on('error',e=>console.error('err',e.message))"
+
+6) Document what changed and why (in PR notes)
+- Summarize:
+  - Fixed diag.sh to launch the correct server package (@spotlight/server).
+  - Removed accidental JSX/component logging to reduce console noise.
+  - Added get_last_price tool and HTTP probe; registered in minimal session for immediate availability.
+  - Ensured quote path returns quickly (cache-first), or relaxed micro-tool timeout as a backup.
+  - Verified SSE/History/Voice-WS health; no regressions.
+
+Deliverables:
+- A working server (pnpm --filter @spotlight/server dev), successful diag.sh run, clean browser console, get_last_price tool wired and callable via voice and HTTP, and documented PR with the above acceptance checks pasted in.
+
+Be careful:
+- Do NOT expose secrets in client code or logs.
+- Keep payloads tiny and types strict.
+- Maintain existing folder structure and TypeScript strictness.

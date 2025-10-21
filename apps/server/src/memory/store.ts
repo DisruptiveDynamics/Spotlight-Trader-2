@@ -1,8 +1,9 @@
-import { db } from "../db/index.js";
-import { coachMemories } from "../db/schema.js";
 import { eq, and, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
+
 import { embedText } from "./embed.js";
+import { db } from "../db/index.js";
+import { coachMemories } from "../db/schema.js";
 
 export type MemoryKind = "playbook" | "glossary" | "postmortem" | "knowledge";
 

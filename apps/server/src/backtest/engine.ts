@@ -3,10 +3,11 @@
  * Uses the SAME evaluator as live trading
  */
 
-import { ruleEvaluator } from "../rules/evaluator";
+import type { Bar } from "@shared/types";
 import type { Rule, RuleContext } from "@shared/types/rules";
-import type { Bar } from "../market/eventBus";
+
 import { getHistory } from "../history/service";
+import { ruleEvaluator } from "../rules/evaluator";
 
 /**
  * Custom error for backtest validation failures

@@ -1,16 +1,15 @@
+import type { InsightContext } from "@spotlight/shared";
 import React, { useState, useEffect, Suspense, lazy } from "react";
+
+import { Brand } from "./components/Brand";
 import { LatencyHUD } from "./components/LatencyHUD";
 import { SignalDensityControl } from "./components/SignalDensityControl";
-import { Brand } from "./components/Brand";
 import { Splash } from "./components/Splash";
 import { Toolbar } from "./features/chart/Toolbar";
-import { focusManager } from "./services/FocusManager";
-import { startFlagSync, stopFlagSync } from "./state/flags";
-import type { InsightContext } from "@spotlight/shared";
 import { MarketStatus } from "./features/hud/MarketStatus";
-import { useAuthStore } from "./stores/authStore";
-import { SignIn } from "./features/auth/SignIn";
+import { focusManager } from "./services/FocusManager";
 import { useChartState } from "./state/chartState";
+import { startFlagSync, stopFlagSync } from "./state/flags";
 
 // Lazy load heavy components for code-splitting
 const MultiChart = lazy(() =>
@@ -23,11 +22,17 @@ const TapePanel = lazy(() =>
 const PresenceBubble = lazy(() =>
   import("./features/coach/PresenceBubble").then((m) => ({ default: m.PresenceBubble })),
 );
-const CalloutsOverlay = lazy(() =>
-  import("./features/copilot/CalloutsOverlay").then((m) => ({ default: m.CalloutsOverlay })),
+const CalloutAudioHandler = lazy(() =>
+  import("./features/copilot/CalloutAudioHandler").then((m) => ({ default: m.CalloutAudioHandler })),
 );
 const ExplainPanel = lazy(() =>
   import("./features/coach/ExplainPanel").then((m) => ({ default: m.ExplainPanel })),
+);
+const RulesBrowser = lazy(() =>
+  import("./features/rules/RulesBrowser").then((m) => ({ default: m.RulesBrowser })),
+);
+const JournalView = lazy(() =>
+  import("./features/journal/JournalView").then((m) => ({ default: m.JournalView })),
 );
 const CommandPalette = lazy(() =>
   import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })),
@@ -47,21 +52,21 @@ const LoadingFallback = () => (
 );
 
 function App() {
-  const user = useAuthStore((state) => state.user);
   const { active } = useChartState();
   const [focusMode, setFocusMode] = useState(focusManager.getMode());
   const [explainPanelOpen, setExplainPanelOpen] = useState(false);
   const [explainContext, setExplainContext] = useState<InsightContext | null>(null);
+  const [rulesBrowserOpen, setRulesBrowserOpen] = useState(false);
+  const [journalViewOpen, setJournalViewOpen] = useState(false);
   const [showSplash, setShowSplash] = useState(false); // Bypass splash for POC
   const [showAdminConsole, setShowAdminConsole] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  // Initialize feature flag syncing (only when authenticated)
+  // Initialize feature flag syncing (AuthGate ensures user exists)
   useEffect(() => {
-    if (!user) return;
     startFlagSync();
     return () => stopFlagSync();
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = focusManager.subscribe(setFocusMode);
@@ -122,14 +127,14 @@ function App() {
   // [RESILIENCE] Debounced splash for market resyncs (avoid flicker on quick resyncs)
   useEffect(() => {
     let debounceTimer: number | null = null;
-    
+
     const handleResyncStart = () => {
       // Only show splash if resync takes > 250ms (debounce to avoid flicker)
       debounceTimer = window.setTimeout(() => {
         setShowSplash(true);
       }, 250);
     };
-    
+
     const handleResyncComplete = () => {
       // Cancel debounce if resync completed quickly
       if (debounceTimer) {
@@ -139,10 +144,10 @@ function App() {
       // Hide splash immediately when resync completes
       setShowSplash(false);
     };
-    
+
     window.addEventListener("market:resync-start", handleResyncStart);
     window.addEventListener("market:resync-complete", handleResyncComplete);
-    
+
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       window.removeEventListener("market:resync-start", handleResyncStart);
@@ -152,11 +157,7 @@ function App() {
 
   const opacity = focusManager.getNonPriceOpacity();
 
-  // Show sign-in page if not authenticated
-  if (!user) {
-    return <SignIn />;
-  }
-
+  // AuthGate ensures user exists before rendering App
   return (
     <>
       <Splash isVisible={showSplash} />
@@ -229,24 +230,35 @@ function App() {
               </div>
 
               {focusManager.isPanelVisible("coach") && (
-                <div className="bg-gray-800 p-4 rounded-lg">
+                <button
+                  onClick={() => setExplainPanelOpen(true)}
+                  className="bg-gray-800 p-4 rounded-lg w-full text-left hover:bg-gray-750 transition-colors border border-transparent hover:border-blue-500"
+                >
                   <h3 className="text-sm font-semibold mb-2">Coach</h3>
-                  <p className="text-xs text-gray-400">AI trading coach</p>
-                </div>
+                  <p className="text-xs text-gray-400">AI trading coach - Ask questions</p>
+                </button>
               )}
 
               {focusManager.isPanelVisible("rules") && (
-                <div className="bg-gray-800 p-4 rounded-lg" style={{ opacity }}>
+                <button
+                  onClick={() => setRulesBrowserOpen(true)}
+                  className="bg-gray-800 p-4 rounded-lg w-full text-left hover:bg-gray-750 transition-colors border border-transparent hover:border-blue-500"
+                  style={{ opacity }}
+                >
                   <h3 className="text-sm font-semibold mb-2">Rules</h3>
                   <p className="text-xs text-gray-400">Trading rules engine</p>
-                </div>
+                </button>
               )}
 
               {focusManager.isPanelVisible("journal") && (
-                <div className="bg-gray-800 p-4 rounded-lg" style={{ opacity }}>
+                <button
+                  onClick={() => setJournalViewOpen(true)}
+                  className="bg-gray-800 p-4 rounded-lg w-full text-left hover:bg-gray-750 transition-colors border border-transparent hover:border-blue-500"
+                  style={{ opacity }}
+                >
                   <h3 className="text-sm font-semibold mb-2">Journal</h3>
                   <p className="text-xs text-gray-400">Trading journal and notes</p>
-                </div>
+                </button>
               )}
             </div>
           </div>
@@ -264,9 +276,31 @@ function App() {
             context={explainContext}
           />
         </Suspense>
+        <Suspense fallback={null}>
+          {rulesBrowserOpen && (
+            <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
+              <div className="relative w-full max-w-7xl h-[90vh] bg-gray-900 rounded-lg overflow-hidden shadow-2xl">
+                <button
+                  onClick={() => setRulesBrowserOpen(false)}
+                  className="absolute top-4 right-4 z-50 bg-gray-700 hover:bg-gray-600 rounded-full p-2 text-white"
+                  aria-label="Close rules browser"
+                >
+                  ✕
+                </button>
+                <RulesBrowser />
+              </div>
+            </div>
+          )}
+        </Suspense>
+        <Suspense fallback={null}>
+          <JournalView
+            isOpen={journalViewOpen}
+            onClose={() => setJournalViewOpen(false)}
+          />
+        </Suspense>
         <MarketStatus />
         <Suspense fallback={null}>
-          <CalloutsOverlay />
+          <CalloutAudioHandler />
         </Suspense>
         {showAdminConsole && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">

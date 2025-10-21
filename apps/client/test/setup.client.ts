@@ -3,7 +3,7 @@ process.env.VITEST = "true";
 
 // jsdom extras
 if (!("matchMedia" in window)) {
-  // @ts-expect-error
+  // @ts-expect-error - matchMedia not available in jsdom, polyfilling for tests
   window.matchMedia = (q: string) => ({
     matches: false,
     media: q,
@@ -19,7 +19,7 @@ if (!("matchMedia" in window)) {
 }
 
 if (!("ResizeObserver" in window)) {
-  // @ts-expect-error
+  // @ts-expect-error - ResizeObserver not available in jsdom, polyfilling for tests
   window.ResizeObserver = class {
     observe() {}
     unobserve() {}
@@ -29,7 +29,7 @@ if (!("ResizeObserver" in window)) {
 
 // crypto.getRandomValues shim (some libs need it)
 if (!globalThis.crypto?.getRandomValues) {
-  // @ts-expect-error
+  // @ts-expect-error - crypto.getRandomValues not available in jsdom, polyfilling for tests
   globalThis.crypto = {
     getRandomValues: (arr: Uint8Array) => {
       for (let i = 0; i < arr.length; i++) arr[i] = Math.floor(Math.random() * 256);
@@ -66,7 +66,7 @@ class MockWebSocket {
   }
   removeEventListener() {}
 }
-// @ts-expect-error
+// @ts-expect-error - Replacing WebSocket with mock implementation for tests
 globalThis.WebSocket = globalThis.WebSocket ?? (MockWebSocket as any);
 
 class MockEventSource {
@@ -89,7 +89,7 @@ class MockEventSource {
   }
   removeEventListener() {}
 }
-// @ts-expect-error
+// @ts-expect-error - Replacing EventSource with mock implementation for tests
 globalThis.EventSource = globalThis.EventSource ?? (MockEventSource as any);
 
 // localStorage guard (jsdom has it, but just in case)
@@ -98,7 +98,7 @@ try {
   window.localStorage.removeItem("__probe__");
 } catch {
   const store = new Map<string, string>();
-  // @ts-expect-error
+  // @ts-expect-error - localStorage not available or broken in test environment, polyfilling
   window.localStorage = {
     getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
     setItem: (k: string, v: string) => {

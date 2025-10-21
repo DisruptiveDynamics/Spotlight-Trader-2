@@ -1,8 +1,9 @@
+import { eq, and, gte, lt } from "drizzle-orm";
 import cron from "node-cron";
+
+import { addJournalEntry, linkJournalToSignal } from "./service.js";
 import { db } from "../db/index.js";
 import { signals } from "../db/schema.js";
-import { eq, and, gte, lt } from "drizzle-orm";
-import { addJournalEntry, linkJournalToSignal } from "./service.js";
 import { getRuleScore, getRuleMetrics } from "../learning/loop.js";
 
 export interface SignalSummary {

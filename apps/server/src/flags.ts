@@ -5,6 +5,8 @@
  * @deprecated Use flags/store.ts for new code. This file maintains backward compatibility.
  */
 
+import { getFlags as _getFlags, isEnabled as _isEnabled } from "./flags/store";
+
 export { getFlags, updateFlags, loadFlags, resetFlags, isEnabled } from "./flags/store";
 export type { Flags } from "./flags/store";
 
@@ -15,7 +17,7 @@ export type FeatureFlag = keyof import("./flags/store").Flags;
  * Execute a function only if the feature flag is enabled
  */
 export function ifFlag<T>(flag: FeatureFlag, fn: () => T, fallback?: () => T): T | undefined {
-  if (isEnabled(flag)) {
+  if (_isEnabled(flag)) {
     return fn();
   }
   return fallback?.();
@@ -26,5 +28,5 @@ export function ifFlag<T>(flag: FeatureFlag, fn: () => T, fallback?: () => T): T
  * @deprecated Use getFlags() from flags/store.ts
  */
 export function getAllFlags() {
-  return getFlags();
+  return _getFlags();
 }

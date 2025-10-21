@@ -1,9 +1,10 @@
 import { Router } from "express";
+
 import { toolbelt } from "./state";
 import { onCoach } from "./state";
 import type { AppEvent } from "./types";
 
-export function buildAgentRouter() {
+export function buildAgentRouter(): Router {
   const r = Router();
 
   // Push events from anywhere in your server (or even the client) into the coach

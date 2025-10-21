@@ -1,5 +1,5 @@
-import { enforceRealtimeClaim } from "./guards/noDataGuard";
 import { ensureFreshTools } from "./guards/freshnessGuard";
+import { enforceRealtimeClaim } from "./guards/noDataGuard";
 
 type ToolCaller = (name: string, input: unknown) => Promise<any>;
 

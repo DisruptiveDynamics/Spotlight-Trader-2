@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import { RealtimeVoiceClient } from "../../voice/RealtimeVoiceClient";
-import { VoiceFallback } from "./VoiceFallback";
-import { ensureiOSAudioUnlocked } from "../../voice/ios";
 import { VOICE_COACH_SYSTEM } from "@spotlight/shared";
+import { useEffect, useRef, useState } from "react";
+
+import { VoiceFallback } from "./VoiceFallback";
+import { toLogError } from "../../lib/errors";
+import { ensureiOSAudioUnlocked } from "../../voice/ios";
+import { RealtimeVoiceClient } from "../../voice/RealtimeVoiceClient";
 
 type CoachState = "listening" | "thinking" | "speaking" | "idle" | "muted";
 type ConnectionState =
@@ -214,19 +216,18 @@ interface PresenceBubbleProps {
 export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [coachState, setCoachState] = useState<CoachState>("idle");
-  const [amplitude, setAmplitude] = useState(0);
-  const [latency, setLatency] = useState(0);
+  const [amplitude, _setAmplitude] = useState(0);
+  const [latency, _setLatency] = useState(0);
   const [showTooltip, setShowTooltip] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
-  const [_permissionState, setPermissionState] = useState<PermissionState>("pending");
+  const [_permissionState, _setPermissionState] = useState<PermissionState>("pending");
   const [statusMessage, setStatusMessage] = useState<string>("");
 
   const voiceClientRef = useRef<RealtimeVoiceClient | null>(null);
   const clickTimeoutRef = useRef<number | null>(null);
   const clickCountRef = useRef(0);
-  const tokenRef = useRef<string | null>(null);
   const tooltipTimerRef = useRef<number>();
   const statusTimerRef = useRef<number>();
 
@@ -255,7 +256,7 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
         setCoachState("idle");
       },
       onError: (error) => {
-        console.error("Voice error:", error);
+        console.error("Voice error:", toLogError(error));
         setConnectionState("error");
       },
       onMuteChange: (isMuted) => {
@@ -296,7 +297,8 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
     }, duration);
   };
 
-  const fetchEphemeralToken = async (): Promise<string> => {
+  // TODO: Remove if token management is handled by RealtimeVoiceClient
+  const _fetchEphemeralToken = async (): Promise<string> => {
     const response = await fetch("/api/voice/ephemeral-token", {
       method: "POST",
       credentials: "include",
@@ -364,8 +366,7 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
 
           showStatusMessage("Voice coach connected ✅", 2000);
         } catch (error) {
-          console.error("Failed to connect voice coach:", error);
-          console.error("Error details:", error instanceof Error ? error.message : String(error));
+          console.error("Failed to connect voice coach:", toLogError(error));
           showStatusMessage("Connection failed. Please try again.", 3000);
         }
       } else if (connectionState === "connected") {
@@ -375,7 +376,7 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
           const isMuted = client.getMuteState();
           showStatusMessage(isMuted ? "Muted 🔇" : "Unmuted 🔊", 1500);
         } catch (error) {
-          console.error("Failed to toggle mute:", error);
+          console.error("Failed to toggle mute:", toLogError(error));
           showStatusMessage("Failed to toggle mute", 2000);
         }
       }
@@ -408,7 +409,7 @@ export function PresenceBubble({ compact = false }: PresenceBubbleProps) {
           const isMuted = voiceClientRef.current.getMuteState();
           showStatusMessage(isMuted ? "Muted 🔇" : "Unmuted 🔊", 1500);
         } catch (error) {
-          console.error("Failed to toggle mute:", error);
+          console.error("Failed to toggle mute:", toLogError(error));
           showStatusMessage("Failed to toggle mute", 2000);
         }
       }

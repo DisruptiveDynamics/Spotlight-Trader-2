@@ -6,7 +6,7 @@ import { z } from "zod";
 import { bars1m } from "../chart/bars1m";
 import { copilotBroadcaster } from "../copilot/broadcaster";
 import { getChartSnapshot } from "../copilot/tools/handlers";
-import { watchSymbol, unwatchSymbol, listWatched } from "../copilot/tools/watchlist";
+import { watchSymbol, unwatchSymbol, listWatched, isWatched } from "../copilot/tools/watchlist";
 import { db } from "../db";
 import { rules, journalEvents, signals, callouts } from "../db/schema";
 import { getSessionVWAPForSymbol } from "../indicators/vwap";
@@ -60,6 +60,31 @@ function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => T): Promise<
   });
 }
 
+/**
+ * Auto-subscribe helper: Ensures a symbol is subscribed before accessing its data.
+ * This allows the voice agent to query ANY symbol without explicitly calling watch_symbol first.
+ * 
+ * @param symbol - The symbol to ensure is subscribed
+ * @returns Promise that resolves when subscription is confirmed (or if already subscribed)
+ */
+async function ensureSymbolSubscribed(symbol: string): Promise<void> {
+  const upperSymbol = symbol.toUpperCase();
+  
+  // Check if already watched (fast path)
+  if (isWatched(upperSymbol)) {
+    return;
+  }
+  
+  // Auto-subscribe with 500 bars of history
+  try {
+    await watchSymbol({ symbol: upperSymbol, seedLimit: 500 });
+    console.log(`🔄 Auto-subscribed ${upperSymbol} for voice agent data access`);
+  } catch (error) {
+    // Subscription failed, but don't throw - let the tool return stale/empty data
+    console.warn(`⚠️ Auto-subscribe failed for ${upperSymbol}:`, error);
+  }
+}
+
 export const voiceTools = {
   async get_chart_snapshot(input: unknown, _userId: string) {
     const params = z
@@ -70,20 +95,26 @@ export const voiceTools = {
       })
       .parse(input);
 
+    // Normalize symbol to uppercase for consistent data access
+    const symbol = params.symbol.toUpperCase();
+
+    // Auto-subscribe to symbol if not already watched
+    await ensureSymbolSubscribed(symbol);
+
     // Clamp bar count defensively (cap at 200, default 50)
     const barCount = Math.max(1, Math.min(params.barCount ?? 50, 200));
 
     const exec = async () =>
-      cache5s(`snap:${params.symbol}:${params.timeframe}:${barCount}`, async () => {
+      cache5s(`snap:${symbol}:${params.timeframe}:${barCount}`, async () => {
         return getChartSnapshot({
-          symbol: params.symbol,
+          symbol,
           timeframe: params.timeframe,
           barCount,
         });
       });
 
     return withTimeout(exec(), env.TOOL_TIMEOUT_MS, () => ({
-      symbol: params.symbol,
+      symbol,
       timeframe: params.timeframe,
       bars: [],
       indicators: {},
@@ -96,7 +127,13 @@ export const voiceTools = {
   },
 
   async get_last_price(input: unknown, _userId: string) {
-    const { symbol } = z.object({ symbol: symbolSchema }).parse(input);
+    const params = z.object({ symbol: symbolSchema }).parse(input);
+
+    // Normalize symbol to uppercase for consistent data access
+    const symbol = params.symbol.toUpperCase();
+
+    // Auto-subscribe to symbol if not already watched
+    await ensureSymbolSubscribed(symbol);
 
     const exec = async () =>
       cache5s(`price:${symbol}`, async () => {
@@ -118,7 +155,13 @@ export const voiceTools = {
   },
 
   async get_last_vwap(input: unknown, _userId: string) {
-    const { symbol } = z.object({ symbol: symbolSchema }).parse(input);
+    const params = z.object({ symbol: symbolSchema }).parse(input);
+
+    // Normalize symbol to uppercase for consistent data access
+    const symbol = params.symbol.toUpperCase();
+
+    // Auto-subscribe to symbol if not already watched
+    await ensureSymbolSubscribed(symbol);
 
     const exec = async () =>
       cache5s(`vwap:${symbol}`, async () => {
@@ -140,7 +183,7 @@ export const voiceTools = {
   },
 
   async get_last_ema(input: unknown, _userId: string) {
-    const { symbol, period } = z
+    const params = z
       .object({
         symbol: symbolSchema,
         period: z
@@ -151,6 +194,13 @@ export const voiceTools = {
           }),
       })
       .parse(input);
+
+    // Normalize symbol to uppercase for consistent data access
+    const symbol = params.symbol.toUpperCase();
+    const period = params.period;
+
+    // Auto-subscribe to symbol if not already watched
+    await ensureSymbolSubscribed(symbol);
 
     const exec = async () =>
       cache5s(`ema:${symbol}:${period}`, async () => {
@@ -181,14 +231,20 @@ export const voiceTools = {
       })
       .parse(input);
 
+    // Normalize symbol to uppercase for consistent data access
+    const symbol = params.symbol.toUpperCase();
+
+    // Auto-subscribe to symbol if not already watched
+    await ensureSymbolSubscribed(symbol);
+
     const snapshot = await getChartSnapshot({
-      symbol: params.symbol,
+      symbol,
       timeframe: params.timeframe,
       barCount: 100,
     });
 
     return {
-      symbol: params.symbol,
+      symbol,
       regime: snapshot.regime,
       volatility: snapshot.volatility,
       indicators: snapshot.indicators,

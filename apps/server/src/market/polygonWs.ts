@@ -233,10 +233,14 @@ export class PolygonWebSocket {
       return;
     }
 
-    const backoff = Math.min(this.baseBackoffMs * Math.pow(2, this.reconnectAttempts), 30000);
+    // Exponential backoff with jitter to prevent thundering herd
+    const exponentialBackoff = this.baseBackoffMs * Math.pow(2, this.reconnectAttempts);
+    const maxBackoff = 60000; // 60 seconds max
+    const jitter = Math.random() * 1000; // 0-1000ms random jitter
+    const backoff = Math.min(exponentialBackoff, maxBackoff) + jitter;
     this.reconnectAttempts++;
 
-    console.log(`Reconnecting in ${backoff}ms (attempt ${this.reconnectAttempts})`);
+    console.log(`Reconnecting in ${Math.round(backoff)}ms (attempt ${this.reconnectAttempts})`);
     setTimeout(() => this.connect(), backoff);
   }
 

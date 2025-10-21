@@ -470,6 +470,9 @@ async function getLastEMA(params: import("./types").GetLastEMAParams): Promise<i
   };
 }
 
+// Import watchlist tools
+import { watchSymbol, unwatchSymbol, listWatched } from "./watchlist";
+
 export const toolHandlers = {
   get_chart_snapshot: getChartSnapshot,
   subscribe_market_stream: subscribeMarketStream,
@@ -484,4 +487,7 @@ export const toolHandlers = {
   get_last_price: getLastPrice,
   get_last_vwap: getLastVWAP,
   get_last_ema: getLastEMA,
+  watch_symbol: watchSymbol,
+  unwatch_symbol: unwatchSymbol,
+  list_watched: listWatched,
 };

@@ -251,6 +251,15 @@ export type ToolHandler<TParams = unknown, TResult = unknown> = (
   params: TParams,
 ) => Promise<TResult>;
 
+// Re-export watchlist tool types
+export type {
+  WatchSymbolParams,
+  WatchSymbolResult,
+  UnwatchSymbolParams,
+  UnwatchSymbolResult,
+  ListWatchedResult,
+} from "../tools/watchlist";
+
 export interface ToolRegistry {
   get_chart_snapshot: ToolHandler<GetChartSnapshotParams, ChartSnapshot>;
   subscribe_market_stream: ToolHandler<SubscribeMarketStreamParams, SubscribeMarketStreamResult>;
@@ -269,4 +278,7 @@ export interface ToolRegistry {
   get_last_price: ToolHandler<GetLastPriceParams, MicroToolResult>;
   get_last_vwap: ToolHandler<GetLastVWAPParams, MicroToolResult>;
   get_last_ema: ToolHandler<GetLastEMAParams, MicroToolResult>;
+  watch_symbol: ToolHandler<import("../tools/watchlist").WatchSymbolParams, import("../tools/watchlist").WatchSymbolResult>;
+  unwatch_symbol: ToolHandler<import("../tools/watchlist").UnwatchSymbolParams, import("../tools/watchlist").UnwatchSymbolResult>;
+  list_watched: ToolHandler<void, import("../tools/watchlist").ListWatchedResult>;
 }

@@ -1,0 +1,143 @@
+ TRADER — READ-ONLY ENTERPRISE DIAGNOSTIC REPORT (NO CODE CHANGES)
+You are a senior DevOps + Full-Stack engineer. Run a comprehensive, READ-ONLY diagnostic across this pnpm monorepo to validate data correctness, streaming health, session policy, and UI wiring. DO NOT MODIFY CODE. If a step requires a change, STOP and report the blocker.
+
+Output requirements
+- Produce two artifacts at the repo root:
+  1) DIAGNOSTIC_REPORT.md — human-readable summary with sections and short log excerpts
+  2) diagnostic.json — machine-readable details for programmatic validation
+- Keep logs concise (<=50 lines per section), but include enough evidence lines to validate claims.
+- If something is unavailable (e.g., Polygon key), state “Unavailable” and continue with best-effort.
+
+Scope and Guardrails
+- No code changes. Only run commands, read files, and hit local endpoints.
+- Default environment. If env values are needed, set them inline for the single command only.
+- Assume server default port 8080. If different, detect and report.
+
+Steps
+
+1) Repo and environment summary
+- Record:
+  - current branch, last commit SHA, author, date, message
+  - untracked/modified files (git status --porcelain)
+  - OS, kernel, timezone, Node, pnpm versions
+- Commands:
+  - git rev-parse --abbrev-ref HEAD
+  - git log -1 --pretty=format:'%H|%an|%ad|%s'
+  - git status --porcelain
+  - node -v && pnpm -v
+  - uname -a
+  - date "+%Y-%m-%d %H:%M:%S %Z"
+
+2) Static code evidence (no build yet)
+- Confirm AM aggregate minute integration and reconciliation hooks:
+  - rg -n "AM\\." apps/server/src/market/polygonWs.ts || true
+  - rg -n "ev\\s*===\\s*[\"']AM[\"']" apps/server/src/market/polygonWs.ts || true
+  - rg -n "eventBus\\.emit\\(`am:" apps/server/src/market/polygonWs.ts || true
+  - rg -n "eventBus\\.on\\(`am:" apps/server || true
+- Confirm session policy in REST and WS:
+  - rg -n "SESSION\\s*=" -n apps/server || true
+  - rg -n "adjusted:\\s*true" apps/server/src/history || true
+  - rg -n "next\\(|resp\\.next|next_url" apps/server/src/history || true
+  - rg -n "America\\/New_York|toZonedTime" apps/server/src/market apps/server/src/history || true
+- Confirm microbar cadence tunable:
+  - rg -n "MICROBAR_MS|microbarInterval" apps/server/src/market/barBuilder.ts || true
+- Confirm mock gating:
+  - rg -n "FLAG_USE_MOCK_TICKS" apps/server/src/market/polygonWs.ts || true
+  - rg -n "mockTickGenerator\\.start" apps/server/src/market/polygonWs.ts || true
+- Confirm chart volume formatting (histogram + vol SMA):
+  - rg -n "addHistogramSeries|priceScale\\(\"volume\"\\)" apps/client/src/features/chart/Pane.tsx || true
+  - rg -n "Vol SMA|vol-sma" apps/client/src/features/chart/Pane.tsx || true
+- Confirm dashboard cards wired to panels:
+  - rg -n "ExplainPanel|RulesBrowser|JournalView" apps/client/src/App.tsx || true
+- Scan for TODO/FIXME and secrets:
+  - rg -n "TODO|FIXME" || true
+  - rg -n "API_KEY|SECRET|TOKEN" --hidden -g "!**/node_modules/**" || true
+
+3) Type, lint, and workspace build
+- Commands:
+  - pnpm -w typecheck || true
+  - pnpm -w lint || true
+  - pnpm -w build || true
+- Capture exit codes and tail of logs for each.
+
+4) Server runtime checks (local)
+- Start server with debug logging in a dedicated process; capture ~20s of logs:
+  - LOG_LEVEL=debug SESSION=${SESSION:-RTH} FLAG_USE_MOCK_TICKS=${FLAG_USE_MOCK_TICKS:-false} MICROBAR_MS=${MICROBAR_MS:-200} pnpm --filter apps/server dev &
+  - Record server PID and wait up to 10s for “ready” log.
+- Endpoints:
+  - curl -sS http://localhost:8080/ready
+  - curl -sS http://localhost:8080/api/market/status -i
+  - curl -sS "http://localhost:8080/api/history?symbol=SPY&timeframe=1m&limit=5" | jq . 2>/dev/null || true
+- SSE sampling (10s sample):
+  - timeout 10s curl -N "http://localhost:8080/stream/market?symbols=SPY&timeframe=1m" | sed -u 's/^/SSE: /' | tee sse_sample.txt
+  - From sse_sample.txt, count lines with "event: bar" and "event: microbar" and extract last 3 seq values; confirm monotonic increase.
+- Log grep (last 200 lines):
+  - Capture lines containing "am:" or "AM", "bar:new", "microbar", "reconcile", "subscribe", "Polygon" to show activity.
+- Kill server process after capture.
+
+5) Off-hours policy and mocks
+- Without changing code, verify intended behavior by reading logs and flags:
+  - Print values used for SESSION, FLAG_USE_MOCK_TICKS.
+  - Confirm that outside extended hours mock ticks are NOT started unless FLAG_USE_MOCK_TICKS=true (via log evidence or static grep if runtime time is within hours).
+
+6) Client build sanity
+- Commands:
+  - pnpm --filter apps/client build || true
+  - If available, print dist size and list top 10 assets by size: du -h apps/client/dist | tail -n 1; find apps/client/dist -type f -maxdepth 2 -printf "%s %p\n" | sort -nr | head -n 10
+- Report if volume pane/SMA code exists (from step 2) and build success status.
+
+7) Optional: Minimal tool checks
+- If an endpoint exists to enumerate tools (e.g., /api/copilot/tools or similar), hit it and list if watch_symbol/unwatch_symbol/list_watched appear; otherwise skip:
+  - curl -sS http://localhost:8080/api/copilot/tools || true
+
+Report structure
+- DIAGNOSTIC_REPORT.md sections (use this exact order):
+  1. Summary (pass/fail highlights)
+  2. Repo & Environment
+  3. Static Evidence (AM, session, microbar, mocks, chart volume, dashboard wiring, TODO/FIXME, secrets)
+  4. Type/Lint/Build Results
+  5. Server Runtime & Endpoints (ready, status, history sample)
+  6. SSE Sample (counts, last seqs, few event lines)
+  7. Logs (selected lines: Polygon, subscribe/resubscribe, am:, reconcile, bar:new, microbar)
+  8. Off-hours Policy (flags + evidence)
+  9. Client Build (sizes and status)
+  10. Optional Tools (if any)
+  11. Conclusions and Risks
+
+- diagnostic.json keys:
+  {
+    "repo": { "branch": "", "commit": { "sha": "", "author": "", "date": "", "message": "" }, "dirty": false },
+    "env": { "os": "", "timezone": "", "node": "", "pnpm": "" },
+    "flags": { "SESSION": "", "FLAG_USE_MOCK_TICKS": "", "MICROBAR_MS": "" },
+    "static": {
+      "am_subscribe": true,
+      "am_handler": true,
+      "am_reconcile_hook": true,
+      "session_policy_in_history": true,
+      "history_adjusted_and_paged": true,
+      "et_timezone_usage": true,
+      "microbar_tunable": true,
+      "mock_gated": true,
+      "chart_volume_histogram": true,
+      "chart_volume_sma": true,
+      "dashboard_cards_wired": true,
+      "todos": { "count": 0, "examples": [] },
+      "secrets_matches": { "count": 0, "examples": [] }
+    },
+    "build": { "typecheck_ok": true, "lint_ok": true, "build_ok": true },
+    "server": {
+      "ready": true,
+      "market_status_headers": { "X-Market-Source": "", "X-Market-Reason": "", "X-Market-Session": "" },
+      "history_sample": { "count": 0, "sample": [] }
+    },
+    "sse": { "bar_events": 0, "microbar_events": 0, "last_seqs": [], "monotonic_seq": true },
+    "logs": { "polygon": [], "subscribe": [], "am": [], "reconcile": [], "bar_new": [], "microbar": [] },
+    "client": { "build_ok": true, "dist_total_human": "", "top_assets": [] },
+    "tools": { "watchlist_present": false }
+  }
+
+Deliverables
+- Create DIAGNOSTIC_REPORT.md and diagnostic.json at repo root populated with the data above.
+- Paste the full contents of both files back to chat.
+
+If any step fails, include the command, exit code, and stderr in the report. Do not retry more than once per command. Do not change code to “fix” diagnostics; report gaps plainly.

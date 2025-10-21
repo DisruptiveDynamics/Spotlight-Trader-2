@@ -6,6 +6,7 @@ import { z } from "zod";
 import { bars1m } from "../chart/bars1m";
 import { copilotBroadcaster } from "../copilot/broadcaster";
 import { getChartSnapshot } from "../copilot/tools/handlers";
+import { watchSymbol, unwatchSymbol, listWatched } from "../copilot/tools/watchlist";
 import { db } from "../db";
 import { rules, journalEvents, signals, callouts } from "../db/schema";
 import { getSessionVWAPForSymbol } from "../indicators/vwap";
@@ -408,6 +409,26 @@ export const voiceTools = {
       return { success: false, error: "Database update failed" };
     }
   },
+
+  async watch_symbol(input: unknown, _userId: string) {
+    const params = z
+      .object({
+        symbol: symbolSchema,
+        seedLimit: z.number().int().min(50).max(1000).nullish().default(500),
+      })
+      .parse(input);
+
+    return watchSymbol({ symbol: params.symbol, seedLimit: params.seedLimit ?? 500 });
+  },
+
+  async unwatch_symbol(input: unknown, _userId: string) {
+    const params = z.object({ symbol: symbolSchema }).parse(input);
+    return unwatchSymbol({ symbol: params.symbol });
+  },
+
+  async list_watched(_input: unknown, _userId: string) {
+    return listWatched();
+  },
 };
 
 export const toolSchemas = [
@@ -565,6 +586,43 @@ export const toolSchemas = [
         reason: { type: "string", description: "Optional reason for the decision" },
       },
       required: ["calloutId", "action"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function" as const,
+    name: "watch_symbol",
+    description: "Add a symbol to the proactive watchlist for real-time monitoring. This subscribes to live data and seeds historical bars for the AI coach to provide insights and alerts.",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Stock symbol to watch (e.g., AAPL, TSLA)" },
+        seedLimit: { type: "integer", minimum: 50, maximum: 1000, description: "Number of historical bars to seed (default: 500)" },
+      },
+      required: ["symbol"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function" as const,
+    name: "unwatch_symbol",
+    description: "Remove a symbol from the proactive watchlist. The subscription will remain active for a TTL period before expiring.",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Stock symbol to unwatch" },
+      },
+      required: ["symbol"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function" as const,
+    name: "list_watched",
+    description: "List all symbols currently on the proactive watchlist for monitoring.",
+    parameters: {
+      type: "object",
+      properties: {},
       additionalProperties: false,
     },
   },

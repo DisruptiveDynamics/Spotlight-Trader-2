@@ -28,6 +28,12 @@ const CalloutAudioHandler = lazy(() =>
 const ExplainPanel = lazy(() =>
   import("./features/coach/ExplainPanel").then((m) => ({ default: m.ExplainPanel })),
 );
+const RulesBrowser = lazy(() =>
+  import("./features/rules/RulesBrowser").then((m) => ({ default: m.RulesBrowser })),
+);
+const JournalView = lazy(() =>
+  import("./features/journal/JournalView").then((m) => ({ default: m.JournalView })),
+);
 const CommandPalette = lazy(() =>
   import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })),
 );
@@ -50,6 +56,8 @@ function App() {
   const [focusMode, setFocusMode] = useState(focusManager.getMode());
   const [explainPanelOpen, setExplainPanelOpen] = useState(false);
   const [explainContext, setExplainContext] = useState<InsightContext | null>(null);
+  const [rulesBrowserOpen, setRulesBrowserOpen] = useState(false);
+  const [journalViewOpen, setJournalViewOpen] = useState(false);
   const [showSplash, setShowSplash] = useState(false); // Bypass splash for POC
   const [showAdminConsole, setShowAdminConsole] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -222,24 +230,35 @@ function App() {
               </div>
 
               {focusManager.isPanelVisible("coach") && (
-                <div className="bg-gray-800 p-4 rounded-lg">
+                <button
+                  onClick={() => setExplainPanelOpen(true)}
+                  className="bg-gray-800 p-4 rounded-lg w-full text-left hover:bg-gray-750 transition-colors border border-transparent hover:border-blue-500"
+                >
                   <h3 className="text-sm font-semibold mb-2">Coach</h3>
-                  <p className="text-xs text-gray-400">AI trading coach</p>
-                </div>
+                  <p className="text-xs text-gray-400">AI trading coach - Ask questions</p>
+                </button>
               )}
 
               {focusManager.isPanelVisible("rules") && (
-                <div className="bg-gray-800 p-4 rounded-lg" style={{ opacity }}>
+                <button
+                  onClick={() => setRulesBrowserOpen(true)}
+                  className="bg-gray-800 p-4 rounded-lg w-full text-left hover:bg-gray-750 transition-colors border border-transparent hover:border-blue-500"
+                  style={{ opacity }}
+                >
                   <h3 className="text-sm font-semibold mb-2">Rules</h3>
                   <p className="text-xs text-gray-400">Trading rules engine</p>
-                </div>
+                </button>
               )}
 
               {focusManager.isPanelVisible("journal") && (
-                <div className="bg-gray-800 p-4 rounded-lg" style={{ opacity }}>
+                <button
+                  onClick={() => setJournalViewOpen(true)}
+                  className="bg-gray-800 p-4 rounded-lg w-full text-left hover:bg-gray-750 transition-colors border border-transparent hover:border-blue-500"
+                  style={{ opacity }}
+                >
                   <h3 className="text-sm font-semibold mb-2">Journal</h3>
                   <p className="text-xs text-gray-400">Trading journal and notes</p>
-                </div>
+                </button>
               )}
             </div>
           </div>
@@ -255,6 +274,28 @@ function App() {
             isOpen={explainPanelOpen}
             onClose={() => setExplainPanelOpen(false)}
             context={explainContext}
+          />
+        </Suspense>
+        <Suspense fallback={null}>
+          {rulesBrowserOpen && (
+            <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
+              <div className="relative w-full max-w-7xl h-[90vh] bg-gray-900 rounded-lg overflow-hidden shadow-2xl">
+                <button
+                  onClick={() => setRulesBrowserOpen(false)}
+                  className="absolute top-4 right-4 z-50 bg-gray-700 hover:bg-gray-600 rounded-full p-2 text-white"
+                  aria-label="Close rules browser"
+                >
+                  ✕
+                </button>
+                <RulesBrowser />
+              </div>
+            </div>
+          )}
+        </Suspense>
+        <Suspense fallback={null}>
+          <JournalView
+            isOpen={journalViewOpen}
+            onClose={() => setJournalViewOpen(false)}
           />
         </Suspense>
         <MarketStatus />

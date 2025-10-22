@@ -25,6 +25,10 @@ export function PaneStable({ className = "" }: PaneProps) {
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   
+  // Track oldest loaded bar for infinite scrolling
+  const oldestBarTimeRef = useRef<number | null>(null);
+  const isLoadingMoreRef = useRef(false);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -124,6 +128,58 @@ export function PaneStable({ className = "" }: PaneProps) {
     };
   }, [chartOptions, priceSeriesOptions, volumeSeriesOptions]);
 
+  // Function to load more historical data (for infinite scrolling)
+  const loadMoreHistory = async () => {
+    if (!priceSeriesRef.current || !volumeSeriesRef.current || !oldestBarTimeRef.current) return;
+    if (isLoadingMoreRef.current) return; // Prevent concurrent fetches
+    
+    try {
+      isLoadingMoreRef.current = true;
+      
+      // Fetch 200 bars before the oldest bar we have (convert seconds to milliseconds)
+      const oldestBarMs = oldestBarTimeRef.current * 1000;
+      const history = await fetchHistory(active.symbol, active.timeframe, 200, oldestBarMs);
+      
+      if (!history.length) {
+        console.log("📊 No more historical data available");
+        isLoadingMoreRef.current = false;
+        return;
+      }
+      
+      // Sort oldest to newest
+      history.sort((a, b) => a.time - b.time);
+      
+      // Update oldest bar reference
+      oldestBarTimeRef.current = history[0].time;
+      
+      // Prepend older data to chart using update()
+      history.forEach((bar) => {
+        const candle: CandlestickData = {
+          time: bar.time as any,
+          open: bar.open,
+          high: bar.high,
+          low: bar.low,
+          close: bar.close,
+        };
+        
+        const volume: HistogramData = {
+          time: bar.time as any,
+          value: bar.volume,
+          color: getVolumeColor(bar.close, bar.open, bar.time * 1000),
+        };
+        
+        priceSeriesRef.current!.update(candle);
+        volumeSeriesRef.current!.update(volume);
+      });
+      
+      console.log(`📊 Loaded ${history.length} more historical bars going back to ${new Date(history[0].msEnd).toLocaleString()}`);
+      isLoadingMoreRef.current = false;
+    } catch (err) {
+      console.error("Failed to load more history:", err);
+      isLoadingMoreRef.current = false;
+    }
+  };
+
   // Load history when symbol/timeframe changes
   useEffect(() => {
     let mounted = true;
@@ -162,6 +218,11 @@ export function PaneStable({ className = "" }: PaneProps) {
         priceSeriesRef.current.setData(candles);
         volumeSeriesRef.current.setData(volumes);
         
+        // Track oldest bar for infinite scrolling
+        if (candles.length > 0) {
+          oldestBarTimeRef.current = Number(candles[0].time);
+        }
+        
         chartRef.current?.timeScale().fitContent();
         setIsLoading(false);
       } catch (err) {
@@ -177,6 +238,31 @@ export function PaneStable({ className = "" }: PaneProps) {
 
     return () => {
       mounted = false;
+    };
+  }, [seedKey, active.symbol, active.timeframe]);
+
+  // Infinite scrolling: load more data when user scrolls near left edge
+  useEffect(() => {
+    if (!chartRef.current) return;
+    
+    const handleVisibleRangeChange = () => {
+      if (!chartRef.current || !oldestBarTimeRef.current) return;
+      
+      const timeScale = chartRef.current.timeScale();
+      const visibleRange = timeScale.getVisibleLogicalRange();
+      
+      if (!visibleRange) return;
+      
+      // If user is scrolled within 20 bars of the left edge, load more
+      if (visibleRange.from < 20) {
+        loadMoreHistory();
+      }
+    };
+    
+    const unsubscribe = chartRef.current.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
+    
+    return () => {
+      unsubscribe();
     };
   }, [seedKey, active.symbol, active.timeframe]);
 

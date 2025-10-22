@@ -29,6 +29,10 @@ export function PaneStable({ className = "" }: PaneProps) {
   const oldestBarTimeRef = useRef<number | null>(null);
   const isLoadingMoreRef = useRef(false);
   
+  // Maintain local buffers for all candles and volumes
+  const candlesBufferRef = useRef<CandlestickData[]>([]);
+  const volumesBufferRef = useRef<HistogramData[]>([]);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -146,31 +150,34 @@ export function PaneStable({ className = "" }: PaneProps) {
         return;
       }
       
-      // Sort oldest to newest
+      // Sort oldest to newest for correct ordering
       history.sort((a, b) => a.time - b.time);
       
-      // Update oldest bar reference
-      oldestBarTimeRef.current = history[0].time;
+      // Convert to chart format
+      const newCandles: CandlestickData[] = history.map((bar) => ({
+        time: bar.time as any,
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close,
+      }));
       
-      // Prepend older data to chart using update()
-      history.forEach((bar) => {
-        const candle: CandlestickData = {
-          time: bar.time as any,
-          open: bar.open,
-          high: bar.high,
-          low: bar.low,
-          close: bar.close,
-        };
-        
-        const volume: HistogramData = {
-          time: bar.time as any,
-          value: bar.volume,
-          color: getVolumeColor(bar.close, bar.open, bar.time * 1000),
-        };
-        
-        priceSeriesRef.current!.update(candle);
-        volumeSeriesRef.current!.update(volume);
-      });
+      const newVolumes: HistogramData[] = history.map((bar) => ({
+        time: bar.time as any,
+        value: bar.volume,
+        color: getVolumeColor(bar.close, bar.open, bar.time * 1000),
+      }));
+      
+      // Merge with existing buffers (prepend older data)
+      candlesBufferRef.current = [...newCandles, ...candlesBufferRef.current];
+      volumesBufferRef.current = [...newVolumes, ...volumesBufferRef.current];
+      
+      // Update oldest bar reference to the EARLIEST timestamp
+      oldestBarTimeRef.current = newCandles[0].time as number;
+      
+      // Use setData() to update the entire series with merged data
+      priceSeriesRef.current.setData(candlesBufferRef.current);
+      volumeSeriesRef.current.setData(volumesBufferRef.current);
       
       console.log(`📊 Loaded ${history.length} more historical bars going back to ${new Date(history[0].msEnd).toLocaleString()}`);
       isLoadingMoreRef.current = false;
@@ -215,6 +222,10 @@ export function PaneStable({ className = "" }: PaneProps) {
           }))
           .sort((a, b) => Number(a.time) - Number(b.time));
 
+        // Store in buffers for infinite scrolling
+        candlesBufferRef.current = candles;
+        volumesBufferRef.current = volumes;
+        
         priceSeriesRef.current.setData(candles);
         volumeSeriesRef.current.setData(volumes);
         
@@ -282,8 +293,24 @@ export function PaneStable({ className = "" }: PaneProps) {
         const candle = toCandleData(bar);
         const volume = toVolumeData(bar);
 
+        // Update the chart (lightweight-charts handles updates efficiently)
         priceSeriesRef.current.update(candle);
         volumeSeriesRef.current.update(volume);
+        
+        // Also update buffers for infinite scrolling consistency
+        // Find and update existing bar, or append new one
+        const candleTime = Number(candle.time);
+        const existingCandleIdx = candlesBufferRef.current.findIndex(c => Number(c.time) === candleTime);
+        
+        if (existingCandleIdx >= 0) {
+          // Update existing bar
+          candlesBufferRef.current[existingCandleIdx] = candle;
+          volumesBufferRef.current[existingCandleIdx] = volume;
+        } else {
+          // Append new bar
+          candlesBufferRef.current.push(candle);
+          volumesBufferRef.current.push(volume);
+        }
       } catch (err) {
         console.error("Failed to update chart with bar:", err);
       }

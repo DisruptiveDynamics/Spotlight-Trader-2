@@ -106,3 +106,18 @@ export function createSessionPolicyManager(): SessionPolicyManager {
 }
 
 export const sessionPolicy = createSessionPolicyManager();
+
+/**
+ * Check if a given timestamp falls within Regular Trading Hours (RTH)
+ * RTH = 9:30 AM - 4:00 PM ET, Monday-Friday
+ *
+ * @param timestamp - Unix timestamp in milliseconds (defaults to now)
+ * @returns true if timestamp is during RTH, false for extended hours
+ *
+ * @example
+ * isRegularTradingHours(Date.now())  // true during 9:30am-4pm ET
+ * isRegularTradingHours(bar.bar_start)  // check if bar is RTH or extended
+ */
+export function isRegularTradingHours(timestamp: number = Date.now()): boolean {
+  return sessionPolicy.getCurrentSession(timestamp) === "RTH";
+}

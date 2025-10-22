@@ -3,7 +3,7 @@ import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { bars1m } from "@server/chart/bars1m";
 import { ringBuffer } from "@server/cache/ring";
 import { validateEnv } from "@shared/env";
-import { sessionPolicy } from "./sessionPolicy";
+import { sessionPolicy, isRegularTradingHours } from "./sessionPolicy";
 
 const ET = "America/New_York";
 const env = validateEnv(process.env);
@@ -407,16 +407,22 @@ export class BarBuilder {
     eventBus.emit(`bar:new:${symbol}:1m` as any, am);
 
     // Log reconciliation with volume drift detection
+    // Note: During extended hours, tick drift is expected (sparse trading, intermittent feed)
+    // Only warn during RTH when drift indicates a real data quality issue
     if (result.replaced && result.oldBar) {
       const volumeDiff = Math.abs(result.oldBar.v - am.ohlcv.v);
       const volumeDiffPct = am.ohlcv.v > 0 ? (volumeDiff / am.ohlcv.v) * 100 : 0;
+      const isRTH = isRegularTradingHours(am.bar_start);
       
       if (volumeDiffPct > 10) {
-        console.debug(
-          `[AM reconcile] ${symbol} seq=${am.seq} ` +
-          `VOLUME DRIFT ${volumeDiffPct.toFixed(1)}%: ` +
-          `tick=${result.oldBar.v} → AM=${am.ohlcv.v} (diff=${volumeDiff})`
-        );
+        // Only warn about drift during RTH (extended hours drift is normal)
+        if (isRTH) {
+          console.debug(
+            `[AM reconcile] ${symbol} seq=${am.seq} ` +
+            `VOLUME DRIFT ${volumeDiffPct.toFixed(1)}%: ` +
+            `tick=${result.oldBar.v} → AM=${am.ohlcv.v} (diff=${volumeDiff})`
+          );
+        }
       } else {
         console.debug(
           `[AM reconcile] ${symbol} seq=${am.seq} ` +

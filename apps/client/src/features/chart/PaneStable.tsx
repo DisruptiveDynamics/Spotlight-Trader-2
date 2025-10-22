@@ -11,6 +11,7 @@ import { toCandleData, toVolumeData, toSec } from "../../lib/chartAdapters";
 import { fetchHistory, type HistoryCandle } from "../../lib/history";
 import { connectMarketSSE, type Bar } from "../../lib/marketStream";
 import { useChartState } from "../../state/chartState";
+import { getVolumeColor } from "@shared";
 
 interface PaneProps {
   paneId?: number;
@@ -153,7 +154,8 @@ export function PaneStable({ className = "" }: PaneProps) {
           .map((bar) => ({
             time: bar.time as any,
             value: bar.volume,
-            color: bar.close >= bar.open ? "#16A34A" : "#DC2626",
+            // Apply session-aware coloring (muted during extended hours)
+            color: getVolumeColor(bar.close, bar.open, bar.time * 1000),
           }))
           .sort((a, b) => Number(a.time) - Number(b.time));
 

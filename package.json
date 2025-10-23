@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "description": "Real-time trading coach with voice AI, market data streaming, and rule-based alerts",
+  "packageManager": "pnpm@8.15.1",
   "engines": {
-    "node": ">=20.0.0",
-    "pnpm": ">=8.0.0"
+    "node": ">=20.10.0",
+    "pnpm": ">=8.15.0"
   },
   "scripts": {
     "dev": "pnpm --filter @spotlight/server dev:unified",
@@ -26,7 +27,8 @@
     "test:ci": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:coverage:summary": "pnpm test:coverage && tsx scripts/generate-coverage-summary.ts",
-    "cleanup": "tsx scripts/cleanup-ports.ts"
+    "cleanup": "tsx scripts/cleanup-ports.ts",
+    "prepare": "husky install"
   },
   "devDependencies": {
     "@eslint/js": "^9.37.0",
@@ -58,17 +60,5 @@
     "vitest": "^1.6.1",
     "ws": "^8.18.3"
   },
-  "dependencies": {
-    "@neondatabase/serverless": "^0.10.4",
-    "@openai/agents": "^0.1.9",
-    "@types/compression": "^1.8.1",
-    "@types/cookie": "^1.0.0",
-    "compression": "^1.8.1",
-    "cookie": "^1.0.2",
-    "date-fns": "^4.1.0",
-    "date-fns-tz": "^3.2.0",
-    "jsonwebtoken": "^9.0.2",
-    "pdf-parse": "^2.2.16",
-    "vite": "^5.4.20"
-  }
+  "dependencies": {}
 }

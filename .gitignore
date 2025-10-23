@@ -46,3 +46,17 @@ Thumbs.db
 
 # Drizzle
 drizzle
+
+# Transient diagnostics and logs
+.api.pid
+diag*.out
+POLYGON_REQUEST_LOGS.txt
+cookies.txt
+logs/
+*.log
+*.pid
+*.pid.lock
+
+# Replit artifacts
+.replit_storage/
+.replit_db/

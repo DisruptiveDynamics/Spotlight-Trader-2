@@ -8,6 +8,7 @@
     "dev:unified": "PORT=5000 UNIFIED_DEV=1 VITE_UNIFIED_DEV=1 tsx watch --clear-screen=false --ignore '../client/**' src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:prod": "NODE_ENV=production node dist/index.js",
     "check": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",

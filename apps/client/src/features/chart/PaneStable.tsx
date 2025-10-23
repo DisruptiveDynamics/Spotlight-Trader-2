@@ -203,7 +203,8 @@ export function PaneStable({ className = "" }: PaneProps) {
         setIsLoading(true);
         setError(null);
 
-        const history = await fetchHistory(active.symbol, active.timeframe, 300);
+        const history = await fetchHistory(active.symbol, active.timeframe, 500);
+      console.log(`📊 Initial history load: fetched ${history.length} bars for ${active.symbol} ${active.timeframe}`);
 
         if (!mounted) return;
 
@@ -278,8 +279,11 @@ export function PaneStable({ className = "" }: PaneProps) {
         
         if (!visibleRange) return;
         
+        console.debug(`[infinite-scroll] visible range: from=${visibleRange.from}, to=${visibleRange.to}`);
+        
         // If user is scrolled within 20 bars of the left edge, load more
         if (visibleRange.from < 20 && !isLoadingMoreRef.current) {
+          console.debug("[infinite-scroll] Triggering loadMoreHistory");
           loadMoreHistory();
         }
       }, 300); // 300ms debounce

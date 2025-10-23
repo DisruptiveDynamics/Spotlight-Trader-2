@@ -53,6 +53,20 @@ export class PolygonWebSocket {
 
   async connect() {
     try {
+      // [SINGLETON] Close existing connection before creating a new one
+      // This prevents "Maximum websocket connections exceeded" errors
+      if (this.ws) {
+        console.log("🔄 Closing existing WebSocket connection before reconnecting");
+        try {
+          (this.ws as any).close();
+        } catch (err) {
+          console.warn("Error closing old WebSocket:", err);
+        }
+        this.ws = null;
+      }
+
+      this.stopHeartbeat();
+      
       // [ALWAYS-ON] Connect to Polygon 24/7 regardless of market hours
       // The WebSocket will be silent when there's no trading activity
       // This removes time-based gating and lets Polygon be the source of truth

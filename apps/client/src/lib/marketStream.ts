@@ -307,7 +307,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ symbol, seedLimit: 200 }),
+          body: JSON.stringify({ symbol, seedLimit: 500 }),
         });
         if (!res.ok) {
           logger.warn(`Failed to subscribe ${symbol}: ${res.status}`);

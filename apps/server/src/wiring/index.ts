@@ -117,7 +117,7 @@ export function initializeMarketPipeline(app: Express) {
   // Subscribe to default favorites using SymbolManager
   // This enables live data + seeds historical bars immediately
   for (const symbol of DEFAULT_FAVORITES) {
-    subscribeSymbol(symbol, { seedLimit: 200 }).catch((err) => {
+    subscribeSymbol(symbol, { seedLimit: 500 }).catch((err) => {
       console.error(`Failed to subscribe ${symbol}:`, err);
     });
   }

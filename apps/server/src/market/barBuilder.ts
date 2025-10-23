@@ -201,6 +201,23 @@ export class BarBuilder {
   private finalizeBar(symbol: string, timeframe: string, state: SymbolState) {
     if (!state.currentBar) return;
 
+    // [DATA-INTEGRITY] Validate currentBar has complete OHLCV before emission
+    const { open, high, low, close, volume } = state.currentBar;
+    if (
+      typeof open !== "number" || !Number.isFinite(open) ||
+      typeof high !== "number" || !Number.isFinite(high) ||
+      typeof low !== "number" || !Number.isFinite(low) ||
+      typeof close !== "number" || !Number.isFinite(close) ||
+      typeof volume !== "number" || !Number.isFinite(volume)
+    ) {
+      console.error(
+        `[barBuilder] CRITICAL: Refusing to emit bar with incomplete OHLCV - ` +
+        `${symbol} ${timeframe} bar_start=${new Date(state.bar_start).toISOString()} ` +
+        `o=${open} h=${high} l=${low} c=${close} v=${volume}`
+      );
+      return; // Abort emission - do not poison ringBuffer or SSE stream
+    }
+
     // DO NOT filter bars here - barBuilder serves all users
     // Session filtering happens at API/SSE level where user preferences are known
 

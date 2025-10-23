@@ -1,0 +1,234 @@
+Great — I’ll give you two things:
+1) Ready-to-paste Replit Agent Work Order (single workspace, no branches) to fix ET time labels, increase initial bars, enable infinite backscroll, and verify everything end-to-end.
+2) Two ready-to-add files you can drop in now: an ET time formatter and a reusable infinite backscroll hook.
+
+Replit Agent Work Order — Fix ET time labels, increase initial bars, enable infinite backscroll, and verify end-to-end (Replit, no branches)
+Paste this into your Replit agent.
+
+````markdown
+TITLE: Fix ET time labels + increase initial bars + enable infinite backscroll + verify end-to-end (Replit, no branches)
+
+Context
+- You are working inside a Replit workspace for Spotlight Trader (TypeScript monorepo).
+- Do all work in-place (no branches/PRs). Keep changes small and reversible.
+- Do NOT change server timestamps or core time math; x-axis and tooltip changes are display/format only.
+- Unified dev: Express + Vite middleware. No separate client port when UNIFIED_DEV=1.
+
+Goals
+1) X-axis and tooltip show Eastern Time (America/New_York) with DST in 12-hour format (e.g., “7:00 PM”). Keep “ET” in the header.
+2) Load a larger initial history window after load (target ~300–500 bars) so after-hours view is meaningful.
+3) Infinite backscroll: as user drags left, fetch older bars via /api/history in debounced pages; prepend smoothly; proper subscribe/unsubscribe.
+4) Ensure only one Polygon WS connection is active (singleton + clean reconnect) — no connection limit errors.
+5) Verify: correct date/time, hundreds of bars visible, infinite backscroll working, no HMR blinking, no duplicate-bar spam.
+
+Guardrails
+- Do not change timestamps in data; only format labels.
+- Do not add new servers or ports. Keep unified dev on PORT.
+- Backward-compatible server history API: if you add a new cursor param (before or toSeq), ensure behavior is unchanged when absent.
+- If any step fails, STOP and paste logs/screenshots for review.
+
+Tasks (commit after each task with a brief message and run verification)
+
+A) Initial bar count: increase client seed
+- File: apps/client/src/lib/marketStream.ts
+  - In ensureSymbolsSubscribed(), change seedLimit from 200 to 500 so the server seeds more bars on subscribe.
+  - Keep everything else unchanged.
+
+B) ET time formatting (display-only)
+- Add a new file apps/client/src/lib/timeFormatET.ts using date-fns-tz formatInTimeZone to render ET (12-hour) — see file content below in my next message or copy from repo notes if present.
+- In your chart creation code (where lightweight-charts is instantiated):
+  - chart.applyOptions({
+      localization: { timeFormatter: (t) => formatUnixSecondsToET(t, false) },
+      timeScale: { timeVisible: true, secondsVisible: false, tickMarkFormatter: tickMarkFormatterET }
+    });
+  - Do not modify bar timestamps.
+  - If the header shows current date, keep “ET” visible.
+
+C) Infinite backscroll with proper subscribe/unsubscribe
+- Create a reusable hook apps/client/src/hooks/useInfiniteBackscroll.ts with:
+  - subscribeVisibleLogicalRangeChange(handler) + matching unsubscribe with the same handler reference.
+  - debounce ~300ms and an isFetching guard to prevent duplicate requests.
+  - on trigger, GET /api/history?symbol=…&timeframe=…&limit=300&before=<earliestBarEndUnixSeconds> and prepend results.
+  - Expose setEarliest(ts) so the chart can set the initial earliest cursor after first data load.
+- Integrate this hook in the chart component:
+  - After initial bars load, call setEarliest(oldest.bar_end).
+  - Implement onPrependBars to prepend returned bars to the chart’s data/state and update earliest.
+  - Add console.debug logs: when handler fires, and before a history fetch.
+
+D) Server: ensure Polygon WS is a singleton with backoff
+- In apps/server/src/market/bootstrap.ts (or the module that establishes Polygon WS):
+  - Hold a module-scope socket reference.
+  - On reconnect, remove all listeners, close the old socket, then open a new one.
+  - Use exponential backoff with jitter (min 1s, doubling up to 60s).
+  - Log connect/close/reconnect attempts.
+- Goal: eliminate “maximum number of websocket connections exceeded” during dev restarts.
+
+E) Verification (run in Replit and paste outputs)
+1) Start unified dev
+- export UNIFIED_DEV=1 VITE_UNIFIED_DEV=1 PORT=${PORT:-8080}
+- export VITE_HTTPS=1
+- pnpm install --frozen-lockfile || pnpm install
+- pnpm build
+- pnpm --filter @spotlight/server dev:unified > server.health.log 2>&1 & echo "PID=$!" && PID=$!
+- i=0; until curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1 || [ $i -ge 60 ]; do sleep 1; i=$((i+1)); done
+- echo "-- /health";     curl -fsS "http://127.0.0.1:${PORT}/health"
+- echo "-- /api/readyz"; curl -fsS "http://127.0.0.1:${PORT}/api/readyz"
+- echo "-- SSE headers"; curl -fsSI "http://127.0.0.1:${PORT}/realtime/sse?symbols=SPY&timeframe=1m" | sed -n '1,20p'
+- tail -n 200 server.health.log
+
+2) Browser checks (attach screenshots or short video)
+- Chart shows ET 12-hour tick labels; header indicates “ET”.
+- Initial bars ~300–500 visible (not ~86); confirm in UI or server log “[history] returning N bars…”.
+- Drag hard left: see console.debug “[backscroll] triggered…” and Network requests to /api/history?before=…; older bars prepend smoothly; no jitter or repeat spam.
+- Keep the tab open for a few minutes: no Polygon connection limit errors in server.health.log; minimal duplicate-bar/stale seq warnings.
+
+If any step fails, STOP and paste:
+- server.health.log tail
+- Console + Network screenshots showing (or not showing) the backscroll trigger and history calls.
+````
+
+New files to add (copy/paste)
+Add these files exactly; they are self-contained and safe.
+
+```typescript name=apps/client/src/lib/timeFormatET.ts
+import { formatInTimeZone } from "date-fns-tz";
+
+/**
+ * Format UNIX seconds into America/New_York (ET) using 12-hour format.
+ * Display-only. Do NOT mutate underlying timestamps.
+ */
+export function formatUnixSecondsToET(unixSeconds: number, showSeconds = false): string {
+  const fmt = showSeconds ? "h:mm:ss a" : "h:mm a";
+  return formatInTimeZone(unixSeconds * 1000, "America/New_York", fmt);
+}
+
+/**
+ * Tick mark formatter for lightweight-charts time axis (intraday).
+ */
+export function tickMarkFormatterET(unixSeconds: number): string {
+  return formatUnixSecondsToET(unixSeconds, false);
+}
+```
+
+```typescript name=apps/client/src/hooks/useInfiniteBackscroll.ts
+import { useEffect, useRef } from "react";
+import type { IChartApi, LogicalRange } from "lightweight-charts";
+
+type UseBackscrollOpts = {
+  chart: IChartApi | null;
+  symbol: string;
+  timeframe: string;
+  pageSize?: number;                // default 300
+  onPrependBars: (olderBars: any[]) => void; // caller prepends to series/state
+};
+
+/**
+ * Subscribes to logical range changes and fetches older bars when the user drags left.
+ * Debounced and guarded to avoid duplicate fetches. Properly unsubscribes on cleanup.
+ */
+export function useInfiniteBackscroll({ chart, symbol, timeframe, pageSize = 300, onPrependBars }: UseBackscrollOpts) {
+  const earliestTsRef = useRef<number | null>(null); // earliest bar_end (unix seconds)
+  const fetchingRef = useRef(false);
+  const debounceRef = useRef<number | null>(null);
+
+  // Allow caller to set earliest cursor after initial load
+  const setEarliest = (unixSeconds: number | null) => {
+    earliestTsRef.current = unixSeconds;
+  };
+
+  useEffect(() => {
+    if (!chart) return;
+
+    const handler = (range: LogicalRange | null) => {
+      if (!range) return;
+
+      // Debounce triggers while the user is dragging
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+      debounceRef.current = window.setTimeout(async () => {
+        if (fetchingRef.current) return;
+        const before = earliestTsRef.current;
+        if (before == null) return;
+
+        fetchingRef.current = true;
+        try {
+          // Trigger when near the left edge (simple heuristic via any range change; server will dedupe)
+          // Add a console for visibility during QA
+          // eslint-disable-next-line no-console
+          console.debug("[backscroll] requesting older bars before", before);
+
+          const params = new URLSearchParams({
+            symbol,
+            timeframe,
+            limit: String(pageSize),
+            before: String(before),
+          });
+          const res = await fetch(`/api/history?${params.toString()}`);
+          if (res.ok) {
+            const olderBars = await res.json();
+            if (Array.isArray(olderBars) && olderBars.length > 0) {
+              olderBars.sort((a: any, b: any) => a.bar_end - b.bar_end);
+              onPrependBars(olderBars);
+              // Update earliest cursor
+              earliestTsRef.current = olderBars[0]!.bar_end;
+              // eslint-disable-next-line no-console
+              console.info(`[backscroll] fetched ${olderBars.length} older bars`);
+            } else {
+              // eslint-disable-next-line no-console
+              console.info("[backscroll] no older bars returned");
+            }
+          } else {
+            // eslint-disable-next-line no-console
+            console.warn("[backscroll] history fetch failed:", res.status, res.statusText);
+          }
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error("[backscroll] error fetching older bars", err);
+        } finally {
+          fetchingRef.current = false;
+        }
+      }, 300) as unknown as number;
+    };
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
+
+    return () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
+    };
+  }, [chart, symbol, timeframe, pageSize, onPrependBars]);
+
+  return { setEarliest };
+}
+```
+
+Where to integrate
+- In your chart creation component:
+  - Import and apply the ET formatters:
+    - localization.timeFormatter → formatUnixSecondsToET
+    - timeScale.tickMarkFormatter → tickMarkFormatterET
+  - Use useInfiniteBackscroll:
+    - Call const { setEarliest } = useInfiniteBackscroll({ chart, symbol, timeframe, onPrependBars });
+    - After initial data loads, call setEarliest(firstBar.bar_end).
+    - Implement onPrependBars to prepend results to your current series data/state and re-render.
+
+One minimal code change to increase initial seed
+Update client subscription seedLimit to 500 (safe, small). Your agent will edit the exact line in apps/client/src/lib/marketStream.ts within ensureSymbolsSubscribed().
+
+Why this won’t break your app
+- ET formatting is label-only; it does not touch bar timestamps.
+- Infinite backscroll subscribes/unsubscribes correctly and is debounced; if something’s off, the hook can be disabled by not calling it.
+- Increasing seedLimit just requests more bars initially; if the server ring buffer can’t provide them, behavior gracefully degrades to fewer bars (no crash).
+- Polygon singleton changes reduce connection limit errors; they don’t change client behavior.
+
+Final verification (after agent completes)
+- You should see hundreds of bars on 1m after load (not ~86).
+- Dragging left should trigger /api/history requests (visible in Network tab) and prepend older bars smoothly.
+- X-axis and tooltip show “7:00 PM” style labels; header still indicates ET.
+- server.health.log no longer shows “maximum number of websocket connections exceeded.”
+- Duplicate/stale seq warnings should be rare.
+
+If you want, once the agent has made changes, paste:
+- The server.health.log tail,
+- A screenshot of the chart with time labels,
+- A screenshot of the Network panel showing /api/history?before=… pages,
+and I’ll confirm everything is integrated correctly and suggest any final tweaks.

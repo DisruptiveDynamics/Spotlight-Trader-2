@@ -12,6 +12,7 @@ import { fetchHistory, type HistoryCandle } from "../../lib/history";
 import { connectMarketSSE, type Bar } from "../../lib/marketStream";
 import { useChartState } from "../../state/chartState";
 import { getVolumeColor } from "@shared";
+import { formatTickET, formatTooltipET } from "../../lib/timeFormatET";
 
 interface PaneProps {
   paneId?: number;
@@ -54,6 +55,10 @@ export function PaneStable({ className = "" }: PaneProps) {
         secondsVisible: false,
         borderVisible: false,
         rightOffset: 5,
+        tickMarkFormatter: formatTickET,
+      },
+      localization: {
+        timeFormatter: formatTooltipET,
       },
       grid: {
         vertLines: { color: "#1F2937" },
@@ -256,24 +261,41 @@ export function PaneStable({ className = "" }: PaneProps) {
   useEffect(() => {
     if (!chartRef.current) return;
     
+    let debounceTimer: NodeJS.Timeout | null = null;
+    
+    // Stable handler reference for proper unsubscribe
     const handleVisibleRangeChange = () => {
       if (!chartRef.current || !oldestBarTimeRef.current) return;
       
-      const timeScale = chartRef.current.timeScale();
-      const visibleRange = timeScale.getVisibleLogicalRange();
+      // Debounce to avoid excessive fetches during rapid scrolling
+      if (debounceTimer) clearTimeout(debounceTimer);
       
-      if (!visibleRange) return;
-      
-      // If user is scrolled within 20 bars of the left edge, load more
-      if (visibleRange.from < 20) {
-        loadMoreHistory();
-      }
+      debounceTimer = setTimeout(() => {
+        if (!chartRef.current) return;
+        
+        const timeScale = chartRef.current.timeScale();
+        const visibleRange = timeScale.getVisibleLogicalRange();
+        
+        if (!visibleRange) return;
+        
+        // If user is scrolled within 20 bars of the left edge, load more
+        if (visibleRange.from < 20 && !isLoadingMoreRef.current) {
+          loadMoreHistory();
+        }
+      }, 300); // 300ms debounce
     };
     
-    const unsubscribe = chartRef.current.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
+    // Subscribe with stable handler reference
+    chartRef.current.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
     
     return () => {
-      unsubscribe();
+      // Clean up debounce timer
+      if (debounceTimer) clearTimeout(debounceTimer);
+      
+      // Unsubscribe using the same handler reference
+      if (chartRef.current) {
+        chartRef.current.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
+      }
     };
   }, [seedKey, active.symbol, active.timeframe]);
 

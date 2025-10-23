@@ -240,9 +240,10 @@ export function Pane({ className = "" }: PaneProps) {
       priceScaleId: "volume",
     });
 
+    // Professional volume scaling: limit to bottom 25% of chart
     chart.priceScale("volume").applyOptions({
       scaleMargins: {
-        top: 0.87, // Position volume bars at bottom, just above time axis
+        top: 0.75, // Volume starts at 75% down, giving it bottom 25%
         bottom: 0,
       },
     });
@@ -497,9 +498,11 @@ export function Pane({ className = "" }: PaneProps) {
           priceLineVisible: true,
           lastValueVisible: true,
           crosshairMarkerVisible: true,
+          priceScaleId: "right", // Explicitly use right price scale (not volume)
           ...options,
         });
         overlaySeriesRef.current.set(id, series);
+        console.log(`[Pane] Created indicator series: ${id}`, options);
       } else if (options) {
         series.applyOptions(options);
       }
@@ -523,6 +526,7 @@ export function Pane({ className = "" }: PaneProps) {
           value,
         }))
         .filter((d: any) => !isNaN(d.value));
+      console.log(`[Pane] EMA(${period}) data points:`, emaData.length, `first:`, emaData[0], `last:`, emaData[emaData.length - 1]);
       series.setData(emaData);
     });
 
@@ -557,6 +561,7 @@ export function Pane({ className = "" }: PaneProps) {
         }))
         .filter((d: any) => !isNaN(d.value));
 
+      console.log(`[Pane] Bollinger Bands data points:`, midData.length);
       midSeries.setData(midData);
       upperSeries.setData(upperData);
       lowerSeries.setData(lowerData);
@@ -578,6 +583,7 @@ export function Pane({ className = "" }: PaneProps) {
         }))
         .filter((d: any) => !isNaN(d.value));
 
+      console.log(`[Pane] VWAP data points:`, vwapData.length, `first:`, vwapData[0], `last:`, vwapData[vwapData.length - 1]);
       vwapSeries.setData(vwapData);
     }
 

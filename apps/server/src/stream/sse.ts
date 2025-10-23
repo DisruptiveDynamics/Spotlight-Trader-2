@@ -13,6 +13,21 @@ import { BackpressureController } from "./backpressure";
 import { getEpochId, getEpochStartMs } from "./epoch"; // [RESILIENCE] Server restart detection
 import { MicrobarBatcher } from "./microbatcher"; // [PHASE-5] SSE micro-batching
 
+/**
+ * [DATA-INTEGRITY] Type guard to validate bars have complete OHLCV data
+ * Prevents empty { ohlcv: {} } from reaching clients and causing resync loops
+ */
+function hasCompleteOHLCV(bar: any): boolean {
+  return (
+    bar &&
+    typeof bar.open === "number" && Number.isFinite(bar.open) &&
+    typeof bar.high === "number" && Number.isFinite(bar.high) &&
+    typeof bar.low === "number" && Number.isFinite(bar.low) &&
+    typeof bar.close === "number" && Number.isFinite(bar.close) &&
+    typeof bar.volume === "number" && Number.isFinite(bar.volume)
+  );
+}
+
 export async function sseMarketStream(req: Request, res: Response) {
   const symbolsParam = (req.query.symbols as string) || "SPY";
   const symbols = symbolsParam.split(",").map((s) => s.trim().toUpperCase());
@@ -86,7 +101,15 @@ export async function sseMarketStream(req: Request, res: Response) {
             console.log(`[SSE] Backfilling ${barsToSend.length} bars (seq ${barsToSend[0]!.seq} → ${barsToSend[barsToSend.length - 1]!.seq})`);
           }
           
+          // [DATA-INTEGRITY] Filter out bars with incomplete OHLCV
+          let skippedCount = 0;
           for (const bar of barsToSend) {
+            if (!hasCompleteOHLCV(bar)) {
+              console.error(`[SSE] Skipping invalid backfill bar: ${bar.symbol} seq=${bar.seq} (missing OHLCV)`);
+              skippedCount++;
+              continue;
+            }
+            
             bpc.write(
               "bar",
               {
@@ -107,6 +130,10 @@ export async function sseMarketStream(req: Request, res: Response) {
             );
             lastSentSeq = Math.max(lastSentSeq, bar.seq);
           }
+          
+          if (skippedCount > 0) {
+            console.warn(`[SSE] Skipped ${skippedCount} invalid bars during backfill for ${symbol}`);
+          }
         } catch (err) {
           console.error(`Failed to fetch backfill for ${symbol}:`, err);
         }
@@ -120,7 +147,16 @@ export async function sseMarketStream(req: Request, res: Response) {
       symbols.map(async (symbol) => {
         try {
           const seed = await getHistory({ symbol, timeframe: timeframe as any });
+          
+          // [DATA-INTEGRITY] Filter out bars with incomplete OHLCV
+          let skippedCount = 0;
           for (const bar of seed) {
+            if (!hasCompleteOHLCV(bar)) {
+              console.error(`[SSE] Skipping invalid seed bar: ${bar.symbol} seq=${bar.seq} (missing OHLCV)`);
+              skippedCount++;
+              continue;
+            }
+            
             bpc.write(
               "bar",
               {
@@ -140,6 +176,10 @@ export async function sseMarketStream(req: Request, res: Response) {
               String(bar.seq),
             );
             lastSentSeq = Math.max(lastSentSeq, bar.seq);
+          }
+          
+          if (skippedCount > 0) {
+            console.warn(`[SSE] Skipped ${skippedCount} invalid bars during seed for ${symbol}`);
           }
         } catch (err) {
           console.error(`Failed to fetch seed for ${symbol}:`, err);

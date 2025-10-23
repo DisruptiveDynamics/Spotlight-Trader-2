@@ -1,0 +1,193 @@
+Great find by the agent. I dug through the report like I would a prod incident and here’s what I’d do next, in order—plus drop-in patches you can apply right now.
+
+TL;DR
+	•	Symptom is real: backfill path is emitting { ohlcv: {} } → client rejects → resync loop.
+	•	Likely cause: mutable bar objects (or placeholder “prebars”) are being stored in ringBuffer, then later mutated/zeroed, so when SSE replays them you serialize undefined fields (JSON drops them → {}).
+	•	Immediate guard: server-side filter + fallback in SSE before send.
+	•	Structural fix: immutable snapshot on write to ringBuffer + disallow placeholder bars.
+	•	Observability: minimal targeted logs to trace the first source injecting incomplete bars.
+	•	Test: a reconnect / sinceSeq regression test to prevent recurrence.
+
+⸻
+
+1) Immediate surgical patch (SSE endpoint)
+
+Add a type guard and filter before writing to the EventStream. If a bar is incomplete, try to rebuild from a canonical source (tick cache or a 1-min aggregate API); if that’s not available, skip it (do not poison clients).
+
+// apps/server/src/stream/sse.ts
+type OHLCV = { o:number; h:number; l:number; c:number; v:number };
+type Bar = {
+  symbol: string;
+  seq: number;
+  bar_start: number; // ms
+  bar_end: number;   // ms
+  ohlcv?: Partial<OHLCV> | OHLCV;
+  // ...any other fields
+};
+
+function hasCompleteOHLCV(b: Bar): b is Bar & { ohlcv: OHLCV } {
+  const o = b.ohlcv as any;
+  return !!o && [o.o,o.h,o.l,o.c,o.v].every(n => typeof n === 'number' && Number.isFinite(n));
+}
+
+async function rebuildFromFallback(symbol: string, startMs: number, endMs: number): Promise<OHLCV | null> {
+  // Option A: reconstruct from your in-memory tick cache (best)
+  const ticks = tickCache.getRange(symbol, startMs, endMs);
+  if (ticks && ticks.length) {
+    let o=ticks[0].p, h=o, l=o, c=ticks[ticks.length-1].p, v=0;
+    for (const t of ticks) { if (t.p>h) h=t.p; if (t.p<l) l=t.p; v += t.shares ?? t.size ?? 0; }
+    return { o,h,l,c,v };
+  }
+  // Option B: fetch from Polygon aggregates (only if you already have this client enabled)
+  // const agg = await polygon.getAgg(symbol, startMs, endMs);
+  // if (agg) return { o:agg.o, h:agg.h, l:agg.l, c:agg.c, v:agg.v };
+  return null;
+}
+
+async function sendBars(res: NodeJS.WritableStream, bars: Bar[]) {
+  for (const bar of bars) {
+    let out: Bar | null = bar;
+    if (!hasCompleteOHLCV(bar)) {
+      serverLogger.warn({ symbol: bar.symbol, seq: bar.seq }, 'SSE: Incomplete OHLCV detected; attempting rebuild');
+      const rebuilt = await rebuildFromFallback(bar.symbol, bar.bar_start, bar.bar_end);
+      if (rebuilt) {
+        out = { ...bar, ohlcv: rebuilt };
+      } else {
+        serverLogger.error({ symbol: bar.symbol, seq: bar.seq }, 'SSE: Dropping bar with empty OHLCV (no fallback)');
+        continue; // skip
+      }
+    }
+    res.write(`data: ${JSON.stringify(out)}\n\n`);
+  }
+}
+
+And in your SSE handler, replace your current write loop with await sendBars(res, historyBars).
+
+Why this helps now: it prevents bad data from ever reaching the client and gives you logs that pinpoint where and when bad bars appear.
+
+⸻
+
+2) Root cause removal (ringBuffer write path)
+
+Two common ways empty OHLCV ends up in a replay buffer:
+	1.	Mutable references: you push a live bar object into the buffer, then later the bar is reused/reset by barBuilder or a reconciler (e.g., setting fields to undefined or recycling object instances).
+	2.	Placeholder bars: reconciliation or preallocation inserts items without OHLCV, intending to fill later.
+
+Fix both: store an immutable snapshot on write and reject placeholders.
+
+// apps/server/src/lib/ringBuffer.ts
+function freezeBarSnapshot(bar: Bar): Bar {
+  // Take only the fields you need and deep-copy OHLCV to detach from the live object
+  const ohlcv = bar.ohlcv ? { 
+    o: Number((bar.ohlcv as any).o), 
+    h: Number((bar.ohlcv as any).h),
+    l: Number((bar.ohlcv as any).l),
+    c: Number((bar.ohlcv as any).c),
+    v: Number((bar.ohlcv as any).v),
+  } as OHLCV : undefined;
+
+  if (!ohlcv || Object.values(ohlcv).some(n => !Number.isFinite(n))) {
+    throw new Error(`ringBuffer: refusing to store incomplete OHLCV for ${bar.symbol} seq=${bar.seq}`);
+  }
+
+  const snap: Bar = {
+    symbol: bar.symbol,
+    seq: bar.seq,
+    bar_start: bar.bar_start,
+    bar_end: bar.bar_end,
+    ohlcv,
+  };
+  return Object.freeze(snap);
+}
+
+// wherever you push into ringBuffer:
+ringBuffer.push(symbol, freezeBarSnapshot(finalizedBar));
+
+Also, in barBuilder.finalizeBar() ensure it always produces a complete OHLCV and never returns partials:
+
+// apps/server/src/lib/barBuilder.ts
+function finalizeBar(cur: MutableBar): Bar {
+  if (![cur.o,cur.h,cur.l,cur.c,cur.v].every(n => typeof n === 'number' && Number.isFinite(n))) {
+    throw new Error(`finalizeBar: incomplete OHLCV for ${cur.symbol} @ ${cur.start}`);
+  }
+  return {
+    symbol: cur.symbol,
+    seq: seqGen.next(),
+    bar_start: cur.start,
+    bar_end: cur.end,
+    ohlcv: { o: cur.o, h: cur.h, l: cur.l, c: cur.c, v: cur.v },
+  };
+}
+
+If you have an AM/historical reconciler: forbid placeholder inserts. Only overwrite by full replacement with a validated snapshot (same schema), never insert partial rows that “will be filled later.”
+
+⸻
+
+3) Minimal, high-signal logging (to identify the injector)
+
+Add three logs (warn/error) only where it matters:
+	1.	When writing to ringBuffer with incomplete OHLCV (throws or logs):
+
+serverLogger.error({ symbol, seq }, 'ringBuffer: attempted write with incomplete OHLCV');
+
+	2.	When SSE reads bars missing OHLCV (already in the patch):
+
+serverLogger.warn({ symbol, seq }, 'SSE: Incomplete OHLCV detected; attempting rebuild');
+
+	3.	When rebuild fails (drop event):
+
+serverLogger.error({ symbol, seq }, 'SSE: Dropping bar with empty OHLCV (no fallback)');
+
+This will tell you which component first introduced bad data.
+
+⸻
+
+4) Data hygiene / one-time cleanup
+
+If malformed bars were already stored in an in-memory ring or persisted cache:
+	•	Purge the affected sequences by symbol/time window (fastest: restart process to clear memory; if persisted, run a small migration to delete bars where any OHLCV is missing).
+	•	Optionally, rebuild the last N minutes from tick cache at boot.
+
+// On startup:
+for (const sym of symbols) {
+  const last = ringBuffer.getLast(sym, 500); // or window you care about
+  const bad = last.filter(b => !hasCompleteOHLCV(b as any));
+  if (bad.length) {
+    serverLogger.warn({ sym, count: bad.length }, 'Startup: purging malformed bars from buffer');
+    ringBuffer.deleteWhere(sym, b => !hasCompleteOHLCV(b as any));
+  }
+}
+
+
+⸻
+
+5) sinceSeq & reconnection semantics (sanity checks)
+	•	Ensure seq is monotonic and assigned after a bar is finalized (not before).
+	•	getSinceSeq(symbol, sinceSeq) should return only finalized snapshots. If you store by reference anywhere, fix it.
+	•	If reconciliation replaces bars (e.g., vendor late prints), replace by the same seq or emit a correction event with a higher seq. Don’t emit a shell record first, then fill it later.
+
+⸻
+
+6) Regression tests to lock it in
+	•	Unit test: ringBuffer.push rejects incomplete OHLCV.
+	•	Unit test: getSinceSeq never returns an item failing hasCompleteOHLCV.
+	•	Integration test:
+	1.	Stream ticks → build a few bars → connect client A.
+	2.	Kill client A → produce a gap bar → reconnect with sinceSeq.
+	3.	Assert all replayed bars have complete OHLCV and client accepts them.
+	•	Fuzz: randomly drop tick fields or reorder ticks to ensure finalizeBar still returns valid OHLCV or throws (and never writes partials).
+
+⸻
+
+7) Optional hardening (nice to have)
+	•	Deep-freeze bar snapshots and store as plain JSON internally to guarantee immutability.
+	•	Add a lightweight schema validator (Zod/type-guard) at module boundaries (barBuilder output, reconcilers, and ringBuffer writes).
+	•	Emit a metrics counter bars_dropped_empty_ohlcv + bars_rebuilt_from_ticks to your metrics sink.
+
+⸻
+
+What this means for the Replit agent’s recs
+	•	Their diagnosis is directionally correct (empty OHLCV seen only on backfill path).
+	•	The key missing fix is immutability: snapshot bars on write, reject placeholders, and never store mutable references in the buffer. That’s the root cause that prevents this from ever happening again.
+
+If you want, I can generate the exact diffs for your current file paths (sse.ts, barBuilder.ts, ringBuffer.ts) based on your repo layout and function names you’re using.

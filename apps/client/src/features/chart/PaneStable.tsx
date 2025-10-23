@@ -299,13 +299,14 @@ export function PaneStable({ className = "" }: PaneProps) {
     };
   }, [seedKey, active.symbol, active.timeframe]);
 
-  // Subscribe to live SSE updates
+  // Subscribe to live SSE updates with proper cleanup
   useEffect(() => {
     const sseConnection = connectMarketSSE([active.symbol], {
       timeframe: active.timeframe,
     });
 
-    sseConnection.onBar((bar: Bar) => {
+    // Keep stable handler reference for proper unsubscribe
+    const handleBar = (bar: Bar) => {
       if (!priceSeriesRef.current || !volumeSeriesRef.current) return;
       
       // Only process bars that match our timeframe
@@ -336,9 +337,13 @@ export function PaneStable({ className = "" }: PaneProps) {
       } catch (err) {
         console.error("Failed to update chart with bar:", err);
       }
-    });
+    };
+
+    sseConnection.onBar(handleBar);
 
     return () => {
+      // Properly unsubscribe using same handler reference before closing
+      sseConnection.offBar(handleBar);
       sseConnection.close();
     };
   }, [active.symbol, active.timeframe]);

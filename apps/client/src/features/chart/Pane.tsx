@@ -357,7 +357,7 @@ export function Pane({ className = "" }: PaneProps) {
             .map((bar) => ({
               time: bar.time as UTCTimestamp,
               value: bar.volume ?? 0,
-              color: getVolumeColor(bar.close, bar.open, bar.msEnd),
+              color: getVolumeColor(bar.close, bar.open, bar.msStart),
             }));
           volumeSeriesRef.current.setData(volumeData);
         }
@@ -506,9 +506,13 @@ export function Pane({ className = "" }: PaneProps) {
       return series;
     }
 
+    // Track active overlay IDs to remove stale series when overlays are toggled off
+    const activeIds = new Set<string>();
+
     // EMA overlays (create once; update data)
     indicators.emaLines.forEach(({ period, values }) => {
       const id = `ema-${period}`;
+      activeIds.add(id);
       const series = upsertLineSeries(id, {
         color: period === 20 ? "#fbbf24" : "#a78bfa",
         title: `EMA(${period})`,
@@ -524,6 +528,10 @@ export function Pane({ className = "" }: PaneProps) {
 
     // Bollinger Bands (create once; update data)
     if (indicators.bollinger) {
+      activeIds.add("bb-mid");
+      activeIds.add("bb-upper");
+      activeIds.add("bb-lower");
+
       const midSeries = upsertLineSeries("bb-mid", { color: "#818cf8", title: "BB Mid" });
       const upperSeries = upsertLineSeries("bb-upper", { color: "#818cf888", title: "BB Upper" });
       const lowerSeries = upsertLineSeries("bb-lower", { color: "#818cf888", title: "BB Lower" });
@@ -556,6 +564,7 @@ export function Pane({ className = "" }: PaneProps) {
 
     // VWAP (create once; update data)
     if (indicators.vwap) {
+      activeIds.add("vwap");
       const vwapSeries = upsertLineSeries("vwap", {
         color: "#ec4899",
         lineStyle: overlays.vwap?.mode === "anchored" ? LineStyle.Dashed : LineStyle.Solid,
@@ -574,6 +583,7 @@ export function Pane({ className = "" }: PaneProps) {
 
     // Volume SMA (create once; update data)
     if (volumeSeriesRef.current && indicators.volumeSma) {
+      activeIds.add("vol-sma");
       const volumeSmaSeries = upsertLineSeries("vol-sma", {
         color: "#3b82f6",
         lineWidth: 2,
@@ -590,6 +600,20 @@ export function Pane({ className = "" }: PaneProps) {
 
       volumeSmaSeries.setData(volSmaData);
     }
+
+    // Remove stale series when overlays are toggled off
+    overlaySeriesRef.current.forEach((series, id) => {
+      if (!activeIds.has(id)) {
+        if (chartRef.current) {
+          try {
+            chartRef.current.removeSeries(series);
+          } catch (e) {
+            console.warn(`Failed to remove series ${id}:`, e);
+          }
+        }
+        overlaySeriesRef.current.delete(id);
+      }
+    });
   }, [indicators, candles, overlays]);
 
   // Right-click handler for anchored VWAP

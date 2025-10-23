@@ -12,6 +12,7 @@ export interface HistoryCandle {
   close: number;
   volume: number;
   msEnd: number; // Original bar_end timestamp in milliseconds
+  msStart: number; // Original bar_start timestamp in milliseconds (for session detection)
 }
 
 /**
@@ -46,6 +47,7 @@ export async function fetchHistory(
   return data
     .filter(
       (bar: any) =>
+        bar.bar_start != null &&
         bar.bar_end != null &&
         bar.ohlcv?.o != null &&
         bar.ohlcv?.h != null &&
@@ -66,6 +68,7 @@ export async function fetchHistory(
       close: bar.ohlcv.c,
       volume: bar.ohlcv.v,
       msEnd: bar.bar_end,
+      msStart: bar.bar_start,
     }));
 }
 

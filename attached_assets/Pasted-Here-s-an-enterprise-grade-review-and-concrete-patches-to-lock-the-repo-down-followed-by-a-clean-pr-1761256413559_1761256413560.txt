@@ -1,0 +1,396 @@
+Here’s an enterprise-grade review and concrete patches to lock the repo down, followed by a clean prompt you can give your Replit agent.
+
+High-confidence assessment
+Strengths
+- Solid monorepo foundation with pnpm workspaces, TypeScript, Vitest, ESLint (flat), Prettier, Husky, lint-staged, unified Vite dev server, and strong client/server separation.
+- Client charting stack (React + lightweight-charts) shows good awareness of streaming/timestamps, ET display, and session-aware volume coloring via @shared.
+- Docs and audit artifacts indicate thoughtful operational and testing practices.
+
+Critical fixes to reach enterprise grade
+- Stop re-creating overlay indicator series in the chart; add once and update data only. This fixes invisible indicators and prevents layering/flicker.
+- Prevent dependency hoisting problems by keeping runtime deps out of the root package.json; root should be tooling-only.
+- Move client testing libraries to devDependencies to avoid accidental client bundle bloat.
+- Add rate limiting to server, plus a production start script.
+- Add .gitattributes and expand .gitignore to exclude transient artifacts and diagnostics.
+- Add CI workflow enforcing lint, typecheck, and tests on PRs/pushes.
+- Remove duplicate config files to prevent drift: keep a single lint-staged and a single Prettier config.
+
+Note: Some code search results above may be incomplete due to search limits. For a full code search in GitHub UI, use this query:
+- Search lightweight-charts usage: https://github.com/search?q=repo%3ADisruptiveDynamics%2FSpotlight-Trader-2+lightweight-charts&type=code
+
+Patches
+1) Root: make package.json tooling-only, pin package manager, enable Husky prepare
+```diff name=package.json url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/6ce972604c1a8ac93ba9284881a4f2fdada7dd15/package.json
+@@
+ {
+   "name": "spotlight-trader",
+   "version": "1.0.0",
+   "private": true,
+   "type": "module",
+   "description": "Real-time trading coach with voice AI, market data streaming, and rule-based alerts",
++  "packageManager": "pnpm@8.15.1",
+   "engines": {
+-    "node": ">=20.0.0",
+-    "pnpm": ">=8.0.0"
++    "node": ">=20.10.0",
++    "pnpm": ">=8.15.0"
+   },
+   "scripts": {
+     "dev": "pnpm --filter @spotlight/server dev:unified",
+     "build": "pnpm --filter @spotlight/shared build && pnpm --filter @spotlight/config build && pnpm --filter @spotlight/client build && pnpm --filter @spotlight/server build",
+     "check": "pnpm -r check",
+@@
+     "test:coverage": "vitest run --coverage",
+     "test:coverage:summary": "pnpm test:coverage && tsx scripts/generate-coverage-summary.ts",
+-    "cleanup": "tsx scripts/cleanup-ports.ts"
++    "cleanup": "tsx scripts/cleanup-ports.ts",
++    "prepare": "husky install"
+   },
+   "devDependencies": {
+@@
+-    "vitest": "^1.6.1",
+-    "ws": "^8.18.3"
++    "vitest": "^1.6.1",
++    "ws": "^8.18.3"
+   },
+-  "dependencies": {
+-    "@neondatabase/serverless": "^0.10.4",
+-    "@openai/agents": "^0.1.9",
+-    "@types/compression": "^1.8.1",
+-    "@types/cookie": "^1.0.0",
+-    "compression": "^1.8.1",
+-    "cookie": "^1.0.2",
+-    "date-fns": "^4.1.0",
+-    "date-fns-tz": "^3.2.0",
+-    "jsonwebtoken": "^9.0.2",
+-    "pdf-parse": "^2.2.16",
+-    "vite": "^5.4.20"
+-  }
++  "dependencies": {}
+ }
+```
+
+2) Client: move testing libs to devDependencies
+```diff name=apps/client/package.json url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/6ce972604c1a8ac93ba9284881a4f2fdada7dd15/apps/client/package.json
+@@
+   "dependencies": {
+     "@openai/agents": "^0.1.9",
+     "@spotlight/shared": "workspace:*",
+     "@tanstack/react-query": "^5.90.2",
+-    "@testing-library/jest-dom": "^6.9.1",
+-    "@testing-library/react": "^16.3.0",
+     "classnames": "^2.5.1",
+     "framer-motion": "^12.23.24",
+     "lightweight-charts": "^4.2.3",
+     "mathjs": "^14.8.2",
+     "react": "^18.2.0",
+@@
+   "devDependencies": {
+     "@spotlight/config": "workspace:*",
++    "@testing-library/jest-dom": "^6.9.1",
++    "@testing-library/react": "^16.3.0",
+     "@types/react": "^18.2.48",
+     "@types/react-dom": "^18.2.18",
+     "@vitejs/plugin-react": "^4.2.1",
+     "autoprefixer": "^10.4.17",
+     "eslint": "^9.0.0",
+     "postcss": "^8.4.33",
+     "tailwindcss": "^3.4.1",
+     "typescript": "^5.3.3",
+     "vite": "^5.0.12"
+   }
+```
+
+3) Server: add rate limiting and production start
+```diff name=apps/server/package.json url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/6ce972604c1a8ac93ba9284881a4f2fdada7dd15/apps/server/package.json
+@@
+   "scripts": {
+     "dev": "tsx watch --clear-screen=false --ignore '../client/**' src/index.ts",
+     "dev:unified": "PORT=5000 UNIFIED_DEV=1 VITE_UNIFIED_DEV=1 tsx watch --clear-screen=false --ignore '../client/**' src/index.ts",
+     "build": "tsc",
+     "start": "node dist/index.js",
++    "start:prod": "NODE_ENV=production node dist/index.js",
+     "check": "tsc --noEmit",
+@@
+   "dependencies": {
+@@
+     "express": "^4.18.2",
++    "express-rate-limit": "^7.4.0",
+     "helmet": "^7.1.0",
+@@
+   "devDependencies": {
+@@
++    "@types/express-rate-limit": "^7.0.0",
+@@
+   }
+```
+
+4) Chart overlays: stop re-creating indicator series; add-once update-only
+```diff name=apps/client/src/features/chart/Pane.tsx url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/6ce972604c1a8ac93ba9284881a4f2fdada7dd15/apps/client/src/features/chart/Pane.tsx
+@@
+-    // Clear old overlay series
+-    overlaySeriesRef.current.forEach((series) => {
+-      if (series && chartRef.current) {
+-        try {
+-          chartRef.current.removeSeries(series);
+-        } catch (e) {
+-          console.warn("Failed to remove series:", e);
+-        }
+-      }
+-    });
+-    overlaySeriesRef.current.clear();
++    // Keep overlay series persistent to preserve layer order and prevent flicker
++    function upsertLineSeries(
++      id: string,
++      options: Parameters<IChartApi["addLineSeries"]>[0]
++    ) {
++      let series = overlaySeriesRef.current.get(id);
++      if (!series) {
++        series = chartRef.current!.addLineSeries({
++          lineWidth: 2,
++          priceLineVisible: true,
++          lastValueVisible: true,
++          crosshairMarkerVisible: true,
++          ...options,
++        });
++        overlaySeriesRef.current.set(id, series);
++      } else {
++        series.applyOptions(options);
++      }
++      return series;
++    }
+@@
+-    // Add EMA lines
+-    indicators.emaLines.forEach(({ period, values }) => {
+-      const emaSeries = chartRef.current!.addLineSeries({
+-        color: period === 20 ? "#fbbf24" : "#a78bfa", // Brighter colors for visibility
+-        lineWidth: 2, // Increased from 1px for better visibility
+-        title: `EMA(${period})`,
+-      });
+-
+-      const emaData = values
+-        .map((value: number, i: number) => ({
+-          time: Math.floor(candles[i]!.t / 1000) as UTCTimestamp,
+-          value,
+-        }))
+-        .filter((d: any) => !isNaN(d.value));
+-
+-      emaSeries.setData(emaData);
+-      overlaySeriesRef.current.set(`ema-${period}`, emaSeries);
+-    });
++    // EMA overlays (create once; update data)
++    indicators.emaLines.forEach(({ period, values }) => {
++      const id = `ema-${period}`;
++      const series = upsertLineSeries(id, {
++        color: period === 20 ? "#fbbf24" : "#a78bfa",
++        title: `EMA(${period})`,
++      });
++      const emaData = values
++        .map((value: number, i: number) => ({
++          time: Math.floor(candles[i]!.t / 1000) as UTCTimestamp,
++          value,
++        }))
++        .filter((d: any) => !isNaN(d.value));
++      series.setData(emaData);
++    });
+@@
+-    // Add Bollinger Bands
+-    if (indicators.bollinger) {
+-      const midSeries = chartRef.current!.addLineSeries({
+-        color: "#818cf8", // Brighter indigo for visibility
+-        lineWidth: 2, // Increased from 1px for better visibility
+-        title: "BB Mid",
+-      });
+-      const upperSeries = chartRef.current!.addLineSeries({
+-        color: "#818cf888", // Brighter with transparency
+-        lineWidth: 2, // Increased from 1px for better visibility
+-        title: "BB Upper",
+-      });
+-      const lowerSeries = chartRef.current!.addLineSeries({
+-        color: "#818cf888", // Brighter with transparency
+-        lineWidth: 2, // Increased from 1px for better visibility
+-        title: "BB Lower",
+-      });
++    // Bollinger Bands (create once; update data)
++    if (indicators.bollinger) {
++      const midSeries = upsertLineSeries("bb-mid", { color: "#818cf8", title: "BB Mid" });
++      const upperSeries = upsertLineSeries("bb-upper", { color: "#818cf888", title: "BB Upper" });
++      const lowerSeries = upsertLineSeries("bb-lower", { color: "#818cf888", title: "BB Lower" });
+@@
+-      midSeries.setData(midData);
+-      upperSeries.setData(upperData);
+-      lowerSeries.setData(lowerData);
+-
+-      overlaySeriesRef.current.set("bb-mid", midSeries);
+-      overlaySeriesRef.current.set("bb-upper", upperSeries);
+-      overlaySeriesRef.current.set("bb-lower", lowerSeries);
++      midSeries.setData(midData);
++      upperSeries.setData(upperData);
++      lowerSeries.setData(lowerData);
+     }
+@@
+-    // Add VWAP
+-    if (indicators.vwap) {
+-      const vwapSeries = chartRef.current!.addLineSeries({
+-        color: "#ec4899",
+-        lineWidth: 2,
+-        lineStyle: overlays.vwap?.mode === "anchored" ? LineStyle.Dashed : LineStyle.Solid,
+-        title: "VWAP",
+-      });
++    // VWAP (create once; update data)
++    if (indicators.vwap) {
++      const vwapSeries = upsertLineSeries("vwap", {
++        color: "#ec4899",
++        lineWidth: 2,
++        lineStyle: overlays.vwap?.mode === "anchored" ? LineStyle.Dashed : LineStyle.Solid,
++        title: "VWAP",
++      });
+@@
+-      vwapSeries.setData(vwapData);
+-      overlaySeriesRef.current.set("vwap", vwapSeries);
++      vwapSeries.setData(vwapData);
+     }
+```
+
+5) New: CI to enforce lint/typecheck/tests on PRs and pushes
+```yaml name=.github/workflows/ci.yml
+name: CI
+
+on:
+  pull_request:
+    branches: [ chore/health-setup, main ]
+  push:
+    branches: [ chore/health-setup ]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.1
+          run_install: false
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test:ci
+
+      - name: Coverage
+        run: pnpm test:coverage
+```
+
+6) New: .gitattributes to normalize EOL and binary handling
+```gitattributes name=.gitattributes
+* text=auto eol=lf
+
+# Treat images/media as binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.mp4 binary
+*.mp3 binary
+
+# Ensure shell scripts stay LF
+*.sh text eol=lf
+```
+
+7) Husky pre-commit to run lint-staged
+```bash name=.husky/pre-commit
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+pnpm lint-staged
+```
+
+8) .gitignore additions (append these lines)
+```diff name=.gitignore url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/chore/health-setup/.gitignore
+@@
++# Transient diagnostics and logs
++.api.pid
++diag*.out
++POLYGON_REQUEST_LOGS.txt
++cookies.txt
++logs/
++*.log
++*.pid
++*.pid.lock
++
++# Replit artifacts
++.replit_storage/
++.replit_db/
+```
+
+9) Config drift cleanup
+- Keep only one lint-staged config. Recommended: keep .lintstagedrc.js and delete .lintstagedrc.json.
+- Keep only one Prettier config. Recommended: keep prettier.config.js and delete .prettierrc.json.
+
+Replit agent prompt
+Use this prompt as-is for your Replit agent to implement and verify the fixes above.
+
+```
+You are a senior full-stack engineer tasked with hardening a pnpm monorepo (TypeScript, React/Vite, Express, lightweight-charts) for enterprise readiness and fixing chart overlay visibility.
+
+Context:
+- Repo: DisruptiveDynamics/Spotlight-Trader-2, branch chore/health-setup
+- Client uses lightweight-charts; overlays (EMAs, Bollinger, VWAP) sometimes disappear due to series re-creation and layer order.
+- Root package.json currently includes runtime dependencies; risk of hoisted deps.
+- Client test libs are in dependencies; should be devDependencies.
+- Need CI, rate limiting, git hygiene, and Husky integration.
+
+Objectives (acceptance criteria):
+1) Chart layering fix:
+   - In apps/client/src/features/chart/Pane.tsx, stop removing/re-adding overlay series.
+   - Create series once (order: candlesticks -> volume -> indicators), keep Map of series, update via setData only.
+   - Candlestick series: priceLineVisible=false; indicators: priceLineVisible=true, lastValueVisible=true.
+   - Preserve layer order and eliminate flicker/invisibility.
+
+2) Dependency hygiene:
+   - Root package.json: tooling-only. Remove runtime dependencies. Add "packageManager": "pnpm@8.15.1". Add "prepare": "husky install".
+   - apps/client/package.json: move @testing-library/* to devDependencies.
+   - apps/server/package.json: add express-rate-limit@^7 and @types/express-rate-limit, add "start:prod".
+
+3) CI and hooks:
+   - Add .github/workflows/ci.yml to run pnpm install --frozen-lockfile, lint, typecheck, vitest.
+   - Ensure Husky pre-commit runs lint-staged.
+
+4) Repo hygiene:
+   - Add .gitattributes with LF normalization and binary patterns.
+   - Append .gitignore entries for .api.pid, diag*.out, POLYGON_REQUEST_LOGS.txt, cookies.txt, logs/, *.log, *.pid*, and Replit artifacts.
+   - Delete duplicate configs: keep .lintstagedrc.js, delete .lintstagedrc.json; keep prettier.config.js, delete .prettierrc.json.
+
+5) Verification steps:
+   - pnpm install --frozen-lockfile
+   - pnpm -w lint && pnpm -w typecheck && pnpm -w test:ci
+   - Start unified dev: pnpm dev; verify overlays render above candles, no flicker on indicator toggles, volume bars show session-aware colors, HMR stable in Replit.
+   - Open PR summarizing changes and link CI passing run.
+
+Deliverables:
+- Updated Pane.tsx implementing persistent overlay series and series order guarantees.
+- Updated package.json files as above.
+- New CI workflow, .gitattributes, husky pre-commit; .gitignore appended lines.
+- Removal of duplicate config files.
+```
+
+Verdict
+- With the patches above, the structure and implementation meet enterprise expectations: deterministic builds, CI enforcement, hardened server, correct chart rendering lifecycle, and repository hygiene. If you want, I can open a PR with these exact changes.

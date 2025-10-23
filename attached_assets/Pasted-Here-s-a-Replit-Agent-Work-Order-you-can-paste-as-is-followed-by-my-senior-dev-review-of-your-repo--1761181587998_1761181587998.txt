@@ -1,0 +1,170 @@
+Here’s a Replit Agent Work Order you can paste as-is, followed by my senior‑dev review of your repo (strengths, gaps, and priorities). This is tailored for your Replit workspace, makes no new branches, and is safe-by-default.
+
+Replit Agent Work Order — Replit workspace only (no branches), stabilize dev, fix chart time to ET, enable infinite backward scroll, keep voice coach UX correct
+
+Context
+- Repo: DisruptiveDynamics/Spotlight-Trader-2 (TypeScript monorepo).
+- Work in-place in the current Replit project. Do not create branches or PRs.
+- Goals:
+  1) Chart x‑axis labels must display Eastern Time (America/New_York) with DST.
+  2) Infinite backward scroll should load older bars reliably (no duplicate loads; no leaks).
+  3) Voice coach interactions must be correct: single‑click mute/unmute, double‑click disconnect; voice changes should not overlap audio; barge‑in cancels TTS immediately.
+  4) Replit dev stability: no HMR blinking/reconnect loops; unified dev runs cleanly.
+  5) Avoid regressions; keep defaults backward-compatible; use env flags where applicable.
+
+Guardrails
+- Do not change public routes/paths or remove features.
+- Avoid adding new servers/ports. In unified dev, Express is the only listener (PORT).
+- Vendor WS (Polygon): keep a single server connection; no connection limit errors.
+- If a step fails verification, STOP and paste logs/screenshots; don’t push further changes.
+
+Tasks
+
+A) Replit dev stability (HMR, readiness, build emission)
+1) HMR auto-detect for hosted HTTPS (Replit)
+- File: apps/client/vite.config.ts
+- Remove any explicit server.host override; let the browser use window.location.host.
+- If REPL_ID or REPL_SLUG is present OR VITE_HTTPS=1, set HMR protocol to "wss" and clientPort to 443; else "ws" and 5000 for local dev.
+- Purpose: prevent the preview webview from blinking due to ws/wss mismatch.
+
+2) Ensure server emits build artifacts
+- File: apps/server/tsconfig.json
+- compilerOptions.noEmit must be false so pnpm build creates dist for server. Do not change other options.
+
+3) Truthful readiness and graceful shutdown
+- File: apps/server/src/index.ts
+- import { setServerReady } from "./health".
+- Call setServerReady(false) before heavy async init (market source, wiring, flags).
+- After init completes and before/inside server.listen callback, call setServerReady(true).
+- In SIGTERM/SIGINT handlers call setServerReady(false) before server.close().
+
+B) Charts: ET labels + infinite backward scroll
+4) ET (America/New_York) labels on x‑axis and crosshair/tooltip
+- Use date-fns-tz (already in repo) to present ET with DST.
+- Add a small helper (client-only) to centralize formatting and support both UTCTimestamp and BusinessDay.
+  - Suggested file path: apps/client/src/lib/timeFormatET.ts
+  - Export functions for:
+    - formatTickET(utctsOrBusinessDay, tickMarkType)  // for x-axis tick label
+    - formatTooltipET(unixSeconds)                    // for crosshair/tooltip time
+- Wire up:
+  - chart.applyOptions({ localization: { timeFormatter: formatTooltipET } })
+  - chart.applyOptions({ timeScale: { tickMarkFormatter: formatTickET, timeVisible: true, secondsVisible: false } })
+- Do NOT change bar timestamps; only formatting.
+
+5) Infinite backward scroll with proper subscribe/unsubscribe
+- Use chart.timeScale().subscribeVisibleLogicalRangeChange(handler) to detect when the left edge approaches earliest loaded data.
+- Keep a stable handler reference; on unmount, call chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler). Do not create fake unsubscribe functions; the subscribe method returns void.
+- Debounce the handler (~300ms) and guard with isFetchingOlder to avoid duplicate page fetches.
+- Use a backwards‑compatible paging param to /api/history:
+  - Prefer: before=<earliestBarEndTs> or toSeq=<earliestSeq> with limit=N.
+  - If the server route doesn’t support a cursor param yet, add it in a minimal, backward‑compatible way; do not change existing param behavior when cursor is absent.
+- After fetching, prepend bars to the series; keep the local earliestBarEndTs/toSeq cursor updated; viewport should remain stable (lightweight‑charts preserves view on prepend if done before the next frame).
+
+6) Listener hygiene and sequence alignment
+- Audit chart and SSE listeners (e.g., in apps/client/src/lib/marketStream.ts and the chart module):
+  - Ensure every subscribe has a matching unsubscribe with the same callback instance.
+  - Ensure only one SSE stream instance is active per page.
+- Confirm seq math matches server:
+  - seq = Math.floor(bar_end / timeframeMs)
+  - This reduces duplicate/stale sequence warnings and avoids unnecessary resyncs.
+
+C) Voice coach UX (no voice drift, clicks correct)
+7) Single‑click mute/unmute, double‑click disconnect
+- File: apps/client/src/features/coach/PresenceBubble.tsx
+- Verify:
+  - From idle/error: single-click connects (status toast “Voice coach connected”).
+  - When connected: single-click toggles mute/unmute (toasts “Muted 🔇”/“Unmuted 🔊”), session remains connected.
+  - Double-click within ~300–350ms: fully disconnects; bubble returns to idle; onDisconnected fires once.
+- If needed, slightly widen the double-click window and ensure the single-click timer is cleared when the second click arrives to avoid races.
+
+8) Voice change and barge‑in behavior
+- When the voice is changed in Settings (apps/client/src/components/SettingsPanel.tsx + apps/client/src/state/coachSettings.ts):
+  - Send session.update to upstream (do not create a second session).
+  - Cancel current TTS once (response.cancel) before applying the new voice to avoid overlapping audio.
+- Barge‑in:
+  - While TTS is speaking, speech input should cancel TTS immediately and the coach should listen/respond with low perceived latency (≈≤250ms).
+- Settings must persist via /api/coach/settings and reflect after a reload. If GET is gated by requirePin, authenticate in dev or temporarily allow in dev for testing.
+
+D) Small repo hygiene (safe / optional in Replit)
+9) .env.example
+- Add .env.example with: PORT, NODE_ENV, LOG_LEVEL, TOOL_TIMEOUT_MS, VITE_UNIFIED_DEV, VITE_HTTPS, VITE_BUILD_ID, POLYGON_API_KEY, OPENAI_API_KEY, NEON_DATABASE_URL, RESEND_API_KEY.
+- This doesn’t affect runtime; improves onboarding.
+
+10) Windows‑safe ports cleanup (keeps repo portable; no effect in Replit)
+- scripts/cleanup-ports.ts should no‑op if process.platform === "win32".
+
+Verification (run in Replit; paste outputs and screenshots)
+Commands:
+- export UNIFIED_DEV=1 VITE_UNIFIED_DEV=1 PORT=${PORT:-8080}
+- export VITE_HTTPS=1
+- pnpm install --frozen-lockfile || pnpm install
+- pnpm build
+- pnpm --filter @spotlight/server dev:unified > server.health.log 2>&1 & echo "PID=$!" && PID=$!
+- i=0; until curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1 || [ $i -ge 60 ]; do sleep 1; i=$((i+1)); done
+- echo "-- /health";     curl -fsS "http://127.0.0.1:${PORT}/health"
+- echo "-- /api/readyz"; curl -fsS "http://127.0.0.1:${PORT}/api/readyz"
+- echo "-- SSE headers"; curl -fsSI "http://127.0.0.1:${PORT}/realtime/sse?symbols=SPY&timeframe=1m" | sed -n '1,20p'
+- tail -n 200 server.health.log
+- kill "$PID" >/dev/null 2>&1 || true
+
+Manual checks (attach screenshots/short recordings):
+- HMR stable in Replit preview (no blinking; devtools shows wss HMR).
+- Chart:
+  - X-axis tick labels display ET (e.g., after-hours “20:00” for 8 PM ET).
+  - Crosshair/tooltip time shows ET.
+  - Drag fully left: see “loading older…” once per page; older bars prepend smoothly; no jitter; no repeated identical page requests.
+- Voice:
+  - Single-click from idle connects; status toast shows.
+  - Single-click while connected toggles Muted/Unmuted; session stays connected.
+  - Double-click disconnects; bubble returns to idle; onDisconnected fired once.
+  - Change voice mid‑speech: TTS cancels once; new voice is used; no overlapping audio; only one upstream session.
+  - GET /api/coach/settings JSON matches UI after reload.
+- Console/logs:
+  - No EADDRINUSE/EADDRNOTAVAIL; no HMR reconnect spam.
+  - Minimal duplicate/stale seq warnings in steady state.
+  - No “missing required parameter: session.type” or overlapping voice session warnings.
+
+Pass criteria
+- /health and /api/readyz = 200 with ok:true/status:"ready".
+- SSE headers show text/event‑stream and keep‑alive; compression disabled for SSE.
+- HMR uses wss:443 in Replit (no loop).
+- Polygon: no “maximum number of websocket connections exceeded” errors; single server WS.
+- ET labels and infinite scroll behave as specified.
+- Voice interactions correct; no overlapping audio; single upstream session.
+
+If any step fails, STOP and reply with logs (server.health.log tail) and screenshots. Do not proceed until reviewed.
+
+My review of the repo (expert senior dev perspective)
+
+What’s strong
+- Clear monorepo structure (apps/client, apps/server, packages/*). Good separation of shared code (@shared), configs (@spotlight/config).
+- Server index.ts is thoughtfully organized: health endpoints, compression with SSE exclusion, unified dev attach, global error handlers, graceful shutdown hooks, feature routers.
+- Client SSE pipeline is robust: gap detection, resync with debouncing, reconciliation with hash, idle detection, event batching.
+- Voice coach architecture plans are solid: single session, server VAD, response.cancel, session.update on voice change, barge‑in.
+
+What needs attention (prioritized)
+1) Build/runtime correctness
+- apps/server/tsconfig.json inherits noEmit: true via the config package. Must override to noEmit: false or prod builds won’t emit dist.
+- Readiness is settable but currently not toggled before/after init. Wire setServerReady(false/true) as described so orchestrators don’t route traffic early.
+
+2) Dev stability on Replit
+- Vite HMR must be auto-detected for hosted HTTPS (wss:443). Avoid explicit host; let the browser use window.location.host.
+- Ensure unified dev runs exactly one server (no port 5000 bind in unified mode). Avoid EADDRINUSE.
+
+3) Security/config hygiene
+- Many routes are intentionally open for personal use. In production, protect sensitive routes (/api/admin, /api/flags, /api/metrics, /api/diag, /debug) behind PIN or disable debug entirely. Make this opt‑in via env so you don’t lock yourself out in dev.
+
+4) Data vendor stability
+- Ensure a single Polygon WS connection is used (singleton with backoff). Your logs showed WS connection limit exceeded; that’s usually multiple concurrent connects or reconnects without closing the old socket. Fixing this reduces noisy reconnects.
+
+5) Chart UX accuracy
+- Time scale labels should be ET with DST (market‑centric). Use a dedicated formatter for both axis ticks and crosshair/tooltip. Don’t alter underlying timestamps.
+- Infinite backward scroll should be powered by logical range subscription, with proper unsubscribe, debounce, and a cursor param for history paging.
+
+6) Consistency and dependencies
+- Align TypeScript, Vite, ESLint, ws, and @neondatabase/serverless versions across workspaces to reduce “works on one app but not the other” friction. Keep toolchain deps in devDependencies per package; avoid duplicating runtime libs at the root.
+
+7) DX and docs
+- Add .env.example. Document unified dev flags (UNIFIED_DEV, VITE_UNIFIED_DEV, VITE_HTTPS) and basic healthcheck commands. Make cleanup-ports script cross‑platform no‑op on Windows.
+
+If you want, I can also produce ready-to-apply file patches (helper for ET time formatting, vite.config.ts HMR auto‑detect, server readiness toggles) using file blocks. Once the Replit agent completes the work order, share the diffs/logs and I’ll review for any edge cases before you continue.

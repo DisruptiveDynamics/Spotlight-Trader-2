@@ -1,0 +1,197 @@
+Here’s exactly what to tell your Replit agent (single workspace, no branches) so they fix the chart time to Eastern Time, verify accuracy, and implement/validate infinite back scroll without breaking anything. Then I give you a short expert review of your repo and what to watch for.
+
+Replit Agent Work Order — Fix ET time labels + verify accuracy + infinite back scroll, no breaking changes
+
+Context
+- Repo in Replit: Spotlight Trader monorepo (TypeScript).
+- Goals:
+  1) X‑axis labels and crosshair/tooltip must display America/New_York (ET) with DST, and show a readable 12‑hour format by default (ex: 7:00 PM) while keeping “ET” indicator in the header.
+  2) Infinite backward scroll must load older bars reliably (debounced, deduped, no leaks) and not spam history requests.
+  3) Validate actual correctness: the chart should reflect the right date/time (e.g., after-hours window) and the “current time” context should match ET.
+- Guardrails:
+  - Do NOT change bar timestamps or server time math; this is a presentation/UX change for labels and tooltip.
+  - Do NOT create new servers or ports; unified dev stays as-is.
+  - Keep changes small and reversible; if any step fails verification, STOP and paste logs/screenshots.
+
+Tasks
+
+1) Add an ET time formatting helper (label-only, DST aware)
+- Create a small utility that formats both x-axis tick labels and crosshair/tooltip in ET using date-fns-tz (already in repo).
+
+```typescript name=apps/client/src/lib/timeFormatET.ts
+import { formatInTimeZone } from "date-fns-tz";
+
+/**
+ * Formats a UNIX seconds timestamp for labels in ET (America/New_York) with DST.
+ * Use for crosshair/tooltip and simple tick labels on intraday charts.
+ */
+export function formatUnixSecondsToET(unixSeconds: number, showSeconds = false): string {
+  const fmt = showSeconds ? "h:mm:ss a" : "h:mm a";
+  return formatInTimeZone(unixSeconds * 1000, "America/New_York", fmt);
+}
+
+/**
+ * Tick-mark formatter for lightweight-charts logical/time scale.
+ * Receives UNIX seconds for time-based scales on intraday charts.
+ */
+export function tickMarkFormatterET(unixSeconds: number): string {
+  // Keep ticks concise (no seconds), 12-hour format
+  return formatUnixSecondsToET(unixSeconds, false);
+}
+
+/**
+ * Optional: day boundary labels (useful when scrolling far back)
+ */
+export function dayBoundaryLabelET(unixSeconds: number): string {
+  return formatInTimeZone(unixSeconds * 1000, "America/New_York", "MMM d h:mm a");
+}
+```
+
+2) Wire the chart to use ET labels without touching raw timestamps
+- In your chart initialization file (where you create the lightweight-charts Chart instance and series), apply localization and tick mark formatters using the helper. If your project centralizes chart creation, do it there; otherwise apply where the primary chart is created.
+- Implementation notes:
+  - Use localization.timeFormatter for tooltips/Crosshair.
+  - Use timeScale.tickMarkFormatter for axis ticks.
+
+Example (adjust to your chart file):
+
+```typescript name=apps/client/src/features/chart/createChart.tsx
+import { createChart } from "lightweight-charts";
+import { tickMarkFormatterET, formatUnixSecondsToET } from "@/lib/timeFormatET";
+
+// ...inside your chart setup:
+const chart = createChart(container, {
+  // Keep existing options, add/merge these:
+  localization: {
+    timeFormatter: (time: number) => formatUnixSecondsToET(time, false),
+  },
+  timeScale: {
+    timeVisible: true,
+    secondsVisible: false,
+    // Keep your existing timeScale options; add this:
+    tickMarkFormatter: (time: number) => tickMarkFormatterET(time),
+  },
+});
+
+// If you render a custom header date/time, also use formatUnixSecondsToET
+```
+
+3) Infinite backward scroll: subscribe to visible logical range, debounce, and page older bars
+- Ensure you are using subscribeVisibleLogicalRangeChange with a stable handler reference and the correct unsubscribe counterpart. Do not store a fake “unsubscribe()” function; the subscribe call returns void.
+
+Example paging skeleton (adapt to your component):
+
+```typescript name=apps/client/src/features/chart/useInfiniteBackscroll.ts
+import { type ISeriesApi, type IChartApi, type LogicalRange } from "lightweight-charts";
+import { useEffect, useRef } from "react";
+
+export function useInfiniteBackscroll(
+  chart: IChartApi,
+  series: ISeriesApi<"Candlestick">,
+  opts: {
+    symbol: string;
+    timeframe: string;               // "1m" | "5m" etc.
+    initialEarliestBarEnd?: number;  // unix seconds
+    pageSize?: number;               // e.g., 300
+    debounceMs?: number;             // e.g., 300
+  },
+) {
+  const earliestTsRef = useRef<number | undefined>(opts.initialEarliestBarEnd);
+  const fetchingRef = useRef(false);
+  const debounceRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    const handler = (range: LogicalRange | null) => {
+      if (!range) return;
+
+      // Near the far left? Trigger a page fetch (once, debounced)
+      const left = range.from;
+      if (left == null) return;
+
+      // Heuristic: if user scrolls close to the earliest loaded logical index
+      // In many apps you map logical index to bar index; here we simply debounce
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = window.setTimeout(async () => {
+        if (fetchingRef.current) return;
+
+        // If we don’t have an earliest cursor yet, derive from the first bar
+        // (your code likely has a local buffer of bars to read from)
+        const earliestTs = earliestTsRef.current;
+        if (earliestTs == null) return;
+
+        fetchingRef.current = true;
+        try {
+          const params = new URLSearchParams({
+            symbol: opts.symbol,
+            timeframe: opts.timeframe,
+            limit: String(opts.pageSize ?? 300),
+            before: String(earliestTs), // server interprets as bar_end < before
+          });
+          const res = await fetch(`/api/history?${params.toString()}`);
+          if (res.ok) {
+            const olderBars = await res.json(); // must match Bar[] shape you already use
+            if (olderBars.length > 0) {
+              // Prepend in chronological order; update earliest cursor
+              olderBars.sort((a: any, b: any) => a.bar_end - b.bar_end);
+              // Your series.setData([...olderBars, ...existing]) or use your state/store
+              // IMPORTANT: update earliestTsRef
+              earliestTsRef.current = olderBars[0].bar_end;
+            }
+          }
+        } finally {
+          fetchingRef.current = false;
+        }
+      }, opts.debounceMs ?? 300);
+    };
+
+    // Subscribe with the stable handler
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
+
+    return () => {
+      window.clearTimeout(debounceRef.current);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
+    };
+  }, [chart, series, opts.symbol, opts.timeframe]);
+}
+```
+
+Server-side note: If /api/history doesn’t yet support before (unix seconds for bar_end) or toSeq, add one parameter in a backward‑compatible way: if absent, behavior stays identical; if present, page older bars with limit.
+
+4) Validation (prove accuracy and smooth paging; paste artifacts back)
+Commands in Replit shell:
+- export UNIFIED_DEV=1 VITE_UNIFIED_DEV=1 PORT=${PORT:-8080}
+- export VITE_HTTPS=1
+- pnpm install --frozen-lockfile || pnpm install
+- pnpm build
+- pnpm --filter @spotlight/server dev:unified > server.health.log 2>&1 & echo "PID=$!" && PID=$!
+- i=0; until curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1 || [ $i -ge 60 ]; do sleep 1; i=$((i+1)); done
+- echo "-- /health";     curl -fsS "http://127.0.0.1:${PORT}/health"
+- echo "-- /api/readyz"; curl -fsS "http://127.0.0.1:${PORT}/api/readyz"
+- echo "-- SSE headers"; curl -fsSI "http://127.0.0.1:${PORT}/realtime/sse?symbols=SPY&timeframe=1m" | sed -n '1,20p'
+- tail -n 150 server.health.log
+
+Manual checks (screenshot/short video):
+- Header shows the date and “ET” indicator. Crosshair/tooltip time shows “h:mm a” (ex: “7:03 PM”) and aligns with expected ET for the bar’s timestamp.
+- X‑axis ticks show ET in 12‑hour format. If you prefer 24‑hour later, we can add a user toggle.
+- Drag fully left: older bars load in pages (watch Network tab), with no repeated identical fetches; no jitter; viewport remains coherent.
+- Console: no “unsubscribe of undefined”, no handler leaks, no repetitive “duplicate bar/stale seq” spam under steady state.
+
+Acceptable outcomes
+- This is a label-only change; bar content stays identical.
+- Infinite backscroll triggers only when near the left edge, one page at a time, debounced, with no runaway requests.
+
+My take on the repo (quick expert read)
+- Strengths:
+  - Server is thoughtfully structured with health endpoints, SSE compression exclusions, readiness hooks, unified dev mode, and clear route mounts.
+  - Client market stream is robust: reconnection logic, gap detection, resync, and bar reconciliation are well-considered for day-trading latency/reliability.
+  - Voice coach UX is designed with state/interaction clarity (single-click mute/unmute, double-click disconnect, voice change via session.update, barge-in).
+- Gaps to keep in mind:
+  - Ensure apps/server/tsconfig.json sets "noEmit": false so builds emit dist (we’ve covered this repeatedly; it’s essential).
+  - Readiness must be toggled false→true around initialization and false on shutdown so orchestrators don’t route early.
+  - Vendor WS singleton with backoff to avoid connection limit warnings (common on Replit).
+  - For charts, use subscribeVisibleLogicalRangeChange + proper unsubscribe; never fake unsubscribe functions. Centralize ET formatting so it’s consistent everywhere.
+
+Will this break your app?
+- No. These are presentational (ET labels) and UX improvements (paging), with careful cleanup and guards. The only risk is paging logic; that’s why we debounce, guard with isFetchingOlder, and keep behavior identical when no “before” cursor is provided.
+
+If you want, I can also tailor the time-format toggle (12h/24h) in Settings later; for now, we’ll default to 12‑hour for clarity and keep “ET” in the header as your agent suggested.

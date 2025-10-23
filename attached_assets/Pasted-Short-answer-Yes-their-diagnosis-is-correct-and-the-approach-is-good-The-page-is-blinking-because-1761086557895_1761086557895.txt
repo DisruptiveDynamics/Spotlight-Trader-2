@@ -1,0 +1,79 @@
+Short answer: Yes, their diagnosis is correct and the approach is good. The page is blinking because Vite’s HMR is connecting with ws:// inside an HTTPS webview (Replit), so it keeps failing/retrying. Two fixes work: set VITE_HTTPS=1 in the environment, or auto-detect and force wss + 443 when running on Replit. I recommend implementing auto-detection so it “just works” on Replit and still works locally without extra env.
+
+I can apply the auto-detect fix now. Here’s a drop-in update for apps/client/vite.config.ts that:
+- Defaults to wss + 443 when it detects Replit/Codespaces/Gitpod
+- Still lets you override with VITE_HTTPS=1
+- Leaves local dev default as ws + 5000
+
+```typescript name=apps/client/vite.config.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/928833ae7d5a9f9f92fd6bcfb39aa2bd144ef0c4/apps/client/vite.config.ts
+import react from "@vitejs/plugin-react";
+import path from "path";
+import { defineConfig } from "vite";
+
+// Heuristic: hosted HTTPS envs (Replit/Codespaces/Gitpod) need secure HMR
+const isHostedHttps =
+  !!process.env.REPL_ID ||
+  !!process.env.REPL_SLUG ||
+  !!process.env.REPL_OWNER ||
+  !!process.env.CODESPACES ||
+  !!process.env.GITPOD_WORKSPACE_URL;
+
+// Allow explicit override via env, otherwise auto-detect hosted HTTPS
+const USE_HTTPS = process.env.VITE_HTTPS === "1" || isHostedHttps;
+
+const HMR_PROTOCOL = USE_HTTPS ? "wss" : "ws";
+const HMR_CLIENT_PORT = USE_HTTPS ? 443 : 5000;
+
+export default defineConfig({
+  plugins: [react()],
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    "import.meta.env.VITE_BUILD_ID": JSON.stringify(process.env.VITE_BUILD_ID || ""),
+  },
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+      "@shared": path.resolve(__dirname, "../../packages/shared/src"),
+    },
+  },
+  server: {
+    host: true,
+    port: 5000,
+    strictPort: true,
+    allowedHosts: true,
+    hmr: {
+      // Let client use window.location.host; just set protocol + clientPort
+      protocol: HMR_PROTOCOL,
+      clientPort: HMR_CLIENT_PORT,
+      path: "/__vite_hmr",
+      // If you still see HMR overlay loops, you can temporarily disable:
+      // overlay: false,
+    },
+    // Unified dev served by Express is supported; no proxy needed
+  },
+  build: {
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom"],
+          charts: ["lightweight-charts"],
+        },
+      },
+    },
+  },
+});
+```
+
+Quick verification steps
+- Replit: no env changes needed with this auto-detect. Reload the preview — the HMR websocket should connect as wss to port 443 and the blinking should stop.
+- Local dev: no HTTPS env set — HMR uses ws on 5000 as before.
+- If you want an immediate workaround without code changes: set VITE_HTTPS=1 in Replit environment and reload.
+
+Optional safeguards
+- If the page still blinks due to transient HMR overlay reloads, temporarily set server.hmr.overlay: false while you iterate.
+- Make sure you’re using one dev mode at a time:
+  - Unified dev: run the server’s dev:unified script (Vite middleware on the API port).
+  - Standalone client: run client dev only if you’re not using unified mode.
+
+Want me to open a PR with this fix against your repo? I can include this change and keep the rest of your planned fixes (readiness toggle, route protections, server noEmit) in a follow-up PR.

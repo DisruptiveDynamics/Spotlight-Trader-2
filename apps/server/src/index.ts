@@ -8,7 +8,7 @@ import { proactiveCoachingEngine } from "./coach/proactiveCoaching";
 import { setupSecurity } from "./config/security";
 import { triggerManager } from "./copilot/triggers/manager";
 import { loadFlags } from "./flags/store";
-import { liveness, readiness, healthz, toolsHealth } from "./health";
+import { liveness, readiness, healthz, toolsHealth, setServerReady } from "./health";
 import { startEodScheduler } from "./journals/eod";
 import { initializeLearningLoop } from "./learning/loop";
 import { rateLimit } from "./middleware/rateLimit";
@@ -52,6 +52,9 @@ import { initializeMarketPipeline } from "./wiring";
 const env = validateEnv(process.env);
 const app = express();
 const server = createServer(app);
+
+// Mark server as not ready during initialization
+setServerReady(false);
 
 // Configure server timeouts for better dev restart stability
 server.keepAliveTimeout = 75000; // 75 seconds
@@ -118,12 +121,19 @@ app.get("/tools/quote", async (_req, res) => {
   }
 });
 
-// Voice debugging routes (public - for diagnostic testing)
-app.use("/debug", voiceDebugRouter);
+// Production security: protect sensitive routes with PIN auth
+const protect = env.NODE_ENV === "production" 
+  ? requirePin 
+  : (_req: any, _res: any, next: any) => next();
 
-// Observability endpoints (public - no auth for monitoring)
-app.use("/api/metrics", metricsPromRouter); // Prometheus format
-app.use("/api/diag", diagRouter); // Diagnostic snapshot
+// Debug routes - disable entirely in production
+if (env.NODE_ENV !== "production") {
+  app.use("/debug", voiceDebugRouter);
+}
+
+// Observability endpoints - protect in production
+app.use("/api/metrics", protect, metricsPromRouter); // Prometheus format
+app.use("/api/diag", protect, diagRouter); // Diagnostic snapshot
 
 // PIN auth routes (public - no middleware)
 app.use("/api/auth", pinAuthRouter);
@@ -132,10 +142,10 @@ app.use("/auth", pinAuthRouter);
 // Public epoch endpoint (no auth required - used for client restart detection)
 app.use("/api", epochRouter);
 
-// All routes open - personal app, no auth needed
-app.use("/api/flags", flagsRouter);
-app.use("/api/metrics/json", metricsRouter);
-app.use("/api/admin", adminRouter);
+// Sensitive routes - protect in production
+app.use("/api/flags", protect, flagsRouter);
+app.use("/api/metrics/json", protect, metricsRouter);
+app.use("/api/admin", protect, adminRouter);
 
 initializeMarketPipeline(app);
 initializeTelemetryBridge();
@@ -178,6 +188,9 @@ const PORT = Number(process.env.PORT ?? 8080);
 // Initialize market source (Polygon auth check with simulator fallback)
 await initializeMarketSource();
 
+// Mark server as ready after initialization completes
+setServerReady(true);
+
 // Unified Dev Mode: Attach Vite middleware (BEFORE error handlers)
 if (process.env.UNIFIED_DEV === "1") {
   const { attachViteMiddleware } = await import("./dev/unifiedVite.js");
@@ -203,28 +216,47 @@ server.listen(PORT, "0.0.0.0", () => {
 
 // Global process error handlers for crash visibility
 process.on("uncaughtException", (error) => {
+  const isProd = env.NODE_ENV === "production";
   console.error("[CRITICAL] Uncaught Exception:", {
     message: error.message,
     stack: error.stack,
     timestamp: new Date().toISOString(),
   });
-  console.error("[CRITICAL] Process exiting due to uncaught exception");
-  process.exit(1);
+  
+  if (isProd) {
+    // In production: mark unhealthy but let process manager handle restart
+    setServerReady(false);
+    console.error("[CRITICAL] Server marked as unhealthy - process manager will restart");
+  } else {
+    // In dev: fail fast for immediate feedback
+    console.error("[CRITICAL] Process exiting due to uncaught exception");
+    process.exit(1);
+  }
 });
 
 process.on("unhandledRejection", (reason, promise) => {
+  const isProd = env.NODE_ENV === "production";
   console.error("[CRITICAL] Unhandled Rejection:", {
     reason,
     promise,
     timestamp: new Date().toISOString(),
   });
-  console.error("[CRITICAL] Process exiting due to unhandled rejection");
-  process.exit(1);
+  
+  if (isProd) {
+    // In production: mark unhealthy but let process manager handle restart
+    setServerReady(false);
+    console.error("[CRITICAL] Server marked as unhealthy - process manager will restart");
+  } else {
+    // In dev: fail fast for immediate feedback
+    console.error("[CRITICAL] Process exiting due to unhandled rejection");
+    process.exit(1);
+  }
 });
 
 // Graceful shutdown handlers
 process.on("SIGTERM", () => {
   console.log("[Server] SIGTERM received, closing server gracefully...");
+  setServerReady(false); // Signal readiness probe to stop routing traffic
   server.close(() => {
     console.log("[Server] Server closed");
     process.exit(0);
@@ -233,6 +265,7 @@ process.on("SIGTERM", () => {
 
 process.on("SIGINT", () => {
   console.log("[Server] SIGINT received, closing server gracefully...");
+  setServerReady(false); // Signal readiness probe to stop routing traffic
   server.close(() => {
     console.log("[Server] Server closed");
     process.exit(0);

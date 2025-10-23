@@ -307,7 +307,7 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ symbol, seedLimit: 200 }),
+          body: JSON.stringify({ symbol, seedLimit: 500 }),
         });
         if (!res.ok) {
           logger.warn(`Failed to subscribe ${symbol}: ${res.status}`);
@@ -695,23 +695,51 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
     onBar(fn: (b: Bar) => void) {
       listeners.bar.push(fn);
     },
+    offBar(fn: (b: Bar) => void) {
+      const idx = listeners.bar.indexOf(fn);
+      if (idx >= 0) listeners.bar.splice(idx, 1);
+    },
     onBarReset(fn: (bars: Bar[]) => void) {
       listeners.barReset.push(fn);
+    },
+    offBarReset(fn: (bars: Bar[]) => void) {
+      const idx = listeners.barReset.indexOf(fn);
+      if (idx >= 0) listeners.barReset.splice(idx, 1);
     },
     onMicro(fn: (m: Micro) => void) {
       listeners.microbar.push(fn);
     },
+    offMicro(fn: (m: Micro) => void) {
+      const idx = listeners.microbar.indexOf(fn);
+      if (idx >= 0) listeners.microbar.splice(idx, 1);
+    },
     onTick(fn: (t: Tick) => void) {
       listeners.tick.push(fn);
+    },
+    offTick(fn: (t: Tick) => void) {
+      const idx = listeners.tick.indexOf(fn);
+      if (idx >= 0) listeners.tick.splice(idx, 1);
     },
     onStatus(fn: (s: SSEStatus) => void) {
       listeners.status.push(fn);
     },
+    offStatus(fn: (s: SSEStatus) => void) {
+      const idx = listeners.status.indexOf(fn);
+      if (idx >= 0) listeners.status.splice(idx, 1);
+    },
     onGap(fn: (detected: { expected: number; received: number }) => void) {
       listeners.gap.push(fn);
     },
+    offGap(fn: (detected: { expected: number; received: number }) => void) {
+      const idx = listeners.gap.indexOf(fn);
+      if (idx >= 0) listeners.gap.splice(idx, 1);
+    },
     onEpoch(fn: (e: { epochId: string; epochStartMs: number }) => void) {
       listeners.epoch.push(fn);
+    },
+    offEpoch(fn: (e: { epochId: string; epochStartMs: number }) => void) {
+      const idx = listeners.epoch.indexOf(fn);
+      if (idx >= 0) listeners.epoch.splice(idx, 1);
     },
     getLastSeq() {
       return lastSeq;
@@ -727,6 +755,15 @@ export function connectMarketSSE(symbols = ["SPY"], opts?: MarketSSEOptions) {
       }
       clearInterval(idleCheckInterval); // Clean up idle checker
       es?.close();
+
+      // Clear all listener arrays to prevent memory leaks
+      listeners.bar.length = 0;
+      listeners.barReset.length = 0;
+      listeners.microbar.length = 0;
+      listeners.tick.length = 0;
+      listeners.status.length = 0;
+      listeners.gap.length = 0;
+      listeners.epoch.length = 0;
 
       // Cleanup focus listener
       if (typeof window !== "undefined") {

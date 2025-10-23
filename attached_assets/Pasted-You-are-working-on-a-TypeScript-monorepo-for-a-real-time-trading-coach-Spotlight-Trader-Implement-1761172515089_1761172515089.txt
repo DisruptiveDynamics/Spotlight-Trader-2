@@ -1,0 +1,73 @@
+You are working on a TypeScript monorepo for a real-time trading coach (Spotlight Trader). Implement a stability-first set of changes in a feature branch without breaking current behavior. Do not change user-facing behavior unless explicitly gated by environment variables. Deliver in one PR titled “Stability Phase 1.”
+
+Constraints and guardrails
+- Work in a new branch: feature/stability-phase1.
+- Keep existing APIs/paths unchanged.
+- Do NOT enable any production-only protections unless a PIN env var is set.
+- Do NOT introduce a second dev server. Unified dev only when UNIFIED_DEV=1.
+- Prefer env-gated changes. Default behavior must match current behavior where possible.
+- After each step, run build and health checks and paste log tail.
+
+Tasks
+1) HMR auto-detect for hosted HTTPS (Replit)
+- In apps/client/vite.config.ts:
+  - Remove explicit host overrides. Let the client use window.location.host.
+  - Auto-detect hosted HTTPS (REPL_ID/REPL_SLUG/CODESPACES/GITPOD_WORKSPACE_URL). If detected or VITE_HTTPS=1, set HMR protocol to wss and clientPort to 443; otherwise ws and 5000 for local.
+- Goal: no blinking/HMR reconnection loops in Replit.
+
+2) Ensure server emits build artifacts
+- In apps/server/tsconfig.json, add "noEmit": false in compilerOptions.
+- Build: pnpm build must produce dist for the server.
+
+3) Truthful readiness and graceful shutdown
+- In apps/server/src/index.ts:
+  - import { setServerReady } from "./health".
+  - setServerReady(false) before async initialization (market source, pipeline, flags).
+  - setServerReady(true) after all initialization completes and before listen callback finishes.
+  - On SIGTERM/SIGINT: setServerReady(false) before server.close.
+  - Do not change functional behavior of routes.
+
+4) Protect sensitive routes only in production and only if PIN is set
+- Add a protect middleware that is a no-op unless NODE_ENV=production AND PIN (or PIN_CODE) env is present.
+- Wrap admin/flags/metrics/json/diag routes with protect; completely disable /debug in production.
+- This must not affect dev.
+
+5) Vendor WS reliability (Polygon)
+- Ensure a single server-side Polygon WebSocket connection (singleton) with exponential backoff (e.g., 5s, 10s, 20s, capped 60s).
+- Avoid creating additional connections per client or per subscription.
+- Reduce default dev subscriptions to a minimal set (e.g., SPY only) to avoid connection limits; keep ability to add more via API.
+- Confirm reconnects don’t spawn a new WS before the old one is closed.
+
+6) Cross-platform ports cleanup and env docs
+- Update scripts/cleanup-ports.ts to no-op on Windows (check process.platform).
+- Add .env.example documenting: PORT, NODE_ENV, LOG_LEVEL, TOOL_TIMEOUT_MS, VITE_UNIFIED_DEV, VITE_HTTPS, VITE_BUILD_ID, and any external keys used (POLYGON_API_KEY, OPENAI_API_KEY, NEON_DATABASE_URL, RESEND_API_KEY).
+
+7) Do not alter runtime dependencies beyond what’s necessary for the above. Do not bump versions in this PR unless strictly required.
+
+Verification (must paste results in PR description)
+- Commands:
+  - pnpm install --frozen-lockfile || pnpm install
+  - pnpm build
+  - export UNIFIED_DEV=1 VITE_UNIFIED_DEV=1 PORT=${PORT:-8080}
+  - If on Replit/Codespaces/Gitpod, export VITE_HTTPS=1
+  - pnpm --filter @spotlight/server dev:unified > server.health.log 2>&1 & echo "PID=$!" && PID=$!
+  - Wait up to 60s for /health to respond:
+    i=0; until curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1 || [ $i -ge 60 ]; do sleep 1; i=$((i+1)); done
+  - curl -fsS "http://127.0.0.1:${PORT}/health"
+  - curl -fsS "http://127.0.0.1:${PORT}/api/readyz"
+  - curl -fsSI "http://127.0.0.1:${PORT}/realtime/sse?symbols=SPY&timeframe=1m" | sed -n '1,20p'
+  - tail -n 150 server.health.log
+  - kill "$PID" >/dev/null 2>&1 || true
+- Expected:
+  - /health and /api/readyz return 200 with ok:true/status:"ready".
+  - SSE headers show HTTP 200, content-type: text/event-stream, connection: keep-alive, and no content-encoding: gzip.
+  - No EADDRINUSE/EADDRNOTAVAIL errors in server.health.log.
+  - Only one Polygon WS connection; no “maximum number of websocket connections exceeded” messages.
+  - No blinking page in Replit; HMR uses wss:443 automatically.
+
+Deliverables
+- One PR: “Stability Phase 1” containing only the above changes.
+- PR description: include the exact verification commands and their outputs, plus a brief explanation of any environment flags used.
+- Do not mix additional refactors or feature work into this PR.
+
+If any step fails, stop and report the exact logs and diffs from that step. Do not proceed to subsequent steps until the current step is green.

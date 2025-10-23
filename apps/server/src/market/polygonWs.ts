@@ -53,6 +53,20 @@ export class PolygonWebSocket {
 
   async connect() {
     try {
+      // [SINGLETON] Close existing connection before creating a new one
+      // This prevents "Maximum websocket connections exceeded" errors
+      if (this.ws) {
+        console.log("🔄 Closing existing WebSocket connection before reconnecting");
+        try {
+          (this.ws as any).close();
+        } catch (err) {
+          console.warn("Error closing old WebSocket:", err);
+        }
+        this.ws = null;
+      }
+
+      this.stopHeartbeat();
+      
       // [ALWAYS-ON] Connect to Polygon 24/7 regardless of market hours
       // The WebSocket will be silent when there's no trading activity
       // This removes time-based gating and lets Polygon be the source of truth
@@ -233,10 +247,14 @@ export class PolygonWebSocket {
       return;
     }
 
-    const backoff = Math.min(this.baseBackoffMs * Math.pow(2, this.reconnectAttempts), 30000);
+    // Exponential backoff with jitter to prevent thundering herd
+    const exponentialBackoff = this.baseBackoffMs * Math.pow(2, this.reconnectAttempts);
+    const maxBackoff = 60000; // 60 seconds max
+    const jitter = Math.random() * 1000; // 0-1000ms random jitter
+    const backoff = Math.min(exponentialBackoff, maxBackoff) + jitter;
     this.reconnectAttempts++;
 
-    console.log(`Reconnecting in ${backoff}ms (attempt ${this.reconnectAttempts})`);
+    console.log(`Reconnecting in ${Math.round(backoff)}ms (attempt ${this.reconnectAttempts})`);
     setTimeout(() => this.connect(), backoff);
   }
 

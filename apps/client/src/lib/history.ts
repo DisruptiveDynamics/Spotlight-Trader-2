@@ -21,13 +21,17 @@ export async function fetchHistory(
   symbol: string,
   timeframe: Timeframe,
   limit: number = 500,
+  before?: number, // Timestamp in milliseconds - fetch bars before this time
 ): Promise<HistoryCandle[]> {
-  const response = await fetch(
-    `${HISTORY_URL}?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}`,
-    {
-      credentials: "include", // Include cookies for authentication
-    },
-  );
+  let url = `${HISTORY_URL}?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}`;
+  
+  if (before != null) {
+    url += `&before=${before}`;
+  }
+  
+  const response = await fetch(url, {
+    credentials: "include", // Include cookies for authentication
+  });
 
   if (!response.ok) {
     throw new Error(`Failed to fetch history: ${response.statusText}`);

@@ -1,4 +1,5 @@
 import type { CandlestickData, HistogramData, Time, UTCTimestamp } from "lightweight-charts";
+import { getVolumeColor } from "@shared";
 
 /**
  * Parse timeframe string to milliseconds
@@ -50,7 +51,10 @@ export function toVolumeData(
   const timeframeMs = b.timeframe ? parseTimeframeMs(b.timeframe) : 60_000;
   const start = b.bar_start ?? b.bar_end - timeframeMs;
   const value = Number.isFinite(b.ohlcv.v) ? (b.ohlcv.v as number) : 0;
-  const color = b.ohlcv.c >= b.ohlcv.o ? "#16A34A" : "#DC2626";
+  
+  // Apply session-aware coloring (muted during extended hours)
+  const color = getVolumeColor(b.ohlcv.c, b.ohlcv.o, start);
+  
   return {
     time: toSec(start),
     value,

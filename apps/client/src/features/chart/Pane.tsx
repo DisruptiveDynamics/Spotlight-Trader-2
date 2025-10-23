@@ -241,7 +241,7 @@ export function Pane({ className = "" }: PaneProps) {
 
     chart.priceScale("volume").applyOptions({
       scaleMargins: {
-        top: 0.8,
+        top: 0.87, // Position volume bars at bottom, just above time axis
         bottom: 0,
       },
     });
@@ -499,8 +499,8 @@ export function Pane({ className = "" }: PaneProps) {
     // Add EMA lines
     indicators.emaLines.forEach(({ period, values }) => {
       const emaSeries = chartRef.current!.addLineSeries({
-        color: period === 20 ? "#f59e0b" : "#8b5cf6",
-        lineWidth: 1,
+        color: period === 20 ? "#fbbf24" : "#a78bfa", // Brighter colors for visibility
+        lineWidth: 2, // Increased from 1px for better visibility
         title: `EMA(${period})`,
       });
 
@@ -518,18 +518,18 @@ export function Pane({ className = "" }: PaneProps) {
     // Add Bollinger Bands
     if (indicators.bollinger) {
       const midSeries = chartRef.current!.addLineSeries({
-        color: "#6366f1",
-        lineWidth: 1,
+        color: "#818cf8", // Brighter indigo for visibility
+        lineWidth: 2, // Increased from 1px for better visibility
         title: "BB Mid",
       });
       const upperSeries = chartRef.current!.addLineSeries({
-        color: "#6366f166",
-        lineWidth: 1,
+        color: "#818cf888", // Brighter with transparency
+        lineWidth: 2, // Increased from 1px for better visibility
         title: "BB Upper",
       });
       const lowerSeries = chartRef.current!.addLineSeries({
-        color: "#6366f166",
-        lineWidth: 1,
+        color: "#818cf888", // Brighter with transparency
+        lineWidth: 2, // Increased from 1px for better visibility
         title: "BB Lower",
       });
 

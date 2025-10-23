@@ -3,7 +3,7 @@ import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { bars1m } from "@server/chart/bars1m";
 import { ringBuffer } from "@server/cache/ring";
 import { validateEnv } from "@shared/env";
-import { sessionPolicy } from "./sessionPolicy";
+import { sessionPolicy, isRegularTradingHours } from "./sessionPolicy";
 
 const ET = "America/New_York";
 const env = validateEnv(process.env);
@@ -45,6 +45,8 @@ export class BarBuilder {
   private lastSeq = new Map<string, number>();
   // Track reconciled seqs to prevent duplicate emissions
   private reconciledSeqs = new Map<string, Set<number>>();
+  // Track recent volumes for spike detection (rolling window of 20 bars)
+  private recentVolumes = new Map<string, number[]>();
 
   private floorToExchangeMinute(tsMs: number, barMinutes: number = 1): number {
     const d = toZonedTime(new Date(tsMs), ET);
@@ -199,6 +201,23 @@ export class BarBuilder {
   private finalizeBar(symbol: string, timeframe: string, state: SymbolState) {
     if (!state.currentBar) return;
 
+    // [DATA-INTEGRITY] Validate currentBar has complete OHLCV before emission
+    const { open, high, low, close, volume } = state.currentBar;
+    if (
+      typeof open !== "number" || !Number.isFinite(open) ||
+      typeof high !== "number" || !Number.isFinite(high) ||
+      typeof low !== "number" || !Number.isFinite(low) ||
+      typeof close !== "number" || !Number.isFinite(close) ||
+      typeof volume !== "number" || !Number.isFinite(volume)
+    ) {
+      console.error(
+        `[barBuilder] CRITICAL: Refusing to emit bar with incomplete OHLCV - ` +
+        `${symbol} ${timeframe} bar_start=${new Date(state.bar_start).toISOString()} ` +
+        `o=${open} h=${high} l=${low} c=${close} v=${volume}`
+      );
+      return; // Abort emission - do not poison ringBuffer or SSE stream
+    }
+
     // DO NOT filter bars here - barBuilder serves all users
     // Session filtering happens at API/SSE level where user preferences are known
 
@@ -225,20 +244,28 @@ export class BarBuilder {
       return;
     }
 
+    // [DATA-INTEGRITY] Deep-clone OHLCV into new plain object to prevent mutation
+    // This ensures emitted bars cannot be corrupted by subsequent tick updates
+    const immutableOHLCV = {
+      o: state.currentBar.open,
+      h: state.currentBar.high,
+      l: state.currentBar.low,
+      c: state.currentBar.close,
+      v: state.currentBar.volume,
+    };
+    Object.freeze(immutableOHLCV);
+
     const finalizedBar: MarketBarEvent = {
       symbol,
       timeframe: timeframe as any,
       seq,
       bar_start: state.bar_start,
       bar_end: state.bar_end,
-      ohlcv: {
-        o: state.currentBar.open,
-        h: state.currentBar.high,
-        l: state.currentBar.low,
-        c: state.currentBar.close,
-        v: state.currentBar.volume,
-      },
+      ohlcv: immutableOHLCV,
     };
+
+    // Volume spike detection for debugging
+    this.detectVolumeSpike(symbol, timeframe, finalizedBar.ohlcv.v, seq);
 
     console.debug(
       `[barBuilder] finalized symbol=${symbol} tf=${timeframe} seq=${seq} ` +
@@ -247,15 +274,16 @@ export class BarBuilder {
     );
 
     // Write to ringBuffer immediately for gap-fill availability (before AM arrives)
+    // [DATA-INTEGRITY] Create fresh Bar object with values (not references) from immutable OHLCV
     if (timeframe === "1m") {
       ringBuffer.putBars(symbol, [{
         symbol,
         timestamp: state.bar_start,
-        open: finalizedBar.ohlcv.o,
-        high: finalizedBar.ohlcv.h,
-        low: finalizedBar.ohlcv.l,
-        close: finalizedBar.ohlcv.c,
-        volume: finalizedBar.ohlcv.v,
+        open: immutableOHLCV.o,
+        high: immutableOHLCV.h,
+        low: immutableOHLCV.l,
+        close: immutableOHLCV.c,
+        volume: immutableOHLCV.v,
         seq,
         bar_start: state.bar_start,
         bar_end: state.bar_end,
@@ -323,6 +351,40 @@ export class BarBuilder {
   }
 
   /**
+   * Detect volume spikes that are >10x recent average
+   * Helps debug potential duplicate bars or data issues
+   */
+  private detectVolumeSpike(symbol: string, timeframe: string, volume: number, seq: number) {
+    const key = `${symbol}:${timeframe}`;
+    
+    if (!this.recentVolumes.has(key)) {
+      this.recentVolumes.set(key, []);
+    }
+    
+    const recent = this.recentVolumes.get(key)!;
+    
+    // Only check if we have enough history (at least 5 bars)
+    if (recent.length >= 5) {
+      const avg = recent.reduce((sum, v) => sum + v, 0) / recent.length;
+      
+      if (avg > 0 && volume > avg * 10) {
+        console.warn(
+          `⚠️  [VOLUME SPIKE] ${symbol} ${timeframe} seq=${seq} ` +
+          `volume=${volume.toLocaleString()} is ${(volume / avg).toFixed(1)}x ` +
+          `the recent average (${avg.toLocaleString()}) ` +
+          `- possible duplicate bar or auction volume`
+        );
+      }
+    }
+    
+    // Track this volume (keep last 20 bars)
+    recent.push(volume);
+    if (recent.length > 20) {
+      recent.shift();
+    }
+  }
+
+  /**
    * Handle official AM aggregate reconciliation
    * Replaces tick-based bars with authoritative Polygon data
    */
@@ -368,16 +430,22 @@ export class BarBuilder {
     eventBus.emit(`bar:new:${symbol}:1m` as any, am);
 
     // Log reconciliation with volume drift detection
+    // Note: During extended hours, tick drift is expected (sparse trading, intermittent feed)
+    // Only warn during RTH when drift indicates a real data quality issue
     if (result.replaced && result.oldBar) {
       const volumeDiff = Math.abs(result.oldBar.v - am.ohlcv.v);
       const volumeDiffPct = am.ohlcv.v > 0 ? (volumeDiff / am.ohlcv.v) * 100 : 0;
+      const isRTH = isRegularTradingHours(am.bar_start);
       
       if (volumeDiffPct > 10) {
-        console.debug(
-          `[AM reconcile] ${symbol} seq=${am.seq} ` +
-          `VOLUME DRIFT ${volumeDiffPct.toFixed(1)}%: ` +
-          `tick=${result.oldBar.v} → AM=${am.ohlcv.v} (diff=${volumeDiff})`
-        );
+        // Only warn about drift during RTH (extended hours drift is normal)
+        if (isRTH) {
+          console.debug(
+            `[AM reconcile] ${symbol} seq=${am.seq} ` +
+            `VOLUME DRIFT ${volumeDiffPct.toFixed(1)}%: ` +
+            `tick=${result.oldBar.v} → AM=${am.ohlcv.v} (diff=${volumeDiff})`
+          );
+        }
       } else {
         console.debug(
           `[AM reconcile] ${symbol} seq=${am.seq} ` +

@@ -1,0 +1,301 @@
+Thanks for the quick turn. Based on the current repo, there are three likely causes for what you’re seeing and I’ll fix all three:
+
+- Indicators (VWAP/EMA/Bollinger) not showing
+  - Root cause: overlay series get recreated (layer/order reset), and in a few places indicator timestamps don’t match the candlestick timestamps (start-of-bar vs end-of-bar), so lines render off-by-one bucket or off the visible range.
+  - Fix: keep persistent overlay series (no remove/re-add) and guarantee indicator x-values use the same epoch seconds as the candlestick series.
+
+- Volume taking ~50% height
+  - Root cause: only the volume histogram has scaleMargins set. The main candle series didn’t reserve bottom margin, so the volume area expands too high.
+  - Fix: add scaleMargins to the candlestick price scale and shrink volume’s reserved band (e.g., ~12–16% of pane).
+
+- Time & Sales not “rolling through” on the chart
+  - TapePanel is correctly collecting ticks via SSE (right sidebar). The chart isn’t visualizing last-trade ticks. We can add a live last-trade price line that updates on every tick without flicker.
+
+Below are targeted patches to implement these changes.
+
+1) Pane overlays: persistent series, aligned timestamps, and last-trade price line
+```tsx name=apps/client/src/features/chart/Pane.tsx url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/6ce972604c1a8ac93ba9284881a4f2fdada7dd15/apps/client/src/features/chart/Pane.tsx
+// ... existing imports
+import type { IChartApi, UTCTimestamp } from "lightweight-charts";
+import { connectMarketSSE } from "../../lib/marketStream";
+import { toCandleData, toVolumeData } from "../../lib/chartAdapters";
+
+// Add near top of component:
+const overlaySeriesRef = useRef<Map<string, ReturnType<IChartApi["addLineSeries"]>>>(new Map());
+const lastPriceLineRef = useRef<ReturnType<ReturnType<IChartApi["addCandlestickSeries"]>["createPriceLine"]> | null>(null);
+const ticksSSECloseRef = useRef<null | (() => void)>(null);
+
+// After you create the chart and add the candlestick + volume series,
+// apply price scale margins for both so volume doesn't eat half the pane:
+priceSeries.priceScale().applyOptions({
+  scaleMargins: { top: 0.1, bottom: 0.28 }, // reserve ~28% for volume
+});
+volumeSeries.priceScale().applyOptions({
+  scaleMargins: { top: 0.86, bottom: 0.0 }, // ~14% height for volume
+});
+
+// Ensure candle series reduces clutter; overlays stand out:
+priceSeries.applyOptions({
+  priceLineVisible: false,
+  lastValueVisible: false,
+});
+
+// Create a last-trade price line once (updates on ticks, no flicker):
+if (!lastPriceLineRef.current) {
+  lastPriceLineRef.current = priceSeries.createPriceLine({
+    price: 0,
+    color: "#60A5FA", // blue
+    lineWidth: 2,
+    lineStyle: 2, // dashed
+    axisLabelVisible: true,
+    title: "Last",
+  });
+}
+
+// Subscribe to raw ticks to update the last-trade line (cleaned up on unmount)
+if (ticksSSECloseRef.current) {
+  // if re-initializing, close previous
+  ticksSSECloseRef.current();
+  ticksSSECloseRef.current = null;
+}
+{
+  const sse = connectMarketSSE([symbol]);
+  sse.onTick((tick) => {
+    // rAF to coalesce
+    requestAnimationFrame(() => {
+      lastPriceLineRef.current?.applyOptions({ price: tick.price });
+    });
+  });
+  ticksSSECloseRef.current = () => sse.close();
+}
+
+// In your cleanup:
+return () => {
+  // existing chart cleanup...
+  if (ticksSSECloseRef.current) {
+    ticksSSECloseRef.current();
+    ticksSSECloseRef.current = null;
+  }
+  lastPriceLineRef.current = null;
+};
+
+// REPLACE the "clear and re-add overlays" block with this persistent updater:
+
+function upsertLineSeries(
+  id: string,
+  options: Parameters<IChartApi["addLineSeries"]>[0],
+) {
+  let series = overlaySeriesRef.current.get(id);
+  if (!series) {
+    series = chartRef.current!.addLineSeries({
+      lineWidth: 2,
+      priceLineVisible: true,
+      lastValueVisible: true,
+      crosshairMarkerVisible: true,
+      ...options,
+    });
+    overlaySeriesRef.current.set(id, series);
+  } else {
+    series.applyOptions(options);
+  }
+  return series;
+}
+
+// EMA: ensure timestamps align with candlesticks (use candle start times)
+indicators.emaLines.forEach(({ period, values }) => {
+  const id = `ema-${period}`;
+  const series = upsertLineSeries(id, {
+    color: period === 20 ? "#fbbf24" : "#a78bfa",
+    title: `EMA(${period})`,
+  });
+
+  // map indicator points to the same time as the candlestick setData (start-of-bar seconds)
+  const emaData = candles
+    .map((c, i) => ({
+      time: Math.floor(c.t / 1000) as UTCTimestamp, // assumes c.t is bar start ms
+      value: values[i],
+    }))
+    .filter((d) => Number.isFinite(d.value));
+
+  // Ensure ascending order by time
+  emaData.sort((a, b) => Number(a.time) - Number(b.time));
+  series.setData(emaData);
+});
+
+// Bollinger Bands
+if (indicators.bollinger) {
+  const mid = upsertLineSeries("bb-mid", { color: "#818cf8", title: "BB Mid" });
+  const upper = upsertLineSeries("bb-upper", { color: "#818cf888", title: "BB Upper" });
+  const lower = upsertLineSeries("bb-lower", { color: "#818cf888", title: "BB Lower" });
+
+  const midData = candles
+    .map((c, i) => ({
+      time: Math.floor(c.t / 1000) as UTCTimestamp,
+      value: indicators.bollinger[i]?.mid,
+    }))
+    .filter((d) => Number.isFinite(d.value));
+  const upperData = candles
+    .map((c, i) => ({
+      time: Math.floor(c.t / 1000) as UTCTimestamp,
+      value: indicators.bollinger[i]?.upper,
+    }))
+    .filter((d) => Number.isFinite(d.value));
+  const lowerData = candles
+    .map((c, i) => ({
+      time: Math.floor(c.t / 1000) as UTCTimestamp,
+      value: indicators.bollinger[i]?.lower,
+    }))
+    .filter((d) => Number.isFinite(d.value));
+
+  midData.sort((a, b) => Number(a.time) - Number(b.time));
+  upperData.sort((a, b) => Number(a.time) - Number(b.time));
+  lowerData.sort((a, b) => Number(a.time) - Number(b.time));
+
+  mid.setData(midData);
+  upper.setData(upperData);
+  lower.setData(lowerData);
+}
+
+// VWAP (session or anchored): same timestamp policy
+if (indicators.vwap) {
+  const vwapSeries = upsertLineSeries("vwap", {
+    color: "#ec4899",
+    lineWidth: 2,
+    title: "VWAP",
+  });
+  const vwapData = candles
+    .map((c, i) => ({
+      time: Math.floor(c.t / 1000) as UTCTimestamp,
+      value: indicators.vwap[i],
+    }))
+    .filter((d) => Number.isFinite(d.value));
+  vwapData.sort((a, b) => Number(a.time) - Number(b.time));
+  vwapSeries.setData(vwapData);
+}
+
+// If indicators are toggled off in UI, hide instead of removing to keep layer order:
+// overlaySeriesRef.current.get("ema-20")?.applyOptions({ visible: false });
+```
+
+2) PaneStable: margins and last-trade line
+```tsx name=apps/client/src/features/chart/PaneStable.tsx url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/6ce972604c1a8ac93ba9284881a4f2fdada7dd15/apps/client/src/features/chart/PaneStable.tsx
+// ... existing imports
+import { connectMarketSSE } from "../../lib/marketStream";
+
+const lastPriceLineRef = useRef<ReturnType<ReturnType<IChartApi["addCandlestickSeries"]>["createPriceLine"]> | null>(null);
+const ticksSSECloseRef = useRef<null | (() => void)>(null);
+
+useEffect(() => {
+  if (!containerRef.current || chartRef.current) return;
+
+  const chart = createChart(containerRef.current, chartOptions);
+  chartRef.current = chart;
+
+  const priceSeries = chart.addCandlestickSeries(priceSeriesOptions);
+  priceSeriesRef.current = priceSeries;
+
+  // Reserve space for volume below; shrink volume band
+  priceSeries.priceScale().applyOptions({
+    scaleMargins: { top: 0.1, bottom: 0.28 },
+  });
+
+  const volumeSeries = chart.addHistogramSeries(volumeSeriesOptions);
+  volumeSeriesRef.current = volumeSeries;
+
+  volumeSeries.priceScale().applyOptions({
+    scaleMargins: { top: 0.86, bottom: 0 },
+  });
+
+  // Make price line less cluttered on candles
+  priceSeries.applyOptions({
+    priceLineVisible: false,
+    lastValueVisible: false,
+  });
+
+  // Create last-trade price line (updated via ticks SSE)
+  if (!lastPriceLineRef.current) {
+    lastPriceLineRef.current = priceSeries.createPriceLine({
+      price: 0,
+      color: "#60A5FA",
+      lineWidth: 2,
+      lineStyle: 2, // dashed
+      axisLabelVisible: true,
+      title: "Last",
+    });
+  }
+
+  // Subscribe to ticks for the active symbol
+  if (ticksSSECloseRef.current) {
+    ticksSSECloseRef.current();
+    ticksSSECloseRef.current = null;
+  }
+  {
+    const sse = connectMarketSSE([active.symbol]);
+    sse.onTick((tick) => {
+      requestAnimationFrame(() => {
+        lastPriceLineRef.current?.applyOptions({ price: tick.price });
+      });
+    });
+    ticksSSECloseRef.current = () => sse.close();
+  }
+
+  const resizeObserver = new ResizeObserver(() => {
+    chart.timeScale().fitContent();
+  });
+  resizeObserver.observe(containerRef.current);
+  resizeObserverRef.current = resizeObserver;
+
+  return () => {
+    resizeObserverRef.current?.disconnect();
+    resizeObserverRef.current = null;
+    try {
+      chartRef.current?.remove();
+    } catch {}
+    chartRef.current = null;
+    priceSeriesRef.current = null;
+    volumeSeriesRef.current = null;
+
+    if (ticksSSECloseRef.current) {
+      ticksSSECloseRef.current();
+      ticksSSECloseRef.current = null;
+    }
+    lastPriceLineRef.current = null;
+  };
+}, [chartOptions, priceSeriesOptions, volumeSeriesOptions, active.symbol]);
+```
+
+3) Indicator timestamp helper (optional, ensures exact alignment with candle start time)
+```typescript name=apps/client/src/lib/chartAdapters.ts url=https://github.com/DisruptiveDynamics/Spotlight-Trader-2/blob/6ce972604c1a8ac93ba9284881a4f2fdada7dd15/apps/client/src/lib/chartAdapters.ts
+import type { LineData, UTCTimestamp } from "lightweight-charts";
+
+/**
+ * Map indicator numeric arrays to LineData[] using the same start-of-bar timestamps
+ * as the candlestick series (derived from the historical seed or in-memory candles).
+ */
+export function toIndicatorLineData(candlesMsStart: number[], values: number[]): LineData[] {
+  const len = Math.min(candlesMsStart.length, values.length);
+  const out: LineData[] = new Array(len);
+  for (let i = 0; i < len; i++) {
+    const t = Math.floor(candlesMsStart[i] / 1000) as UTCTimestamp;
+    const v = values[i];
+    if (Number.isFinite(v)) {
+      out[i] = { time: t, value: v };
+    }
+  }
+  // Filter out any undefined slots due to NaN values
+  return out.filter(Boolean) as LineData[];
+}
+```
+
+What the Tape is and why ticks aren’t “on the chart” yet
+- TapePanel (Time & Sales) in the right sidebar lists individual ticks (time, price, size, side). It subscribes to SSE ticks via connectMarketSSE and renders a scrolling list.
+- TapePeek is a compact, hidden drawer on the far right that shows aggregated “tape” metrics (2-minute volume Z-score, uptick delta, spread in bps). It listens for window “tape:update” CustomEvents. Click the arrow “←/→” tab to open/close it.
+- Previously, the chart did not visualize ticks directly; it updated bars via SSE micro updates. The new last-trade price line gives you visible, real-time tick price “rolling through” on the chart without clutter.
+
+Quick checklist to validate after applying the patches
+- Indicators: VWAP/EMA/BB visible above candles, no flicker on updates or toggles.
+- Volume: occupies ~12–16% of the bottom of the pane during RTH, not 50%.
+- Tape price: “Last” dashed blue price line tracks ticks live; TapePanel still lists detailed prints.
+- Time alignment: indicator points line up with candles (use the same start-of-bar seconds as the candlestick series).
+
+If you want, I can open a PR with these exact changes.

@@ -33,6 +33,8 @@ export function Pane({ className = "" }: PaneProps) {
   const seriesRef = useRef<ISeriesApi<"Candlestick" | "Line" | "Bar"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const overlaySeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
+  const lastPriceLineRef = useRef<ReturnType<ISeriesApi<"Candlestick">["createPriceLine"]> | null>(null);
+  const ticksSSECloseRef = useRef<(() => void) | null>(null);
 
   const [candles, setCandles] = useState<Candle[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -68,7 +70,8 @@ export function Pane({ className = "" }: PaneProps) {
       for (const bar of bars) {
         if (!bar.ohlcv || typeof bar.ohlcv !== 'object') continue;
         
-        const time = Math.floor(bar.bar_end / 1000) as UTCTimestamp;
+        // Use start-of-bar timestamp for consistency with historical data
+        const time = Math.floor(bar.bar_start / 1000) as UTCTimestamp;
         const { o, h, l, c, v } = bar.ohlcv;
 
         // Validate numeric fields before update
@@ -88,7 +91,8 @@ export function Pane({ className = "" }: PaneProps) {
           });
         }
 
-        const newCandle: Candle = { t: bar.bar_end, ohlcv: bar.ohlcv };
+        // Store candle with start-of-bar timestamp (matches historical data)
+        const newCandle: Candle = { t: bar.bar_start, ohlcv: bar.ohlcv };
         setCandles((prev) => {
           const last = prev[prev.length - 1];
           return last && last.t === newCandle.t
@@ -96,7 +100,8 @@ export function Pane({ className = "" }: PaneProps) {
             : [...prev, newCandle];
         });
 
-        currentMinuteRef.current = Math.floor(bar.bar_end / 60000) * 60000;
+        // Track current minute using bar_start for consistency
+        currentMinuteRef.current = Math.floor(bar.bar_start / 60000) * 60000;
         currentBarTimeRef.current = time;
       }
     }
@@ -240,13 +245,51 @@ export function Pane({ className = "" }: PaneProps) {
       priceScaleId: "volume",
     });
 
-    // Professional volume scaling: limit to bottom 25% of chart
-    chart.priceScale("volume").applyOptions({
-      scaleMargins: {
-        top: 0.75, // Volume starts at 75% down, giving it bottom 25%
-        bottom: 0,
-      },
+    // Dual scaleMargins: set on BOTH price and volume scales for proper space allocation
+    // Price scale reserves bottom 28% for volume
+    series.priceScale().applyOptions({
+      scaleMargins: { top: 0.1, bottom: 0.28 },
     });
+
+    // Volume scale gets 14% height at the bottom
+    chart.priceScale("volume").applyOptions({
+      scaleMargins: { top: 0.86, bottom: 0 },
+    });
+
+    // Reduce clutter on price series so overlays stand out
+    series.applyOptions({
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+
+    // Create last-trade price line (blue dashed line showing real-time ticks)
+    if (chartStyle === "candles" && !lastPriceLineRef.current) {
+      lastPriceLineRef.current = (series as ISeriesApi<"Candlestick">).createPriceLine({
+        price: 0,
+        color: "#60A5FA", // blue
+        lineWidth: 2,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: "Last",
+      });
+    }
+
+    // Subscribe to raw ticks to update the last-trade line
+    if (ticksSSECloseRef.current) {
+      ticksSSECloseRef.current();
+      ticksSSECloseRef.current = null;
+    }
+
+    const tickSSE = connectMarketSSE([active.symbol]);
+    tickSSE.onTick?.((tick: any) => {
+      // Use RAF to coalesce tick updates
+      requestAnimationFrame(() => {
+        if (lastPriceLineRef.current && tick.price != null) {
+          lastPriceLineRef.current.applyOptions({ price: tick.price });
+        }
+      });
+    });
+    ticksSSECloseRef.current = () => tickSSE.close();
 
     chartRef.current = chart;
     seriesRef.current = series;
@@ -285,9 +328,17 @@ export function Pane({ className = "" }: PaneProps) {
 
     return () => {
       window.removeEventListener("resize", handleResize);
+      
+      // Clean up tick SSE subscription
+      if (ticksSSECloseRef.current) {
+        ticksSSECloseRef.current();
+        ticksSSECloseRef.current = null;
+      }
+      
+      lastPriceLineRef.current = null;
       chart.remove();
     };
-  }, [chartStyle]);
+  }, [chartStyle, active.symbol]);
 
   // Load historical data
   useEffect(() => {
@@ -300,8 +351,9 @@ export function Pane({ className = "" }: PaneProps) {
 
         if (!mounted) return;
 
+        // Use bar_start for timestamp alignment (indicators will use same timestamps)
         const candleData: Candle[] = history.map((bar) => ({
-          t: bar.msEnd,
+          t: bar.msStart, // Start-of-bar timestamp for proper indicator alignment
           ohlcv: {
             o: bar.open,
             h: bar.high,
@@ -313,13 +365,13 @@ export function Pane({ className = "" }: PaneProps) {
 
         setCandles(candleData);
 
-        // Update chart with candles
+        // Update chart with candles (use start-of-bar timestamps for alignment)
         if (seriesRef.current) {
           if (chartStyle === "line") {
             const lineData = history
-              .filter((bar) => bar.time != null && bar.close != null && !isNaN(bar.close))
+              .filter((bar) => bar.msStart != null && bar.close != null && !isNaN(bar.close))
               .map((bar) => ({
-                time: bar.time as UTCTimestamp,
+                time: Math.floor(bar.msStart / 1000) as UTCTimestamp,
                 value: bar.close,
               }));
             seriesRef.current.setData(lineData);
@@ -327,7 +379,7 @@ export function Pane({ className = "" }: PaneProps) {
             const ohlcData = history
               .filter(
                 (bar) =>
-                  bar.time != null &&
+                  bar.msStart != null &&
                   bar.open != null &&
                   bar.high != null &&
                   bar.low != null &&
@@ -338,7 +390,7 @@ export function Pane({ className = "" }: PaneProps) {
                   !isNaN(bar.close),
               )
               .map((bar) => ({
-                time: bar.time as UTCTimestamp,
+                time: Math.floor(bar.msStart / 1000) as UTCTimestamp,
                 open: bar.open,
                 high: bar.high,
                 low: bar.low,
@@ -348,15 +400,15 @@ export function Pane({ className = "" }: PaneProps) {
           }
         }
 
-        // Update volume
+        // Update volume (use start-of-bar timestamps)
         if (volumeSeriesRef.current) {
           const volumeData = history
             .filter(
               (bar) =>
-                bar.time != null && bar.volume != null && bar.close != null && !isNaN(bar.volume),
+                bar.msStart != null && bar.volume != null && bar.close != null && !isNaN(bar.volume),
             )
             .map((bar) => ({
-              time: bar.time as UTCTimestamp,
+              time: Math.floor(bar.msStart / 1000) as UTCTimestamp,
               value: bar.volume ?? 0,
               color: getVolumeColor(bar.close, bar.open, bar.msStart),
             }));
@@ -366,8 +418,9 @@ export function Pane({ className = "" }: PaneProps) {
         if (history.length > 0) {
           const lastBar = history[history.length - 1];
           if (lastBar) {
-            currentMinuteRef.current = Math.floor(lastBar.msEnd / 60000) * 60000;
-            currentBarTimeRef.current = lastBar.time;
+            // Initialize tracking using start-of-bar timestamps (matches live updates)
+            currentMinuteRef.current = Math.floor(lastBar.msStart / 60000) * 60000;
+            currentBarTimeRef.current = Math.floor(lastBar.msStart / 1000) as UTCTimestamp;
           }
         }
 
@@ -456,11 +509,11 @@ export function Pane({ className = "" }: PaneProps) {
       }));
       setCandles(newCandles);
       
-      // Update current bar tracking
+      // Update current bar tracking (use bar_start for consistency)
       if (bars.length > 0) {
         const lastBar = bars[bars.length - 1];
         if (lastBar) {
-          currentMinuteRef.current = Math.floor(lastBar.bar_end / 60000) * 60000;
+          currentMinuteRef.current = Math.floor(lastBar.bar_start / 60000) * 60000;
           currentBarTimeRef.current = Math.floor(lastBar.bar_start / 1000) as UTCTimestamp;
         }
       }

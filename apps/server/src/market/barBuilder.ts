@@ -244,19 +244,24 @@ export class BarBuilder {
       return;
     }
 
+    // [DATA-INTEGRITY] Deep-clone OHLCV into new plain object to prevent mutation
+    // This ensures emitted bars cannot be corrupted by subsequent tick updates
+    const immutableOHLCV = {
+      o: state.currentBar.open,
+      h: state.currentBar.high,
+      l: state.currentBar.low,
+      c: state.currentBar.close,
+      v: state.currentBar.volume,
+    };
+    Object.freeze(immutableOHLCV);
+
     const finalizedBar: MarketBarEvent = {
       symbol,
       timeframe: timeframe as any,
       seq,
       bar_start: state.bar_start,
       bar_end: state.bar_end,
-      ohlcv: {
-        o: state.currentBar.open,
-        h: state.currentBar.high,
-        l: state.currentBar.low,
-        c: state.currentBar.close,
-        v: state.currentBar.volume,
-      },
+      ohlcv: immutableOHLCV,
     };
 
     // Volume spike detection for debugging
@@ -269,15 +274,16 @@ export class BarBuilder {
     );
 
     // Write to ringBuffer immediately for gap-fill availability (before AM arrives)
+    // [DATA-INTEGRITY] Create fresh Bar object with values (not references) from immutable OHLCV
     if (timeframe === "1m") {
       ringBuffer.putBars(symbol, [{
         symbol,
         timestamp: state.bar_start,
-        open: finalizedBar.ohlcv.o,
-        high: finalizedBar.ohlcv.h,
-        low: finalizedBar.ohlcv.l,
-        close: finalizedBar.ohlcv.c,
-        volume: finalizedBar.ohlcv.v,
+        open: immutableOHLCV.o,
+        high: immutableOHLCV.h,
+        low: immutableOHLCV.l,
+        close: immutableOHLCV.c,
+        volume: immutableOHLCV.v,
         seq,
         bar_start: state.bar_start,
         bar_end: state.bar_end,

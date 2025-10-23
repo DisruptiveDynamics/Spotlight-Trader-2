@@ -27,6 +27,8 @@ export default defineConfig({
   server: {
     port: 5000,
     strictPort: true,
+    // Allow all hosts in Replit, or localhost in local dev
+    allowedHosts: IS_REPLIT ? true : ["localhost", "127.0.0.1"],
     hmr: USE_HTTPS
       ? {
           // Replit HTTPS mode: secure WebSocket on port 443

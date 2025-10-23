@@ -4,6 +4,7 @@ import {
   vwapSessionBatch,
   vwapAnchoredBatch,
   volumeSmaBatch,
+  getVolumeColor,
   type Candle,
 } from "@spotlight/shared";
 import {
@@ -83,7 +84,7 @@ export function Pane({ className = "" }: PaneProps) {
           volumeSeriesRef.current.update({
             time,
             value: v,
-            color: c >= o ? "#10b98166" : "#ef444466",
+            color: getVolumeColor(c, o, bar.bar_start),
           });
         }
 
@@ -356,7 +357,7 @@ export function Pane({ className = "" }: PaneProps) {
             .map((bar) => ({
               time: bar.time as UTCTimestamp,
               value: bar.volume ?? 0,
-              color: bar.close >= bar.open ? "#10b98166" : "#ef444466",
+              color: getVolumeColor(bar.close, bar.open, bar.msEnd),
             }));
           volumeSeriesRef.current.setData(volumeData);
         }
@@ -434,7 +435,7 @@ export function Pane({ className = "" }: PaneProps) {
       const volumeData = bars.map((bar) => ({
         time: Math.floor(bar.bar_start / 1000) as UTCTimestamp,
         value: bar.ohlcv.v,
-        color: bar.ohlcv.c >= bar.ohlcv.o ? "#10b98150" : "#ef444450",
+        color: getVolumeColor(bar.ohlcv.c, bar.ohlcv.o, bar.bar_start),
       }));
       
       // Set new data (this clears and redraws the chart)
@@ -480,58 +481,52 @@ export function Pane({ className = "" }: PaneProps) {
     };
   }, [active.symbol, chartStyle]);
 
-  // Update indicators
+  // Update indicators - create once, update data only (fixes visibility + layer ordering)
   useEffect(() => {
     if (!chartRef.current || !candles.length) return;
 
-    // Clear old overlay series
-    overlaySeriesRef.current.forEach((series) => {
-      if (series && chartRef.current) {
-        try {
-          chartRef.current.removeSeries(series);
-        } catch (e) {
-          console.warn("Failed to remove series:", e);
-        }
+    // Helper: create indicator series once, update data on subsequent calls
+    function upsertLineSeries(
+      id: string,
+      options?: Parameters<IChartApi["addLineSeries"]>[0]
+    ) {
+      let series = overlaySeriesRef.current.get(id);
+      if (!series) {
+        series = chartRef.current!.addLineSeries({
+          lineWidth: 2,
+          priceLineVisible: true,
+          lastValueVisible: true,
+          crosshairMarkerVisible: true,
+          ...options,
+        });
+        overlaySeriesRef.current.set(id, series);
+      } else if (options) {
+        series.applyOptions(options);
       }
-    });
-    overlaySeriesRef.current.clear();
+      return series;
+    }
 
-    // Add EMA lines
+    // EMA overlays (create once; update data)
     indicators.emaLines.forEach(({ period, values }) => {
-      const emaSeries = chartRef.current!.addLineSeries({
-        color: period === 20 ? "#fbbf24" : "#a78bfa", // Brighter colors for visibility
-        lineWidth: 2, // Increased from 1px for better visibility
+      const id = `ema-${period}`;
+      const series = upsertLineSeries(id, {
+        color: period === 20 ? "#fbbf24" : "#a78bfa",
         title: `EMA(${period})`,
       });
-
       const emaData = values
         .map((value: number, i: number) => ({
           time: Math.floor(candles[i]!.t / 1000) as UTCTimestamp,
           value,
         }))
         .filter((d: any) => !isNaN(d.value));
-
-      emaSeries.setData(emaData);
-      overlaySeriesRef.current.set(`ema-${period}`, emaSeries);
+      series.setData(emaData);
     });
 
-    // Add Bollinger Bands
+    // Bollinger Bands (create once; update data)
     if (indicators.bollinger) {
-      const midSeries = chartRef.current!.addLineSeries({
-        color: "#818cf8", // Brighter indigo for visibility
-        lineWidth: 2, // Increased from 1px for better visibility
-        title: "BB Mid",
-      });
-      const upperSeries = chartRef.current!.addLineSeries({
-        color: "#818cf888", // Brighter with transparency
-        lineWidth: 2, // Increased from 1px for better visibility
-        title: "BB Upper",
-      });
-      const lowerSeries = chartRef.current!.addLineSeries({
-        color: "#818cf888", // Brighter with transparency
-        lineWidth: 2, // Increased from 1px for better visibility
-        title: "BB Lower",
-      });
+      const midSeries = upsertLineSeries("bb-mid", { color: "#818cf8", title: "BB Mid" });
+      const upperSeries = upsertLineSeries("bb-upper", { color: "#818cf888", title: "BB Upper" });
+      const lowerSeries = upsertLineSeries("bb-lower", { color: "#818cf888", title: "BB Lower" });
 
       const midData = indicators.bollinger
         .map((b: any, i: number) => ({
@@ -557,17 +552,12 @@ export function Pane({ className = "" }: PaneProps) {
       midSeries.setData(midData);
       upperSeries.setData(upperData);
       lowerSeries.setData(lowerData);
-
-      overlaySeriesRef.current.set("bb-mid", midSeries);
-      overlaySeriesRef.current.set("bb-upper", upperSeries);
-      overlaySeriesRef.current.set("bb-lower", lowerSeries);
     }
 
-    // Add VWAP
+    // VWAP (create once; update data)
     if (indicators.vwap) {
-      const vwapSeries = chartRef.current!.addLineSeries({
+      const vwapSeries = upsertLineSeries("vwap", {
         color: "#ec4899",
-        lineWidth: 2,
         lineStyle: overlays.vwap?.mode === "anchored" ? LineStyle.Dashed : LineStyle.Solid,
         title: overlays.vwap?.mode === "anchored" ? "VWAP (Anchored)" : "VWAP (Session)",
       });
@@ -580,14 +570,13 @@ export function Pane({ className = "" }: PaneProps) {
         .filter((d: any) => !isNaN(d.value));
 
       vwapSeries.setData(vwapData);
-      overlaySeriesRef.current.set("vwap", vwapSeries);
     }
 
-    // Add Volume SMA
+    // Volume SMA (create once; update data)
     if (volumeSeriesRef.current && indicators.volumeSma) {
-      const volumeSmaSeries = chartRef.current!.addLineSeries({
+      const volumeSmaSeries = upsertLineSeries("vol-sma", {
         color: "#3b82f6",
-        lineWidth: 1,
+        lineWidth: 2,
         priceScaleId: "volume",
         title: `Vol SMA(${overlays.volumeSma})`,
       });
@@ -600,7 +589,6 @@ export function Pane({ className = "" }: PaneProps) {
         .filter((d: any) => !isNaN(d.value));
 
       volumeSmaSeries.setData(volSmaData);
-      overlaySeriesRef.current.set("vol-sma", volumeSmaSeries);
     }
   }, [indicators, candles, overlays]);
 

@@ -3,8 +3,6 @@ import { polygonWs } from '@server/market/polygonWs';
 import { barBuilder } from '@server/market/barBuilder';
 import { sseMarketStream } from '@server/stream/sse';
 import { getHistory } from '@server/history/service';
-import { eventBus } from '@server/market/eventBus';
-import { ringBuffer } from '@server/cache/ring';
 import { rulesEngineService } from '@server/rules/service';
 import { signalsService } from '@server/signals/service';
 import { coachAdvisor } from '@server/coach/advisor';

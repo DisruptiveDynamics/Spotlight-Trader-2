@@ -105,7 +105,7 @@ export async function subscribeSymbol(
     const ringKey = `${symbol}:1m:ring`;
     if (!barListeners.has(ringKey)) {
       const ringListener = (bar: any) => {
-        // Convert MarketBarEvent (nested ohlcv) to Bar (flat structure)
+        // CRITICAL: Convert MarketBarEvent to Bar (see wiring/index.ts for details)
         ringBuffer.putBars(symbol, [toSharedBar(bar)]);
       };
       barListeners.set(ringKey, ringListener);

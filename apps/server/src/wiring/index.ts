@@ -86,7 +86,9 @@ function subscribeSymbolTimeframe(symbol: string, timeframe: string) {
     const timeframeKey = `${symbol}:${timeframe}`;
     const timeframeListener = (bar: any) => {
       // Feed rolled bars to ring buffer for SSE streaming
-      // Convert MarketBarEvent (nested ohlcv) to Bar (flat structure)
+      // CRITICAL: Convert MarketBarEvent (nested ohlcv) to Bar (flat structure)
+      // The eventBus emits MarketBarEvent with { ohlcv: { o, h, l, c, v } }
+      // but RingBuffer expects Bar with { open, high, low, close, volume }
       ringBuffer.putBars(symbol, [toSharedBar(bar)]);
     };
     barListeners.set(timeframeKey, timeframeListener);
@@ -95,7 +97,7 @@ function subscribeSymbolTimeframe(symbol: string, timeframe: string) {
     // For 1m, add separate ring buffer listener (distinct from bars1m listener)
     const ringKey = `${symbol}:1m:ring`;
     const ringListener = (bar: any) => {
-      // Convert MarketBarEvent (nested ohlcv) to Bar (flat structure)
+      // CRITICAL: Convert MarketBarEvent to Bar (see conversion above)
       ringBuffer.putBars(symbol, [toSharedBar(bar)]);
     };
     barListeners.set(ringKey, ringListener);

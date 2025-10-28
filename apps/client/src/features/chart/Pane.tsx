@@ -18,6 +18,8 @@ import {
   type Candle,
 } from '@spotlight/shared';
 import { useChartContext } from './hooks/useChartContext';
+import { formatTickET, formatTooltipET } from '../../lib/timeFormatET';
+import { connectMarketSSE, type Bar } from '../../lib/marketStream';
 
 interface PaneProps {
   paneId: number;
@@ -119,6 +121,10 @@ export function Pane({ className = '' }: PaneProps) {
         borderColor: '#374151',
         timeVisible: true,
         secondsVisible: false,
+        tickMarkFormatter: formatTickET,
+      },
+      localization: {
+        timeFormatter: formatTooltipET,
       },
       height: containerRef.current.clientHeight,
       width: containerRef.current.clientWidth,
@@ -278,6 +284,69 @@ export function Pane({ className = '' }: PaneProps) {
       mounted = false;
     };
   }, [active.symbol, active.timeframe, chartStyle]);
+
+  // Subscribe to real-time bar updates via SSE
+  useEffect(() => {
+    const connection = connectMarketSSE([active.symbol]);
+
+    connection.onBar((bar: Bar) => {
+      if (bar.symbol !== active.symbol) return;
+
+      // Convert bar to candle format
+      const newCandle: Candle = {
+        t: bar.bar_end,
+        ohlcv: bar.ohlcv,
+      };
+
+      setCandles((prevCandles) => {
+        const lastCandle = prevCandles[prevCandles.length - 1];
+        
+        // If this is a new bar (different timestamp), append it
+        if (!lastCandle || lastCandle.t < newCandle.t) {
+          return [...prevCandles, newCandle];
+        }
+        
+        // If same bar (update current candle)
+        if (lastCandle.t === newCandle.t) {
+          const updated = [...prevCandles];
+          updated[updated.length - 1] = newCandle;
+          return updated;
+        }
+        
+        return prevCandles;
+      });
+
+      // Update chart
+      if (seriesRef.current) {
+        const chartData = {
+          time: Math.floor(bar.bar_end / 1000) as UTCTimestamp,
+          open: bar.ohlcv.o,
+          high: bar.ohlcv.h,
+          low: bar.ohlcv.l,
+          close: bar.ohlcv.c,
+        };
+
+        if (chartStyle === 'line') {
+          seriesRef.current.update({ time: chartData.time, value: bar.ohlcv.c });
+        } else {
+          seriesRef.current.update(chartData);
+        }
+      }
+
+      // Update volume
+      if (volumeSeriesRef.current) {
+        volumeSeriesRef.current.update({
+          time: Math.floor(bar.bar_end / 1000) as UTCTimestamp,
+          value: bar.ohlcv.v,
+          color: bar.ohlcv.c >= bar.ohlcv.o ? '#10b98166' : '#ef444466',
+        });
+      }
+    });
+
+    return () => {
+      connection.close();
+    };
+  }, [active.symbol, chartStyle]);
 
   // Update indicators
   useEffect(() => {

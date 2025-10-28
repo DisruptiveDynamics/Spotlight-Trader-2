@@ -1,0 +1,87 @@
+Objective
+• Fix server crashes caused by OHLCV shape mismatch between barBuilder and ringBuffer.
+• Make bar emission consistent across all timeframes, not just 1m.
+• Preserve immutable finalized bars; prevent mutation leaks.
+• Align types and seq computation; add small, testable pure functions.
+• Clean up outdated tests that target a non-existent BarBuilder class and replace with targeted tests.
+• Add minimal dependency fixes for ESLint config consistency.
+• Keep existing voice stack intact; add a simple current time utility to avoid tool calls for time/date.
+Repository
+• DisruptiveDynamics/Spotlight-Trader-2
+High-level changes
+1. Data pipeline correctness
+• Finalize bars with nested ohlcv for events, but always write flat-form bars to ringBuffer for every timeframe.
+• Ensure seq = floor(bar_start_ms / 60000) and is stored per symbol:timeframe.
+• Ensure event names include timeframe: bar:new:${symbol}:${timeframe}.
+2. Testability
+• Add and export a small pure function computeSeq(barStartMs: number) to assert correct seq computation.
+• Add and export a pure converter toFlatBar(symbol, timeframe, stateLike, seq) that produces ringBuffer’s flat shape for testing.
+• Replace stale tests that import ../BarBuilder with focused tests targeting computeSeq and toFlatBar.
+3. Dependency cleanup
+• Add eslint-jsonc and eslint-import-resolver-typescript to devDependencies.
+• Remove get-tsconfig if present and unused.
+• Add scripts for linting and typecheck.
+4. Minimal polish
+• Gate barBuilder console.debug with an env flag (DEBUG_BARS).
+• Do not filter bars in barBuilder; leave session filtering to API/SSE layer (existing behavior).
+• Add small utility to retrieve current time/date for voice assistant without a tool call (server-side helper). Register it where tools are registered.
+Concrete changes (apply exactly)
+A) apps/server/src/market/barBuilder.ts
+• Replace finalizeBar implementation with the following. Keep existing imports and class context.
+Replace inside BarBuilder class:
+private finalizeBar(symbol: string, timeframe: string, state: SymbolState) {if (!state.currentBar) return;
+// Validate currentBarconst { open, high, low, close, volume } = state.currentBar;if (typeof open !== “number” || !Number.isFinite(open) ||typeof high !== “number” || !Number.isFinite(high) ||typeof low !== “number” || !Number.isFinite(low) ||typeof close !== “number” || !Number.isFinite(close) ||typeof volume !== “number” || !Number.isFinite(volume)) {console.error([barBuilder] CRITICAL: Refusing to emit bar with incomplete OHLCV -  +${symbol} ${timeframe} bar_start=${new Date(state.bar_start).toISOString()}  +o=${open} h=${high} l=${low} c=${close} v=${volume});return;}
+const stateKey = ${symbol}:${timeframe};
+// Authoritative, deterministic sequence based on bar_startconst seq = computeSeq(state.bar_start);this.lastSeq.set(stateKey, seq);
+// Skip emission if this seq was already reconciled with AMconst reconciledSet = this.reconciledSeqs.get(stateKey);if (reconciledSet?.has(seq)) {if (process.env.DEBUG_BARS === “1”) {console.debug([barBuilder] skipping duplicate emission for seq=${seq} (already reconciled with AM));}return;}
+// Deep clone immutable OHLCV for the event payloadconst immutableOHLCV = {o: state.currentBar.open,h: state.currentBar.high,l: state.currentBar.low,c: state.currentBar.close,v: state.currentBar.volume,};Object.freeze(immutableOHLCV);
+const finalizedBar: MarketBarEvent = {symbol,timeframe: timeframe as any,seq,bar_start: state.bar_start,bar_end: state.bar_end,ohlcv: immutableOHLCV,};
+// Optional debugif (process.env.DEBUG_BARS === “1”) {console.debug([barBuilder] finalized symbol=${symbol} tf=${timeframe} seq=${seq}  +start=${new Date(state.bar_start).toISOString()} end=${new Date(state.bar_end).toISOString()}  +o=${finalizedBar.ohlcv.o} c=${finalizedBar.ohlcv.c} v=${finalizedBar.ohlcv.v});}
+// ALWAYS write flat bars to ringBuffer for all timeframesconst flat = toFlatBar(symbol, timeframe, {open, high, low, close, volume,bar_start: state.bar_start,bar_end: state.bar_end,}, seq);ringBuffer.putBars(symbol, [flat]);
+// Clear microbars to prevent memory leakstate.microbars = [];
+// Emit event with nested ohlcv for clientseventBus.emit(bar:new:${symbol}:${timeframe} as any, finalizedBar as any);}
+• Add the following named exports (below the class or in the same module scope) so they can be tested:
+export function computeSeq(barStartMs: number): number {return Math.floor(barStartMs / 60000);}
+type FlatBar = {symbol: string;timestamp: number;open: number;high: number;low: number;close: number;volume: number;seq: number;bar_start: number;bar_end: number;timeframe?: string;};
+type StateLike = {open: number;high: number;low: number;close: number;volume: number;bar_start: number;bar_end: number;};
+export function toFlatBar(symbol: string,timeframe: string,stateLike: StateLike,seq: number): FlatBar {return {symbol,timestamp: stateLike.bar_start, // canonical timestamp for flat barsopen: stateLike.open,high: stateLike.high,low: stateLike.low,close: stateLike.close,volume: stateLike.volume,seq,bar_start: stateLike.bar_start,bar_end: stateLike.bar_end,timeframe,};}
+• Ensure startMicrobarTimer and handleTick remain unchanged.
+• Remove any conditional that restricts ringBuffer.putBars to timeframe === “1m”.
+B) apps/server/src/tests/barBuilder.test.ts
+• Replace the stale tests (which import ../BarBuilder and use getAllBars/generateSequence) with focused, compilation-safe tests.
+• Use the new exported helpers from market/barBuilder.
+Replace file content with:
+import { describe, it, expect } from “vitest”;import { computeSeq, toFlatBar } from “../market/barBuilder”;
+describe(“barBuilder helpers”, () => {it(“computeSeq uses floor(bar_start/60000) deterministically”, () => {// 2025-01-01T00:00:00.000Z => 0expect(computeSeq(0)).toBe(0);// 2025-01-01T00:00:59.999Z => still 0expect(computeSeq(59_999)).toBe(0);// Next minute starts at 60_000expect(computeSeq(60_000)).toBe(1);// Arbitrary timestampconst t = 1735689600000; // example epoch msexpect(computeSeq(t)).toBe(Math.floor(t / 60000));});
+it(“toFlatBar produces the correct ringBuffer shape”, () => {const flat = toFlatBar(“AAPL”, “1m”, {open: 100, high: 110, low: 95, close: 105, volume: 12345,bar_start: 1_700_000_000_000,bar_end: 1_700_000_060_000,}, 28333333);expect(flat).toEqual({symbol: “AAPL”,timestamp: 1_700_000_000_000,open: 100,high: 110,low: 95,close: 105,volume: 12345,seq: 28333333,bar_start: 1_700_000_000_000,bar_end: 1_700_000_060_000,timeframe: “1m”,});});});
+C) Minimal voice assistant utility (new)
+• Create a simple current time helper to avoid a tool call for basic time/date. Create:
+apps/server/src/ai/time.ts
+export function getCurrentIsoTime(): string {return new Date().toISOString();}
+• Locate where voice tools or functions are registered (search for a tools registry or voice handler setup) and register getCurrentIsoTime under a simple name like time.now. This should not replace any existing tools; it’s additive. If tool registration requires a description/signature, mark it as no-arg returning string.
+D) Dependency updates
+• In the root package.json, ensure the following additions and cleanup.
+1. Add devDependencies if missing:“devDependencies”: {“eslint-jsonc”: “^2.4.0”,“eslint-import-resolver-typescript”: “^3.6.1”}
+2. Remove get-tsconfig if it exists and is unused (search repo; if not referenced in code or scripts, remove from dependencies/devDependencies).
+3. Add helpful scripts:“scripts”: {“lint”: “eslint .”,“lint:fix”: “eslint . –fix”,“typecheck”: “tsc -b –pretty false”}
+E) Debug output gating
+• In apps/server/src/market/barBuilder.ts, wrap all console.debug statements behind if (process.env.DEBUG_BARS === “1”) checks (as shown above).
+F) Ensure ringBuffer accepts flat bars
+• No code change is needed in ringBuffer if it already accepts { open, high, low, close, volume, seq, bar_start, bar_end, timestamp }. If it differs, normalize it to the above shape (do not accept nested ohlcv there).
+Post-change checks
+• Run: pnpm install
+• Run: pnpm -w run lint && pnpm -w run typecheck
+• Run server and ensure no crash on bar finalization across multiple timeframes.
+• Verify that:
+• eventBus emits bar:new:${symbol}:${timeframe} with nested ohlcv and deterministic seq.
+• ringBuffer receives flat bars for every timeframe, not just 1m.
+• microbar emission continues as before.
+• computeSeq and toFlatBar tests pass with vitest.
+Acceptance criteria
+• No server crashes from OHLCV shape mismatches during bar finalization.
+• Deterministic, correct seq values across sessions: seq = floor(bar_start_ms / 60000).
+• Flat bar writes to ringBuffer for all timeframes.
+• Emitted MarketBarEvent remains with nested ohlcv to avoid client breakage.
+• Old tests referring to ../BarBuilder removed; new tests added and passing.
+• Lint and typecheck pass.
+• Voice assistant can answer “What time is it?” by calling the new getCurrentIsoTime utility without needing a network/tool call.

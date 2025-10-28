@@ -8,8 +8,6 @@ import { focusManager } from './services/FocusManager';
 import { startFlagSync, stopFlagSync } from './state/flags';
 import type { InsightContext } from '@spotlight/shared';
 import { MarketStatus } from './features/hud/MarketStatus';
-import { useAuthStore } from './stores/authStore';
-import { SignIn } from './features/auth/SignIn';
 
 // Lazy load heavy components for code-splitting
 const MultiChart = lazy(() =>
@@ -44,7 +42,6 @@ const LoadingFallback = () => (
 );
 
 function App() {
-  const user = useAuthStore((state) => state.user);
   const [focusMode, setFocusMode] = useState(focusManager.getMode());
   const [explainPanelOpen, setExplainPanelOpen] = useState(false);
   const [explainContext, setExplainContext] = useState<InsightContext | null>(null);
@@ -52,12 +49,11 @@ function App() {
   const [showAdminConsole, setShowAdminConsole] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  // Initialize feature flag syncing (only when authenticated)
+  // Initialize feature flag syncing
   useEffect(() => {
-    if (!user) return;
     startFlagSync();
     return () => stopFlagSync();
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = focusManager.subscribe(setFocusMode);
@@ -116,11 +112,6 @@ function App() {
   }, []);
 
   const opacity = focusManager.getNonPriceOpacity();
-
-  // Show sign-in page if not authenticated
-  if (!user) {
-    return <SignIn />;
-  }
 
   return (
     <>

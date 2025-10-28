@@ -16,7 +16,6 @@ import { backtestRouter } from './routes/backtest';
 import { signalsRouter } from './routes/signals';
 import { metricsRouter } from './routes/metrics';
 import { adminRouter } from './routes/admin';
-import authRouter from './routes/auth';
 import exportRouter from './routes/export';
 import importRouter from './routes/import';
 import coachSettingsRouter from './routes/coachSettings';
@@ -24,7 +23,6 @@ import { copilotToolsRouter } from './routes/copilotTools';
 import copilotActionsRouter from './routes/copilotActions';
 import voicePreviewRouter from './routes/voicePreview';
 import triggerTestRouter from './routes/triggerTest';
-import { requireUser } from './middleware/requireUser';
 import { rateLimit } from './middleware/rateLimit';
 import { startEodScheduler } from './journals/eod';
 import { initializeLearningLoop } from './learning/loop';
@@ -56,9 +54,6 @@ app.get('/api/health', (_req, res) => {
 app.get('/api/voice/health', (_req, res) => {
   res.json({ ok: true, timestamp: Date.now() });
 });
-
-app.use('/api/auth', authRouter);
-app.use('/auth', authRouter);
 
 app.use('/api/flags', flagsRouter);
 app.use('/api/metrics', metricsRouter);

@@ -1,5 +1,6 @@
 import { eventBus, type Tick, type Microbar, type Bar } from './eventBus';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
+import { ringBuffer } from '@server/cache/ring';
 
 const ET = 'America/New_York';
 
@@ -148,28 +149,62 @@ export class BarBuilder {
   private finalizeBar(symbol: string, timeframe: string, state: SymbolState) {
     if (!state.currentBar) return;
 
-    const seq = Math.floor(state.bar_start / state.timeframeMs);
+    // Validate currentBar
+    const { open, high, low, close, volume } = state.currentBar;
+    if (
+      typeof open !== "number" || !Number.isFinite(open) ||
+      typeof high !== "number" || !Number.isFinite(high) ||
+      typeof low !== "number" || !Number.isFinite(low) ||
+      typeof close !== "number" || !Number.isFinite(close) ||
+      typeof volume !== "number" || !Number.isFinite(volume)
+    ) {
+      console.error(
+        `[barBuilder] CRITICAL: Refusing to emit bar with incomplete OHLCV - ` +
+        `${symbol} ${timeframe} bar_start=${new Date(state.bar_start).toISOString()} ` +
+        `o=${open} h=${high} l=${low} c=${close} v=${volume}`
+      );
+      return; // Abort emission - do not poison ringBuffer or SSE stream
+    }
+
+    // Authoritative, deterministic sequence based on bar_start
+    const seq = computeSeq(state.bar_start);
+
+    // Deep clone immutable OHLCV for the event payload
+    const immutableOHLCV = {
+      o: state.currentBar.open,
+      h: state.currentBar.high,
+      l: state.currentBar.low,
+      c: state.currentBar.close,
+      v: state.currentBar.volume,
+    };
+    Object.freeze(immutableOHLCV);
 
     const finalizedBar: Bar = {
       symbol,
-      timeframe: timeframe as any, // Cast to satisfy Bar type
+      timeframe: timeframe as any,
       seq,
       bar_start: state.bar_start,
       bar_end: state.bar_end,
-      ohlcv: {
-        o: state.currentBar.open,
-        h: state.currentBar.high,
-        l: state.currentBar.low,
-        c: state.currentBar.close,
-        v: state.currentBar.volume,
-      },
+      ohlcv: immutableOHLCV,
     };
+
+    // Optional debug
+    if (process.env.DEBUG_BARS === "1") {
+      console.debug(
+        `[barBuilder] finalized symbol=${symbol} tf=${timeframe} seq=${seq} ` +
+        `start=${new Date(state.bar_start).toISOString()} end=${new Date(state.bar_end).toISOString()} ` +
+        `o=${finalizedBar.ohlcv.o} c=${finalizedBar.ohlcv.c} v=${finalizedBar.ohlcv.v}`
+      );
+    }
+
+    // ALWAYS write bars to ringBuffer for all timeframes (ringBuffer handles flat conversion)
+    ringBuffer.putBars(symbol, [finalizedBar]);
 
     // Clear microbars to prevent memory leak
     state.microbars = [];
 
-    // Emit with dynamic timeframe in event name
-    eventBus.emit(`bar:new:${symbol}:${timeframe}` as any, finalizedBar);
+    // Emit event with nested ohlcv for clients
+    eventBus.emit(`bar:new:${symbol}:${timeframe}` as any, finalizedBar as any);
   }
 
   private startMicrobarTimer(symbol: string, timeframe: string = '1m') {
@@ -227,3 +262,53 @@ export class BarBuilder {
 }
 
 export const barBuilder = new BarBuilder();
+
+// Exported helper functions for testing and validation
+export function computeSeq(barStartMs: number): number {
+  return Math.floor(barStartMs / 60000);
+}
+
+type FlatBar = {
+  symbol: string;
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  seq: number;
+  bar_start: number;
+  bar_end: number;
+  timeframe?: string;
+};
+
+type StateLike = {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  bar_start: number;
+  bar_end: number;
+};
+
+export function toFlatBar(
+  symbol: string,
+  timeframe: string,
+  stateLike: StateLike,
+  seq: number
+): FlatBar {
+  return {
+    symbol,
+    timestamp: stateLike.bar_start, // canonical timestamp for flat bars
+    open: stateLike.open,
+    high: stateLike.high,
+    low: stateLike.low,
+    close: stateLike.close,
+    volume: stateLike.volume,
+    seq,
+    bar_start: stateLike.bar_start,
+    bar_end: stateLike.bar_end,
+    timeframe,
+  };
+}

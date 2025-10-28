@@ -16,33 +16,18 @@ const DEFAULT_TIMEFRAME = '1m';
 
 // Track active timeframe subscriptions per symbol
 const activeSubscriptions = new Map<string, string>();
-// Track bar listeners to properly remove them
-const barListeners = new Map<string, (bar: any) => void>();
 
 function subscribeSymbolTimeframe(symbol: string, timeframe: string) {
   // Unsubscribe from old timeframe if exists
   const oldTimeframe = activeSubscriptions.get(symbol);
   if (oldTimeframe) {
     barBuilder.unsubscribe(symbol, oldTimeframe);
-    
-    // Remove old bar listener using stored reference
-    const oldListener = barListeners.get(symbol);
-    if (oldListener) {
-      eventBus.off(`bar:new:${symbol}:${oldTimeframe}` as any, oldListener);
-    }
   }
 
   // Subscribe to new timeframe
+  // NOTE: barBuilder.finalizeBar() now writes directly to ringBuffer,
+  // so we don't need a separate event listener here (avoids double-writes)
   barBuilder.subscribe(symbol, timeframe);
-  
-  // Create and store bar listener reference for proper cleanup
-  const barListener = (bar: any) => {
-    ringBuffer.putBars(symbol, [bar]);
-  };
-  barListeners.set(symbol, barListener);
-  
-  // Listen to bar events for this timeframe
-  eventBus.on(`bar:new:${symbol}:${timeframe}` as any, barListener);
 
   activeSubscriptions.set(symbol, timeframe);
   console.log(`📊 Subscribed ${symbol} to ${timeframe} timeframe`);
@@ -61,9 +46,9 @@ export function initializeMarketPipeline(app: Express) {
   }
 
   app.get('/api/history', async (req, res) => {
+    const { symbol, timeframe = '1m', limit = 1000, before, sinceSeq } = req.query;
+    
     try {
-      const { symbol, timeframe = '1m', limit = 1000, before, sinceSeq } = req.query;
-
       if (!symbol || typeof symbol !== 'string') {
         return res.status(400).json({ error: 'symbol is required' });
       }
@@ -90,11 +75,23 @@ export function initializeMarketPipeline(app: Express) {
       
       const bars = await getHistory(query);
 
+      // Defensive guard: always return array (never undefined/null)
+      if (!Array.isArray(bars)) {
+        console.error('[History API] getHistory returned non-array:', typeof bars, 'for symbol:', symbol.toUpperCase());
+        return res.json([]);
+      }
+
       // Bars already have nested ohlcv format, just return them
       res.json(bars);
     } catch (err) {
-      console.error('History API error:', err);
-      res.status(500).json({ error: 'Internal server error' });
+      console.error('[History API] Error fetching bars:', {
+        symbol: typeof symbol === 'string' ? symbol.toUpperCase() : 'unknown',
+        timeframe: typeof timeframe === 'string' ? timeframe : '1m',
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+      // Always return empty array on error (never throw to client)
+      res.status(500).json([]);
     }
   });
 

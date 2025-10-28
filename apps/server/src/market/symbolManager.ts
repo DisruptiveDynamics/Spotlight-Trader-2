@@ -3,7 +3,7 @@ import { bars1m } from "@server/chart/bars1m";
 import { getHistory } from "@server/history/service";
 import { sessionVWAP } from "@server/indicators/vwap";
 import { barBuilder } from "@server/market/barBuilder";
-import { eventBus } from "@server/market/eventBus";
+import { eventBus, toSharedBar } from "@server/market/eventBus";
 import { polygonWs } from "@server/market/polygonWs";
 
 type SubEntry = { refs: number; lastTouched: number; timer?: NodeJS.Timeout };
@@ -105,7 +105,8 @@ export async function subscribeSymbol(
     const ringKey = `${symbol}:1m:ring`;
     if (!barListeners.has(ringKey)) {
       const ringListener = (bar: any) => {
-        ringBuffer.putBars(symbol, [bar]);
+        // Convert MarketBarEvent (nested ohlcv) to Bar (flat structure)
+        ringBuffer.putBars(symbol, [toSharedBar(bar)]);
       };
       barListeners.set(ringKey, ringListener);
       eventBus.on(`bar:new:${symbol}:1m` as any, ringListener);

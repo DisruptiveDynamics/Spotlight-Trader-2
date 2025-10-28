@@ -123,11 +123,23 @@ export async function buildSessionContext(userId: string): Promise<string> {
 // Fast initial session - tools ready immediately, minimal context
 export async function getMinimalSessionUpdate(userId: string) {
   const profile = await loadProfile(userId);
+  const now = new Date();
+  const timeContext = `Current date/time: ${now.toLocaleString('en-US', { 
+    timeZone: 'America/New_York',
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short', 
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short'
+  })}`;
 
   const minimalInstructions =
     `${VOICE_COACH_SYSTEM}\n\n` +
+    `${timeContext}\n\n` +
     `You are Nexa, an intraday trading copilot.\n` +
-    `Be ultra-brief. Always call tools for factual numbers.\n` +
+    `Be ultra-brief. Use tools when discussing specific market data.\n` +
     `- Use micro tools for last price/VWAP when available.\n` +
     `- If market/tools not ready, say you're reconnecting and avoid numbers.\n` +
     `- Never invent prices or indicators.`;
@@ -157,12 +169,24 @@ export async function getMinimalSessionUpdate(userId: string) {
 export async function getInitialSessionUpdate(userId: string) {
   const profile = await loadProfile(userId);
   const contextBlock = await buildSessionContext(userId);
+  const now = new Date();
+  const timeContext = `Current date/time: ${now.toLocaleString('en-US', { 
+    timeZone: 'America/New_York',
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short', 
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short'
+  })}`;
 
   const fullInstructions =
     `${VOICE_COACH_SYSTEM}\n\n` +
+    `${timeContext}\n\n` +
     `${contextBlock}\n\n` +
     `Execution rules:\n` +
-    `- Always call tools for prices/VWAP.\n` +
+    `- Use tools when discussing specific prices/VWAP/indicators.\n` +
     `- Check market readiness; if not ready, announce reconnect and avoid numeric claims.\n` +
     `- Cite which tool and symbol you used when answering.\n` +
     `- Keep replies concise.`;

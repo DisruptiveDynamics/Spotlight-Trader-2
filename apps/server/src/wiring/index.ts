@@ -6,7 +6,7 @@ import { sessionVWAP } from "@server/indicators/vwap";
 import { marketAuditTap } from "@server/market/auditTap";
 import { barBuilder } from "@server/market/barBuilder";
 import { getMarketSource, getMarketReason } from "@server/market/bootstrap";
-import { eventBus } from "@server/market/eventBus";
+import { eventBus, toSharedBar } from "@server/market/eventBus";
 import { polygonWs } from "@server/market/polygonWs";
 import { isRthOpen } from "@server/market/session";
 import { subscribeSymbol } from "@server/market/symbolManager";
@@ -86,7 +86,8 @@ function subscribeSymbolTimeframe(symbol: string, timeframe: string) {
     const timeframeKey = `${symbol}:${timeframe}`;
     const timeframeListener = (bar: any) => {
       // Feed rolled bars to ring buffer for SSE streaming
-      ringBuffer.putBars(symbol, [bar]);
+      // Convert MarketBarEvent (nested ohlcv) to Bar (flat structure)
+      ringBuffer.putBars(symbol, [toSharedBar(bar)]);
     };
     barListeners.set(timeframeKey, timeframeListener);
     eventBus.on(`bar:new:${symbol}:${timeframe}` as any, timeframeListener);
@@ -94,7 +95,8 @@ function subscribeSymbolTimeframe(symbol: string, timeframe: string) {
     // For 1m, add separate ring buffer listener (distinct from bars1m listener)
     const ringKey = `${symbol}:1m:ring`;
     const ringListener = (bar: any) => {
-      ringBuffer.putBars(symbol, [bar]);
+      // Convert MarketBarEvent (nested ohlcv) to Bar (flat structure)
+      ringBuffer.putBars(symbol, [toSharedBar(bar)]);
     };
     barListeners.set(ringKey, ringListener);
     eventBus.on(`bar:new:${symbol}:1m` as any, ringListener);

@@ -1,7 +1,5 @@
-import { Router, Response } from 'express';
+import { Router, Response, Request } from 'express';
 import { getFlags, updateFlags } from '../flags/store';
-import { requireUser } from '../middleware/requireUser';
-import { requireAdmin, AuthenticatedRequest } from '../middleware/requireAdmin';
 
 export const flagsRouter: Router = Router();
 
@@ -16,13 +14,11 @@ flagsRouter.get('/', (_req, res) => {
 
 /**
  * POST /api/flags
- * Update feature flags (admin only)
+ * Update feature flags (single-user app)
  */
 flagsRouter.post(
   '/',
-  requireUser,
-  requireAdmin,
-  async (req: AuthenticatedRequest, res: Response) => {
+  async (req: Request, res: Response) => {
     try {
       const patch = req.body;
       const updatedFlags = await updateFlags(patch);

@@ -3,6 +3,8 @@
 ## Overview
 Spotlight Trader is a production-grade, real-time trading coach application designed for high-frequency day traders. It offers real-time market data streaming, AI-powered voice coaching, a rule-based trading alerts system, and comprehensive journaling. The application prioritizes professional trader ergonomics with zero-lag, keyboard-first control, institutional-grade hotkeys, focus modes, latency monitoring, and accessibility features. Its core purpose is to deliver immediate insights and coaching to enhance trading performance and efficiency.
 
+**Architecture:** Single-user application with no authentication. All data uses 'default-user' constant. App runs 100% on real-time Polygon.io data with no mock/demo data.
+
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
@@ -24,7 +26,7 @@ A deterministic, lossless data pipeline handles live market data, ensuring DST-s
 - **In-Memory Structures**: Employed for the ring buffer and bar builder state to achieve sub-millisecond latency.
 
 ### Security Model
-Security features include Helmet.js, strict CORS allowlisting, short-lived JWTs, connection limits, Zod for environment validation, and cookie-based authentication with httpOnly session cookies. A demo mode is available for Replit.
+Security features include Helmet.js, strict CORS allowlisting, connection limits, and Zod for environment validation. **Note:** Authentication has been removed - app is single-user only with 'default-user' constant throughout the codebase.
 
 ### Frontend Architecture
 Built with React 18 and TypeScript, incorporating Lightweight Charts, Zustand for state management, and Tailwind CSS. Vite handles bundling and API proxying. Features a professional charting system with a shared indicators library, a TOS-style toolbar, and a Pane component for multi-chart grids.

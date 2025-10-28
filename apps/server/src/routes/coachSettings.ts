@@ -2,13 +2,13 @@ import { Router } from 'express';
 import { db } from '../db/index.js';
 import { coachProfiles } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
-import { requireUser, AuthRequest } from '../middleware/requireUser.js';
+import { Request } from 'express';
 
 const router = Router();
 
 // GET /api/coach/settings - Get coach settings
-router.get('/settings', requireUser, async (req: AuthRequest, res) => {
-  const userId = req.user!.userId;
+router.get('/settings', async (req: Request, res) => {
+  const userId = 'default-user';
 
   try {
     const results = await db
@@ -45,8 +45,8 @@ router.get('/settings', requireUser, async (req: AuthRequest, res) => {
 });
 
 // PUT /api/coach/settings - Update coach settings
-router.put('/settings', requireUser, async (req: AuthRequest, res) => {
-  const userId = req.user!.userId;
+router.put('/settings', async (req: Request, res) => {
+  const userId = 'default-user';
   const { agentName, voice, tonePreset, jargon, decisiveness } = req.body;
 
   try {

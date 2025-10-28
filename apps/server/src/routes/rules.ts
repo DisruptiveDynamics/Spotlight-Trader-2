@@ -1,15 +1,14 @@
-import { Router, type Response } from 'express';
+import { Router, type Response, type Request } from 'express';
 import { ruleRegistry } from '../rules/registry';
 import { ruleEvaluator } from '../rules/evaluator';
 import type { Rule, RuleContext } from '@shared/types/rules';
 import { ringBuffer } from '../cache/ring';
-import { AuthRequest } from '../middleware/requireUser.js';
 
 export const rulesRouter: Router = Router();
 
-rulesRouter.get('/rules', async (req: AuthRequest, res: Response) => {
+rulesRouter.get('/rules', async (req: Request, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = 'default-user';
     const rules = await ruleRegistry.getActiveRules(userId);
     res.json({ rules });
   } catch (error) {
@@ -18,9 +17,9 @@ rulesRouter.get('/rules', async (req: AuthRequest, res: Response) => {
   }
 });
 
-rulesRouter.post('/rules', async (req: AuthRequest, res: Response) => {
+rulesRouter.post('/rules', async (req: Request, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = 'default-user';
     const ruleData = req.body.rule as Omit<Rule, 'id' | 'createdAt'>;
 
     if (!ruleData || !ruleData.name || !ruleData.expression) {
@@ -35,7 +34,7 @@ rulesRouter.post('/rules', async (req: AuthRequest, res: Response) => {
   }
 });
 
-rulesRouter.put('/rules/:ruleId', async (req: AuthRequest, res: Response) => {
+rulesRouter.put('/rules/:ruleId', async (req: Request, res: Response) => {
   try {
     const { ruleId } = req.params;
 
@@ -43,7 +42,7 @@ rulesRouter.put('/rules/:ruleId', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Rule ID required' });
     }
 
-    const userId = req.user!.userId;
+    const userId = 'default-user';
     const updates = req.body.updates as Partial<Omit<Rule, 'id' | 'createdAt'>>;
 
     const rule = await ruleRegistry.updateRule(ruleId, userId, updates);
@@ -54,10 +53,10 @@ rulesRouter.put('/rules/:ruleId', async (req: AuthRequest, res: Response) => {
   }
 });
 
-rulesRouter.delete('/rules/:ruleId', async (req: AuthRequest, res: Response) => {
+rulesRouter.delete('/rules/:ruleId', async (req: Request, res: Response) => {
   try {
     const { ruleId } = req.params;
-    const userId = req.user!.userId;
+    const userId = 'default-user';
 
     if (!ruleId) {
       return res.status(400).json({ error: 'Rule ID required' });
@@ -71,11 +70,11 @@ rulesRouter.delete('/rules/:ruleId', async (req: AuthRequest, res: Response) => 
   }
 });
 
-rulesRouter.get('/rules/dryrun', async (req: AuthRequest, res: Response) => {
+rulesRouter.get('/rules/dryrun', async (req: Request, res: Response) => {
   try {
     const symbol = (req.query.symbol as string) || 'SPY';
     const ruleId = req.query.id as string | undefined;
-    const userId = req.user!.userId;
+    const userId = 'default-user';
 
     if (!ruleId) {
       return res.status(400).json({ error: 'Rule ID required' });

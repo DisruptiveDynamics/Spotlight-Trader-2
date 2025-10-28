@@ -1,5 +1,4 @@
-import { Response, NextFunction } from 'express';
-import { AuthRequest } from './requireUser.js';
+import { Request, Response, NextFunction } from 'express';
 
 interface RateLimitWindow {
   count: number;
@@ -20,13 +19,8 @@ const DEFAULT_LIMITS: Record<string, RateLimitOptions> = {
 };
 
 export function rateLimit(options?: RateLimitOptions) {
-  return (req: AuthRequest, res: Response, next: NextFunction): void => {
-    const userId = req.user?.userId;
-
-    if (!userId) {
-      res.status(401).json({ error: 'Authentication required for rate limiting' });
-      return;
-    }
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const userId = 'default-user';
 
     const limit = options || DEFAULT_LIMITS[req.path] || { windowMs: 10000, maxRequests: 10 };
     const key = `${userId}:${req.path}`;

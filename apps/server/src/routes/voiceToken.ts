@@ -1,6 +1,6 @@
 import type { Express } from 'express';
 import { signVoiceToken } from '../realtime/auth';
-import { requireUser, AuthRequest } from '../middleware/requireUser.js';
+import { Request } from 'express';
 import { validateEnv } from '@shared/env';
 
 const env = validateEnv(process.env);

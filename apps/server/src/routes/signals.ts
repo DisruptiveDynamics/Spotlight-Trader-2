@@ -1,9 +1,8 @@
-import { Router } from 'express';
+import { Router, Request } from 'express';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { signals } from '../db/schema.js';
 import { and, eq, gte, lt } from 'drizzle-orm';
-import { AuthRequest } from '../middleware/requireUser.js';
 
 const router: Router = Router();
 
@@ -17,10 +16,10 @@ const ListSignalsSchema = z.object({
  * GET /api/signals
  * Query signals by symbol, date, and/or ruleId
  */
-router.get('/', async (req: AuthRequest, res) => {
+router.get('/', async (req: Request, res) => {
   try {
     const parsed = ListSignalsSchema.parse(req.query);
-    const userId = req.user!.userId;
+    const userId = 'default-user';
 
     const conditions = [eq(signals.userId, userId)];
 

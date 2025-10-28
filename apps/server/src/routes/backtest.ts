@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { runBacktest, getBacktestPresets, BacktestValidationError } from '../backtest/engine';
 import { ruleRegistry } from '../rules/registry';
 import { isEnabled } from '../flags';
-import { AuthRequest } from '../middleware/requireUser.js';
+import { Request } from 'express';
 
 export const backtestRouter: Router = Router();
 
@@ -30,7 +30,7 @@ const BacktestSchema = z
  * POST /api/backtest/run
  * Run a backtest with specified parameters
  */
-backtestRouter.post('/run', async (req: AuthRequest, res) => {
+backtestRouter.post('/run', async (req: Request, res) => {
   if (!isEnabled('enableBacktest')) {
     return res.status(403).json({ error: 'Backtest feature is disabled' });
   }
@@ -38,7 +38,7 @@ backtestRouter.post('/run', async (req: AuthRequest, res) => {
   try {
     // Validate input schema
     const parsed = BacktestSchema.parse(req.body);
-    const userId = req.user!.userId;
+    const userId = 'default-user';
 
     // Fetch rules
     const rules = await Promise.all(parsed.ruleIds.map((id) => ruleRegistry.getRule(userId, id)));

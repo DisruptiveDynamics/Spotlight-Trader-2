@@ -95,7 +95,7 @@ export function setupVoiceTokenRoute(app: Express) {
         return res.status(500).json({ error: 'Failed to generate token' });
       }
 
-      const data = await response.json();
+      const data = await response.json() as { value: string };
       
       // Return the ephemeral token (starts with 'ek_')
       res.json({ 

@@ -30,11 +30,19 @@ export function get_last_ema(symbol: string, period: number = 9): number | null 
   }
 
   const closes = recentBars.map(b => b.close);
+  const firstClose = closes[0];
+  if (firstClose === undefined) {
+    return null;
+  }
+
   const multiplier = 2 / (period + 1);
-  let ema = closes[0];
+  let ema = firstClose;
 
   for (let i = 1; i < closes.length; i++) {
-    ema = (closes[i] - ema) * multiplier + ema;
+    const close = closes[i];
+    if (close !== undefined) {
+      ema = (close - ema) * multiplier + ema;
+    }
   }
 
   return ema;

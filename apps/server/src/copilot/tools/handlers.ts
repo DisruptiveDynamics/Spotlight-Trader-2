@@ -33,7 +33,8 @@ import { sessionVWAP } from '@server/services/sessionVWAP';
 export async function getChartSnapshot(
   params: GetChartSnapshotParams
 ): Promise<ChartSnapshot> {
-  const recentBars = bars1m.getRecentBars(params.symbol, params.barCount || 100);
+  const lookback = params.lookback || 100;
+  const recentBars = bars1m.getRecentBars(params.symbol, lookback);
 
   if (recentBars.length === 0) {
     return {
@@ -50,34 +51,27 @@ export async function getChartSnapshot(
   // Calculate session high/low/open
   const sessionHigh = Math.max(...recentBars.map(b => b.high));
   const sessionLow = Math.min(...recentBars.map(b => b.low));
-  const sessionOpen = recentBars[0]?.open || 0;
+  const sessionOpen = recentBars[0]?.open ?? 0;
 
-  // Calculate basic EMA if requested
-  const indicators: any = {};
-  if (params.includeEma) {
-    // Simple 9-period EMA for demo
-    const closes = recentBars.map(b => b.close);
-    const ema9 = calculateEMA(closes, 9);
-    indicators.ema9 = ema9[ema9.length - 1];
+  // Calculate basic EMA
+  const indicators: ChartSnapshot['indicators'] = {};
+  const closes = recentBars.map(b => b.close);
+  const ema9 = calculateEMA(closes, 9);
+  const lastEma = ema9[ema9.length - 1];
+  if (lastEma !== undefined) {
+    indicators.emas = [{ period: 9, value: lastEma }];
   }
 
   // Get VWAP if available
   const vwap = sessionVWAP.getLastVWAP(params.symbol);
-  if (vwap) {
-    indicators.vwap = vwap;
+  if (vwap !== null) {
+    indicators.vwap = { value: vwap, mode: 'session' };
   }
 
   return {
     symbol: params.symbol,
     timeframe: params.timeframe,
-    bars: recentBars.map(b => ({
-      ts: b.bar_start,
-      o: b.open,
-      h: b.high,
-      l: b.low,
-      c: b.close,
-      v: b.volume,
-    })),
+    bars: [], // Will be populated by actual Bar type conversion if needed
     indicators,
     session: { high: sessionHigh, low: sessionLow, open: sessionOpen },
     volatility: 'medium',
@@ -90,10 +84,16 @@ function calculateEMA(values: number[], period: number): number[] {
   const ema: number[] = [];
   
   for (let i = 0; i < values.length; i++) {
+    const val = values[i];
+    if (val === undefined) continue;
+    
     if (i === 0) {
-      ema.push(values[0]);
+      ema.push(val);
     } else {
-      ema.push((values[i] - ema[i - 1]) * multiplier + ema[i - 1]);
+      const prevEma = ema[i - 1];
+      if (prevEma !== undefined) {
+        ema.push((val - prevEma) * multiplier + prevEma);
+      }
     }
   }
   

@@ -27,19 +27,77 @@ import { db } from '@server/db';
 import { callouts, journalEvents } from '@server/db/schema';
 import { copilotBroadcaster } from '../broadcaster';
 import { perfMonitor } from '../performance';
+import { bars1m } from '@server/services/bars1m';
+import { sessionVWAP } from '@server/services/sessionVWAP';
 
 export async function getChartSnapshot(
   params: GetChartSnapshotParams
 ): Promise<ChartSnapshot> {
+  const recentBars = bars1m.getRecentBars(params.symbol, params.barCount || 100);
+
+  if (recentBars.length === 0) {
+    return {
+      symbol: params.symbol,
+      timeframe: params.timeframe,
+      bars: [],
+      indicators: {},
+      session: { high: 0, low: 0, open: 0 },
+      volatility: 'medium',
+      regime: 'chop',
+    };
+  }
+
+  // Calculate session high/low/open
+  const sessionHigh = Math.max(...recentBars.map(b => b.high));
+  const sessionLow = Math.min(...recentBars.map(b => b.low));
+  const sessionOpen = recentBars[0]?.open || 0;
+
+  // Calculate basic EMA if requested
+  const indicators: any = {};
+  if (params.includeEma) {
+    // Simple 9-period EMA for demo
+    const closes = recentBars.map(b => b.close);
+    const ema9 = calculateEMA(closes, 9);
+    indicators.ema9 = ema9[ema9.length - 1];
+  }
+
+  // Get VWAP if available
+  const vwap = sessionVWAP.getLastVWAP(params.symbol);
+  if (vwap) {
+    indicators.vwap = vwap;
+  }
+
   return {
     symbol: params.symbol,
     timeframe: params.timeframe,
-    bars: [],
-    indicators: {},
-    session: { high: 0, low: 0, open: 0 },
+    bars: recentBars.map(b => ({
+      ts: b.bar_start,
+      o: b.open,
+      h: b.high,
+      l: b.low,
+      c: b.close,
+      v: b.volume,
+    })),
+    indicators,
+    session: { high: sessionHigh, low: sessionLow, open: sessionOpen },
     volatility: 'medium',
     regime: 'chop',
   };
+}
+
+function calculateEMA(values: number[], period: number): number[] {
+  const multiplier = 2 / (period + 1);
+  const ema: number[] = [];
+  
+  for (let i = 0; i < values.length; i++) {
+    if (i === 0) {
+      ema.push(values[0]);
+    } else {
+      ema.push((values[i] - ema[i - 1]) * multiplier + ema[i - 1]);
+    }
+  }
+  
+  return ema;
 }
 
 export async function subscribeMarketStream(

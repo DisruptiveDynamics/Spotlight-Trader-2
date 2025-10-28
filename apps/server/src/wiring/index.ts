@@ -8,6 +8,8 @@ import { signalsService } from '@server/signals/service';
 import { coachAdvisor } from '@server/coach/advisor';
 import { getMarketSource, getMarketReason } from '@server/market/bootstrap';
 import { isRthOpen } from '@server/market/session';
+import { symbolManager } from '@server/market/symbolManager';
+import { sessionVWAP } from '@server/services/sessionVWAP';
 
 const DEFAULT_FAVORITES = ['SPY', 'QQQ'];
 const DEFAULT_TIMEFRAME = '1m';
@@ -37,10 +39,15 @@ export function initializeMarketPipeline(app: Express) {
   rulesEngineService.start();
   signalsService.start();
   coachAdvisor.start();
+  
+  // Start sessionVWAP service with initial symbols
+  sessionVWAP.start(DEFAULT_FAVORITES);
 
+  // Subscribe to default favorites using symbolManager
   for (const symbol of DEFAULT_FAVORITES) {
-    polygonWs.subscribe(symbol);
-    subscribeSymbolTimeframe(symbol, DEFAULT_TIMEFRAME);
+    symbolManager.subscribeSymbol(symbol, DEFAULT_TIMEFRAME).catch(err => {
+      console.error(`Failed to subscribe to ${symbol}:`, err);
+    });
   }
 
   app.get('/api/history', async (req, res) => {
@@ -96,6 +103,41 @@ export function initializeMarketPipeline(app: Express) {
   app.get('/stream/market', sseMarketStream);
 
   // Endpoint to change timeframe for a symbol
+  // Symbol subscription endpoint
+  app.post('/api/symbols/subscribe', async (req, res) => {
+    try {
+      const { symbol, timeframe = '1m' } = req.body;
+
+      if (!symbol || typeof symbol !== 'string') {
+        return res.status(400).json({ error: 'symbol is required' });
+      }
+
+      const validTimeframes = ['1m', '2m', '5m', '10m', '15m', '30m', '1h'];
+      if (!validTimeframes.includes(timeframe)) {
+        return res.status(400).json({ error: 'Invalid timeframe' });
+      }
+
+      const symbolUpper = symbol.toUpperCase();
+
+      // Subscribe to the symbol (this handles Polygon WS, barBuilder, and seeding)
+      await symbolManager.subscribeSymbol(symbolUpper, timeframe as any);
+      
+      // Subscribe sessionVWAP to this symbol
+      sessionVWAP.subscribeSymbol(symbolUpper);
+
+      res.json({
+        success: true,
+        symbol: symbolUpper,
+        timeframe,
+        message: `Subscribed to ${symbolUpper} on ${timeframe} timeframe`,
+      });
+    } catch (err) {
+      console.error('Symbol subscription error:', err);
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Internal server error' });
+    }
+  });
+
+  // Timeframe switching endpoint
   app.post('/api/chart/timeframe', (req, res) => {
     try {
       const { symbol, timeframe } = req.body;
@@ -109,7 +151,7 @@ export function initializeMarketPipeline(app: Express) {
         return res.status(400).json({ error: 'Invalid timeframe' });
       }
 
-      subscribeSymbolTimeframe(symbol.toUpperCase(), timeframe);
+      symbolManager.switchTimeframe(symbol.toUpperCase(), timeframe as any);
 
       res.json({ 
         success: true, 
@@ -119,6 +161,17 @@ export function initializeMarketPipeline(app: Express) {
       });
     } catch (err) {
       console.error('Timeframe change error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // Get subscribed symbols
+  app.get('/api/symbols/subscribed', (_req, res) => {
+    try {
+      const symbols = symbolManager.getSubscribedSymbols();
+      res.json({ symbols });
+    } catch (err) {
+      console.error('Get subscribed symbols error:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   });

@@ -4,7 +4,7 @@ import { ruleEvaluator } from './evaluator';
 import type { RuleContext } from '@shared/types/rules';
 
 export class RulesEngineService {
-  private userId = 'demo-user';
+  private userId = 'default-user';
 
   start(): void {
     eventBus.on('bar:new:SPY:1m', this.handleNewBar.bind(this));

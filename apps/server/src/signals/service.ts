@@ -23,7 +23,7 @@ export class SignalsService {
 
     const signal: Signal = {
       id: `sig_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
-      userId: 'demo-user',
+      userId: 'default-user',
       symbol: 'SPY',
       timeframe: '1m',
       ruleId: ruleEval.id,

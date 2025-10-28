@@ -229,7 +229,7 @@ export function startEodScheduler(): void {
       const today = new Date().toISOString().split('T')[0] ?? '';
 
       try {
-        const journalId = await runEodForUser('demo-user', today);
+        const journalId = await runEodForUser('default-user', today);
         console.log(`EOD summary generated: ${journalId}`);
       } catch (error) {
         console.error('EOD summary generation failed:', error);

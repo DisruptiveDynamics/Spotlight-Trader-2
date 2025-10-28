@@ -82,7 +82,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
     const url = new URL(request.url || '', `http://${request.headers.host}`);
     const token = url.searchParams.get('t') || request.headers['x-user-token'];
 
-    let userId: string = 'demo-user'; // Default for POC
+    let userId: string = 'default-user'; // Single-user app
 
     // Try to verify token if present, but don't reject if missing
     if (token && typeof token === 'string') {
@@ -90,7 +90,7 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
         const payload = verifyVoiceToken(token);
         userId = payload.userId;
       } catch {
-        // Use default demo-user if token invalid
+        // Use default user if token invalid
       }
     }
 

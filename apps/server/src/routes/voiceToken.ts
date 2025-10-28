@@ -43,26 +43,22 @@ export function setupVoiceTokenRoute(app: Express) {
     res.json({ voices: AVAILABLE_VOICES });
   });
 
-  // GET /api/voice/token - Generate demo voice session token (no auth required)
+  // GET /api/voice/token - Generate voice session token (single-user app)
   app.get('/api/voice/token', (req, res) => {
-    if (req.query.demo === 'true') {
-      const demoToken = signVoiceToken('demo-user', 60);
-      return res.json({ token: demoToken });
-    }
-    res.status(400).json({ error: 'Demo mode required for GET requests' });
+    const token = signVoiceToken('default-user', 60);
+    return res.json({ token });
   });
 
   // POST /api/voice/token - Generate voice session token
-  app.post('/api/voice/token', requireUser, (req: AuthRequest, res) => {
-    const userId = req.user!.userId;
-    const token = signVoiceToken(userId, 60);
+  app.post('/api/voice/token', (req, res) => {
+    const token = signVoiceToken('default-user', 60);
     res.json({ token });
   });
 
-  // POST /api/voice/ephemeral-token - Generate ephemeral token for WebRTC (AUTHENTICATED)
-  app.post('/api/voice/ephemeral-token', requireUser, async (req: AuthRequest, res) => {
+  // POST /api/voice/ephemeral-token - Generate ephemeral token for WebRTC
+  app.post('/api/voice/ephemeral-token', async (req, res) => {
     try {
-      const userId = req.user!.userId;
+      const userId = 'default-user';
       const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
 
       // Apply rate limiting per user (secondary defense)

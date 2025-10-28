@@ -1,8 +1,6 @@
 import { websocketClient } from '@polygon.io/client-js';
 import { validateEnv } from '@shared/env';
 import { eventBus } from './eventBus';
-import { isMarketOpen } from './marketHours';
-import { mockTickGenerator } from './mockTickGenerator';
 
 const env = validateEnv(process.env);
 
@@ -15,26 +13,13 @@ export class PolygonWebSocket {
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private lastMessageTime = 0;
   private isConnected = false;
-  private useMockData = false;
 
   async connect() {
     try {
-      // Check if markets are open
-      const marketIsOpen = isMarketOpen();
-      
-      if (!marketIsOpen) {
-        console.log(`🌙 Markets closed - using simulated data for demo`);
-        this.useMockData = true;
-        this.isConnected = true;
-        this.resubscribe(); // Start mock generators
-        return;
-      }
-
       // Stock Advanced plan uses real-time feed
       const wsUrl = 'wss://socket.polygon.io';
-      console.log(`📡 Connecting to Polygon real-time feed (markets OPEN)`);
+      console.log(`📡 Connecting to Polygon real-time WebSocket feed`);
 
-      this.useMockData = false;
       this.ws = websocketClient(env.POLYGON_API_KEY, wsUrl).stocks();
 
       if (this.ws) {
@@ -103,12 +88,6 @@ export class PolygonWebSocket {
   subscribe(symbol: string) {
     this.subscribedSymbols.add(symbol);
     
-    if (this.useMockData) {
-      // Start mock tick generator for this symbol
-      mockTickGenerator.start(symbol);
-      return;
-    }
-    
     if (this.isConnected && this.ws) {
       (this.ws as any).send(
         JSON.stringify({
@@ -122,11 +101,6 @@ export class PolygonWebSocket {
   unsubscribe(symbol: string) {
     this.subscribedSymbols.delete(symbol);
     
-    if (this.useMockData) {
-      mockTickGenerator.stop(symbol);
-      return;
-    }
-    
     if (this.isConnected && this.ws) {
       (this.ws as any).send(
         JSON.stringify({
@@ -138,14 +112,6 @@ export class PolygonWebSocket {
   }
 
   private resubscribe() {
-    if (this.useMockData) {
-      // Start mock generators for all subscribed symbols
-      for (const symbol of this.subscribedSymbols) {
-        mockTickGenerator.start(symbol);
-      }
-      return;
-    }
-    
     if (this.subscribedSymbols.size > 0 && this.ws) {
       const params = Array.from(this.subscribedSymbols)
         .map((sym) => `T.${sym}`)
@@ -173,11 +139,8 @@ export class PolygonWebSocket {
   }
 
   private startHeartbeat() {
-    // Don't need heartbeat for mock data
-    if (this.useMockData) return;
-    
     this.heartbeatInterval = setInterval(() => {
-      if (this.isConnected && !this.useMockData) {
+      if (this.isConnected) {
         const timeSinceLastMessage = Date.now() - this.lastMessageTime;
         
         if (timeSinceLastMessage > 60000) {
@@ -201,10 +164,6 @@ export class PolygonWebSocket {
 
   close() {
     this.stopHeartbeat();
-    
-    if (this.useMockData) {
-      mockTickGenerator.stopAll();
-    }
     
     if (this.ws) {
       (this.ws as any).close();

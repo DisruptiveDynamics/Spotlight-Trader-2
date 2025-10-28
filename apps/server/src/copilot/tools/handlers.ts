@@ -122,7 +122,7 @@ export async function proposeCallout(
 
   await db.insert(callouts).values({
     id,
-    userId: 'demo-user',
+    userId: 'default-user',
     symbol: params.context.symbol,
     timeframe: params.context.timeframe,
     kind: params.kind,
@@ -135,7 +135,7 @@ export async function proposeCallout(
 
   const calloutEvent = {
     id,
-    userId: 'demo-user',
+    userId: 'default-user',
     kind: params.kind,
     setupTag: params.context.setupTag,
     rationale: params.context.rationale,
@@ -196,7 +196,7 @@ export async function logJournalEvent(
 
   await db.insert(journalEvents).values({
     id,
-    userId: 'demo-user',
+    userId: 'default-user',
     type: params.type,
     symbol: params.payload.symbol,
     timeframe: params.payload.timeframe,

@@ -151,7 +151,7 @@ router.get('/callouts/stream', (req: Request, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
-  const userId = 'demo-user';
+  const userId = 'default-user';
   copilotBroadcaster.addClient(userId, res);
 
   const heartbeat = setInterval(() => {

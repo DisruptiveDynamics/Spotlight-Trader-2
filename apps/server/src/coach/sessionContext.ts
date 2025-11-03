@@ -3,6 +3,7 @@ import { coachProfiles } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { retrieveTopK } from '../memory/store.js';
 import { VOICE_COACH_SYSTEM } from './policy.js';
+import { voiceTools } from '../voice/tools.js';
 
 interface CoachProfile {
   agentName: string;
@@ -94,6 +95,7 @@ export async function getInitialSessionUpdate(userId: string) {
         silence_duration_ms: 500,
       },
       voice: voiceId,
+      tools: voiceTools,
     },
   };
 }

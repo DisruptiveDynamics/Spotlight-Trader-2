@@ -3,6 +3,7 @@ import type { Express } from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
 import { verifyVoiceToken } from './auth';
 import { getInitialSessionUpdate } from '../coach/sessionContext';
+import { handleToolCall } from '../voice/tools';
 import { validateEnv } from '@shared/env';
 import {
   recordWSConnection,
@@ -154,19 +155,10 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
           console.log('[VoiceProxy] Received session.created from OpenAI, session ID:', upstreamSessionId);
           sessionCreatedReceived = true;
           
-          // TEST: Minimal payload to isolate API key vs data issue
-          const minimalUpdate = {
-            type: 'session.update',
-            session: {
-              modalities: ['text', 'audio'],
-              instructions: 'You are a helpful assistant.',
-              voice: 'alloy',
-              input_audio_format: 'pcm16',
-              output_audio_format: 'pcm16'
-            }
-          };
-          console.log('[VoiceProxy] Sending MINIMAL TEST session.update to OpenAI:', JSON.stringify(minimalUpdate, null, 2));
-          upstreamWs.send(JSON.stringify(minimalUpdate));
+          // Send full session update with tools and context
+          const sessionUpdate = await getInitialSessionUpdate(userId);
+          console.log('[VoiceProxy] Sending session.update with tools to OpenAI');
+          upstreamWs.send(JSON.stringify(sessionUpdate));
           upstreamReady = true;
 
           // Flush buffered client messages
@@ -229,6 +221,34 @@ export function setupVoiceProxy(app: Express, server: HTTPServer) {
         if (message.type === 'session.updated') {
           openaiErrorCount = 0;
           openaiCooldownUntil = 0;
+        }
+        
+        // Handle function calls from the AI
+        if (message.type === 'response.function_call_arguments.done') {
+          const toolCall = {
+            call_id: message.call_id,
+            name: message.name,
+            arguments: message.arguments,
+          };
+          
+          console.log(`[VoiceProxy] Tool call: ${message.name}`, message.arguments);
+          const startTime = Date.now();
+          const toolResponse = handleToolCall(toolCall);
+          upstreamWs.send(JSON.stringify(toolResponse));
+          
+          // CRITICAL: Send response.create with response_id to tell OpenAI to continue responding
+          const responseId = message.response_id || message.response?.id;
+          if (responseId) {
+            upstreamWs.send(JSON.stringify({ 
+              type: 'response.create',
+              response: { id: responseId }
+            }));
+          } else {
+            console.warn('[VoiceProxy] Missing response_id in function call, voice may stall');
+          }
+          
+          const elapsed = Date.now() - startTime;
+          console.log(`[VoiceProxy] Tool ${message.name} completed in ${elapsed}ms`);
         }
       } catch (err) {
         console.error('[VoiceProxy] Error parsing OpenAI message:', err);
